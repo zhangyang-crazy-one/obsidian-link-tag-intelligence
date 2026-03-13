@@ -1,0 +1,10 @@
+{
+  "id": "link-tag-intelligence",
+  "name": "Link & Tag Intelligence",
+  "version": "0.1.33",
+  "minAppVersion": "1.6.0",
+  "description": "Native-first bilingual link and tag intelligence for Obsidian with preview-driven insertion, relation properties, and external semantic bridge hooks.",
+  "author": "zhangcrazyone",
+  "authorUrl": "https://github.com/zhangyang-crazy-one",
+  "isDesktopOnly": false
+}
