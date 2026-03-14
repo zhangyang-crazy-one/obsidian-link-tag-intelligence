@@ -1,6 +1,6 @@
 # Link & Tag Intelligence
 
-Native-first bilingual link and tag workflows for Obsidian.
+Native-first bilingual link and tag workflows with preview-driven references and semantic bridge hooks.
 
 ## Features
 
