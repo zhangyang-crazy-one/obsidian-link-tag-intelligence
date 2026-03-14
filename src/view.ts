@@ -6,6 +6,7 @@ import {
   findUnlinkedMentions,
   getAllTagsForFile,
   getBacklinkFiles,
+  getResearchSourceMetadataForFile,
   getIncomingExactReferences,
   getOutgoingLinkFiles,
   getOutgoingExactReferences,
@@ -85,6 +86,7 @@ export class LinkTagIntelligenceView extends ItemView {
         this.plugin.openFile(activeFile);
       });
       noteCard.createSpan({ text: activeFile.path, cls: "lti-item-meta lti-item-path" });
+      this.renderMetadataPills(noteCard, getResearchSourceMetadataForFile(this.app, activeFile));
     }
 
     this.renderFileSection(content, "outgoing-links", this.plugin.t("outgoingLinks"), await getOutgoingLinkFiles(this.app, activeFile), true);
@@ -181,6 +183,7 @@ export class LinkTagIntelligenceView extends ItemView {
         cls: "lti-pill"
       });
       meta.createSpan({ text: reference.raw, cls: "lti-ref-syntax lti-list-row-code" });
+      this.renderMetadataPills(row, direction === "outgoing" ? reference.targetMetadata : reference.sourceMetadata);
 
       const preview = direction === "outgoing" ? reference.targetPreview : reference.sourceContext;
       if (preview) {
@@ -234,9 +237,45 @@ export class LinkTagIntelligenceView extends ItemView {
       return;
     }
 
-    const pills = section.createDiv({ cls: "lti-pill-row lti-tag-grid" });
+    const grouped = new Map<string, string[]>();
+    const unclassified: string[] = [];
     for (const tag of tags) {
-      pills.createSpan({ text: `#${tag}`, cls: "lti-pill lti-tag-chip" });
+      const facet = this.plugin.getFacetForTag(tag);
+      if (!facet) {
+        unclassified.push(tag);
+        continue;
+      }
+      grouped.set(facet, [...(grouped.get(facet) ?? []), tag]);
+    }
+
+    if (grouped.size === 0) {
+      const pills = section.createDiv({ cls: "lti-pill-row lti-tag-grid" });
+      for (const tag of tags) {
+        pills.createSpan({ text: `#${tag}`, cls: "lti-pill lti-tag-chip" });
+      }
+      return;
+    }
+
+    for (const [facet, facetTags] of [...grouped.entries()].sort((left, right) => left[0].localeCompare(right[0], "zh-Hans-CN"))) {
+      const block = section.createDiv({ cls: "lti-item lti-item-compact" });
+      const header = block.createDiv({ cls: "lti-section-inline-head" });
+      header.createDiv({ text: this.plugin.formatFacetLabel(facet), cls: "suggestion-title" });
+      header.createSpan({ text: String(facetTags.length), cls: "suggestion-meta" });
+      const pills = block.createDiv({ cls: "lti-pill-row lti-tag-grid" });
+      for (const tag of facetTags) {
+        pills.createSpan({ text: `#${tag}`, cls: "lti-pill lti-tag-chip" });
+      }
+    }
+
+    if (unclassified.length > 0) {
+      const block = section.createDiv({ cls: "lti-item lti-item-compact" });
+      const header = block.createDiv({ cls: "lti-section-inline-head" });
+      header.createDiv({ text: this.plugin.t("tagFacetUnclassified"), cls: "suggestion-title" });
+      header.createSpan({ text: String(unclassified.length), cls: "suggestion-meta" });
+      const pills = block.createDiv({ cls: "lti-pill-row lti-tag-grid" });
+      for (const tag of unclassified) {
+        pills.createSpan({ text: `#${tag}`, cls: "lti-pill lti-tag-chip" });
+      }
     }
   }
 
@@ -283,6 +322,24 @@ export class LinkTagIntelligenceView extends ItemView {
       text: isSemanticBridgeConfigured(this.plugin.settings) ? this.plugin.t("configured") : this.plugin.t("notConfigured"),
       cls: "lti-item-subtext"
     });
+    if (this.plugin.settings.workflowMode === "researcher") {
+      section.createDiv({
+        text: this.plugin.t("settingsSemanticResearchHint"),
+        cls: "lti-item-subtext"
+      });
+    }
+  }
+
+  private renderMetadataPills(parent: HTMLElement, metadata: Parameters<LinkTagIntelligencePlugin["formatResearchMetadataChips"]>[0]): void {
+    const chips = this.plugin.formatResearchMetadataChips(metadata);
+    if (chips.length === 0) {
+      return;
+    }
+
+    const metaRow = parent.createDiv({ cls: "lti-pill-row lti-pill-row-compact lti-reference-meta" });
+    for (const chip of chips) {
+      metaRow.createSpan({ text: chip, cls: "lti-pill" });
+    }
   }
 
   private createSection(
@@ -370,7 +427,8 @@ export class LinkTagIntelligenceView extends ItemView {
     this.plugin.openFile(reference.sourceFile);
   }
 
-  async onClose(): Promise<void> {
+  onClose(): Promise<void> {
     this.contentEl.empty();
+    return Promise.resolve();
   }
 }

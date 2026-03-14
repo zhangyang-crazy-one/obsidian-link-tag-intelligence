@@ -32,6 +32,26 @@ function renderModalHeader(parent: HTMLElement, title: string, description?: str
   }
 }
 
+function isPromiseLike(value: unknown): value is PromiseLike<void> {
+  return typeof value === "object" && value !== null && "then" in value && typeof (value as { then?: unknown }).then === "function";
+}
+
+function runModalTask(task: () => Promise<void> | void): void {
+  const onError = (error: unknown): void => {
+    console.error("[lti-modal] action failed", error);
+    new Notice(error instanceof Error ? error.message : String(error));
+  };
+
+  try {
+    const result = task();
+    if (isPromiseLike(result)) {
+      void Promise.resolve(result).catch(onError);
+    }
+  } catch (error) {
+    onError(error);
+  }
+}
+
 export class TextPromptModal extends Modal {
   private readonly title: string;
   private readonly placeholder: string;
@@ -67,14 +87,7 @@ export class TextPromptModal extends Modal {
     new ButtonComponent(actions)
       .setButtonText("OK")
       .setCta()
-      .onClick(async () => {
-        const value = input.value.trim();
-        if (!value) {
-          return;
-        }
-        await this.onSubmit(value);
-        this.close();
-      });
+      .onClick(() => this.submitValue(input));
 
     new ButtonComponent(actions)
       .setButtonText("Cancel")
@@ -82,16 +95,23 @@ export class TextPromptModal extends Modal {
 
     input.focus();
     input.select();
-    input.addEventListener("keydown", async (event) => {
+    input.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
-        const value = input.value.trim();
-        if (!value) {
-          return;
-        }
-        await this.onSubmit(value);
-        this.close();
+        this.submitValue(input);
       }
+    });
+  }
+
+  private submitValue(input: HTMLInputElement): void {
+    runModalTask(async () => {
+      const value = input.value.trim();
+      if (!value) {
+        return;
+      }
+
+      await this.onSubmit(value);
+      this.close();
     });
   }
 }
@@ -175,6 +195,11 @@ export class LinkInsertModal extends SuggestModal<LinkCandidate> {
       container.createDiv({ text: `${this.plugin.t("aliases")}: ${candidate.aliases.join(", ")}`, cls: "suggestion-meta" });
     }
 
+    const researchSummary = this.plugin.formatResearchMetadataSummary(candidate.researchMetadata);
+    if (researchSummary) {
+      container.createDiv({ text: researchSummary, cls: "suggestion-meta" });
+    }
+
     container.createDiv({ text: candidate.path, cls: "suggestion-meta" });
 
     if (candidate.sharedTags.length > 0) {
@@ -196,8 +221,8 @@ export class LinkInsertModal extends SuggestModal<LinkCandidate> {
     }
   }
 
-  async onChooseSuggestion(candidate: LinkCandidate): Promise<void> {
-    await this.onChoose(candidate);
+  onChooseSuggestion(candidate: LinkCandidate): void {
+    runModalTask(() => this.onChoose(candidate));
   }
 }
 
@@ -290,18 +315,21 @@ export class ReferenceInsertModal extends Modal {
     new ButtonComponent(actions)
       .setButtonText(this.plugin.t(this.mode === "block_ref" ? "insertBlockRef" : "insertLineRef"))
       .setCta()
-      .onClick(async () => {
-        if (this.mode === "block_ref") {
-          await this.plugin.insertBlockReferenceIntoEditor(this.file, this.startLine, this.endLine);
-        } else {
-          await this.plugin.insertLineReferenceIntoEditor(this.file, this.startLine, this.endLine);
-        }
-        this.close();
-      });
+      .onClick(() => this.submitSelection());
 
     new ButtonComponent(actions)
       .setButtonText(this.plugin.t("cancel"))
       .onClick(() => this.close());
+  }
+
+  private submitSelection(): void {
+    if (this.mode === "block_ref") {
+      this.plugin.insertBlockReferenceIntoEditor(this.file, this.startLine, this.endLine);
+    } else {
+      this.plugin.insertLineReferenceIntoEditor(this.file, this.startLine, this.endLine);
+    }
+
+    this.close();
   }
 }
 
@@ -375,11 +403,13 @@ export class TagManagerModal extends Modal {
       });
 
       const deleteButton = actions.createEl("button", { text: this.plugin.t("delete"), cls: "lti-inline-button" });
-      deleteButton.addEventListener("click", async () => {
-        const updated = await deleteTagAcrossVault(this.plugin.app, stat.tag);
-        new Notice(`${this.plugin.t("tagsUpdated")} (${updated})`);
-        this.render();
-        this.plugin.refreshAllViews();
+      deleteButton.addEventListener("click", () => {
+        runModalTask(async () => {
+          const updated = await deleteTagAcrossVault(this.plugin.app, stat.tag);
+          new Notice(`${this.plugin.t("tagsUpdated")} (${updated})`);
+          this.render();
+          this.plugin.refreshAllViews();
+        });
       });
     }
   }
@@ -403,7 +433,12 @@ export class TagSuggestionModal extends Modal {
     this.contentEl.empty();
     renderModalHeader(this.contentEl, this.plugin.t("suggestTags"), this.plugin.t("modalTagSuggestionsDescription"));
     this.contentEl.createDiv({ text: this.plugin.t("loading"), cls: "lti-empty" });
-    this.suggestions = await suggestTagsForFile(this.plugin.app, this.file, this.plugin.settings.tagAliasMapText);
+    this.suggestions = await suggestTagsForFile(
+      this.plugin.app,
+      this.file,
+      this.plugin.settings.tagAliasMapText,
+      this.plugin.settings.tagFacetMapText
+    );
     const preferred = this.suggestions.filter((item) => item.bucket === "primary");
     const fallback = this.suggestions.filter((item) => item.bucket === "secondary");
     this.selected = new Set(
@@ -447,11 +482,13 @@ export class TagSuggestionModal extends Modal {
     new ButtonComponent(actions)
       .setButtonText(this.plugin.t("apply"))
       .setCta()
-      .onClick(async () => {
-        await appendTagsToFrontmatter(this.plugin.app, this.file, [...this.selected]);
-        new Notice(this.plugin.t("createdFrontmatterTag"));
-        this.plugin.refreshAllViews();
-        this.close();
+      .onClick(() => {
+        runModalTask(async () => {
+          await appendTagsToFrontmatter(this.plugin.app, this.file, [...this.selected]);
+          new Notice(this.plugin.t("createdFrontmatterTag"));
+          this.plugin.refreshAllViews();
+          this.close();
+        });
       });
 
     new ButtonComponent(actions)
@@ -499,6 +536,12 @@ export class TagSuggestionModal extends Modal {
       const meta = row.createDiv({ cls: "lti-tag-card-meta" });
       meta.createSpan({ text: this.kindLabel(suggestion.kind), cls: "lti-tag-card-kind" });
       meta.createSpan({ text: `${this.plugin.t("semanticScore")}: ${suggestion.score}`, cls: "lti-tag-card-score" });
+      if (suggestion.facet) {
+        row.createDiv({
+          text: this.plugin.t("tagSuggestionFacetLabel", { facet: this.plugin.formatFacetLabel(suggestion.facet) }),
+          cls: "lti-tag-card-evidence"
+        });
+      }
 
       if (suggestion.sources.length > 0) {
         row.createDiv({
@@ -518,6 +561,9 @@ export class TagSuggestionModal extends Modal {
   private kindLabel(kind: TagSuggestion["kind"]): string {
     if (kind === "alias") {
       return this.plugin.t("tagSuggestionAlias");
+    }
+    if (kind === "facet-tag") {
+      return this.plugin.t("tagSuggestionFacet");
     }
     if (kind === "known-tag") {
       return this.plugin.t("tagSuggestionKnown");
@@ -539,6 +585,9 @@ export class TagSuggestionModal extends Modal {
         }
         if (source === "heading") {
           return this.plugin.t("tagSuggestionSourceHeading");
+        }
+        if (source === "facet") {
+          return this.plugin.t("tagSuggestionSourceFacet");
         }
         if (source === "reference") {
           return this.plugin.t("tagSuggestionSourceReference");
@@ -588,24 +637,26 @@ export class SemanticSearchModal extends Modal {
     });
 
     const searchButton = form.createEl("button", { text: this.plugin.t("semanticSearch"), cls: "lti-action-button" });
-    searchButton.addEventListener("click", async () => {
-      try {
-        this.results = await runSemanticSearch(
-          this.plugin.app,
-          this.plugin.settings,
-          input.value.trim(),
-          this.activeFile,
-          this.plugin.getContextSelection()
-        );
-        if (this.results.length === 0) {
-          this.render(this.plugin.t("semanticNoResults"));
-          return;
+    searchButton.addEventListener("click", () => {
+      runModalTask(async () => {
+        try {
+          this.results = await runSemanticSearch(
+            this.plugin.app,
+            this.plugin.settings,
+            input.value.trim(),
+            this.activeFile,
+            this.plugin.getContextSelection()
+          );
+          if (this.results.length === 0) {
+            this.render(this.plugin.t("semanticNoResults"));
+            return;
+          }
+          this.render();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.render(this.plugin.semanticErrorToMessage(message));
         }
-        this.render();
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.render(this.plugin.semanticErrorToMessage(message));
-      }
+      });
     });
 
     if (resultsError) {
@@ -617,10 +668,28 @@ export class SemanticSearchModal extends Modal {
       const card = resultsContainer.createDiv({ cls: "lti-result-card" });
       card.createEl("div", { text: result.title, cls: "suggestion-title" });
       card.createDiv({ text: result.path, cls: "suggestion-meta" });
+      const researchSummary = this.plugin.formatResearchMetadataSummary({
+        citekey: result.citekey,
+        author: result.author,
+        year: result.year,
+        locator: result.page,
+        sourceType: result.source_type,
+        evidenceKind: result.evidence_kind
+      });
+      if (researchSummary) {
+        card.createDiv({ text: researchSummary, cls: "suggestion-meta" });
+      }
       if (result.reason) {
         card.createDiv({ text: `${this.plugin.t("reason")}: ${result.reason}`, cls: "suggestion-meta" });
       }
       card.createDiv({ text: `${this.plugin.t("semanticScore")}: ${result.score}`, cls: "suggestion-meta" });
+      if (result.suggested_tags.length > 0) {
+        card.createDiv({ text: `${this.plugin.t("tags")}: ${result.suggested_tags.join(", ")}`, cls: "suggestion-meta" });
+      }
+      const relationSummary = this.plugin.formatSuggestedRelationSummary(result.suggested_relations);
+      if (relationSummary) {
+        card.createDiv({ text: `${this.plugin.t("relations")}: ${relationSummary}`, cls: "suggestion-meta" });
+      }
       if (result.excerpt) {
         card.createDiv({ text: result.excerpt, cls: "suggestion-preview" });
       }

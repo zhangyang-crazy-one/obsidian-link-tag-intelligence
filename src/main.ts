@@ -5,6 +5,7 @@ import { debugLog, resetDebugLog } from "./debug-log";
 import { relationKeyLabel, tr, resolveLanguage, type UILanguage } from "./i18n";
 import { LinkInsertModal, ReferenceInsertModal, RelationKeyModal, SemanticSearchModal, TagManagerModal, TagSuggestionModal } from "./modals";
 import {
+  type ResearchSourceMetadata,
   resolveNoteTarget
 } from "./notes";
 import {
@@ -16,11 +17,12 @@ import {
 } from "./references";
 import { ReferencePreviewPopover, type ReferencePreviewData } from "./reference-preview";
 import { getReadingReferenceHoverController } from "./reading-hover-controller";
-import { parseTagAliasMap } from "./shared";
+import { formatFacetName, parseTagAliasMap, parseTagFacetMap, type TagFacetMap } from "./shared";
 import { appendTagsToFrontmatter } from "./tags";
 import {
   DEFAULT_SETTINGS,
   LinkTagIntelligenceSettingTab,
+  normalizeLoadedSettings,
   type LinkTagIntelligenceSettings
 } from "./settings";
 import { LINK_TAG_INTELLIGENCE_VIEW, LinkTagIntelligenceView } from "./view";
@@ -34,7 +36,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
   async onload(): Promise<void> {
     await this.loadSettings();
-    const debugLogPath = resetDebugLog(this.app);
+    const debugLogPath = await resetDebugLog(this.app);
     debugLog(this.app, "plugin.onload", {
       version: this.manifest.version,
       debugLogPath,
@@ -53,15 +55,15 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       (leaf) => new LinkTagIntelligenceView(leaf, this)
     );
 
-    this.addRibbonIcon("links-coming-in", this.t("openPanel"), async () => {
-      await this.openIntelligencePanel();
+    this.addRibbonIcon("links-coming-in", this.t("openPanel"), () => {
+      void this.openIntelligencePanel();
     });
 
     this.addCommand({
-      id: "open-link-tag-intelligence",
+      id: "open-panel",
       name: this.t("openPanel"),
-      callback: async () => {
-        await this.openIntelligencePanel();
+      callback: () => {
+        void this.openIntelligencePanel();
       }
     });
 
@@ -145,7 +147,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       defaultMod: false
     });
 
-    this.captureMarkdownContext(this.app.workspace.activeLeaf);
+    this.captureMarkdownContext(this.getActiveMarkdownLeaf());
     if (!this.lastMarkdownLeaf) {
       this.captureMarkdownContext(this.app.workspace.getLeavesOfType("markdown")[0] ?? null);
     }
@@ -179,14 +181,10 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
   onunload(): void {
     this.referencePreview.destroy();
-    this.app.workspace.detachLeavesOfType(LINK_TAG_INTELLIGENCE_VIEW);
   }
 
   async loadSettings(): Promise<void> {
-    this.settings = {
-      ...DEFAULT_SETTINGS,
-      ...(await this.loadData())
-    };
+    this.settings = normalizeLoadedSettings(await this.loadData());
   }
 
   async saveSettings(): Promise<void> {
@@ -217,6 +215,89 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     }
   }
 
+  getTagFacetMap(options: { suppressNotice?: boolean } = {}): TagFacetMap {
+    try {
+      return parseTagFacetMap(this.settings.tagFacetMapText);
+    } catch (error) {
+      console.warn(error);
+      if (!options.suppressNotice) {
+        new Notice(this.t("invalidFacetMap"));
+      }
+      return new Map();
+    }
+  }
+
+  formatFacetLabel(facet: string): string {
+    return formatFacetName(facet);
+  }
+
+  getFacetForTag(tag: string): string | null {
+    const normalizedTag = tag.trim().toLowerCase();
+    if (!normalizedTag) {
+      return null;
+    }
+
+    for (const [facet, entries] of this.getTagFacetMap({ suppressNotice: true })) {
+      for (const [canonical, aliases] of entries) {
+        if (canonical.toLowerCase() === normalizedTag || aliases.some((alias) => alias.toLowerCase() === normalizedTag)) {
+          return facet;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  formatResearchMetadataChips(metadata: ResearchSourceMetadata | null | undefined): string[] {
+    if (!metadata) {
+      return [];
+    }
+
+    const chips: string[] = [];
+    if (metadata.citekey) {
+      chips.push(`@${metadata.citekey}`);
+    }
+
+    const authorYear = [metadata.author, metadata.year].filter(Boolean).join(" ");
+    if (authorYear) {
+      chips.push(authorYear);
+    }
+
+    if (metadata.sourceType) {
+      chips.push(formatFacetName(metadata.sourceType));
+    }
+
+    if (metadata.evidenceKind) {
+      chips.push(formatFacetName(metadata.evidenceKind));
+    }
+
+    if (metadata.locator) {
+      chips.push(/^(p|pp|sec|chapter|ch)\b/i.test(metadata.locator) ? metadata.locator : `p. ${metadata.locator}`);
+    }
+
+    return chips;
+  }
+
+  formatResearchMetadataSummary(metadata: ResearchSourceMetadata | null | undefined): string {
+    return this.formatResearchMetadataChips(metadata).join(" · ");
+  }
+
+  formatSuggestedRelationSummary(relations: Record<string, string[]>): string {
+    return Object.entries(relations)
+      .filter(([, values]) => values.length > 0)
+      .map(([key, values]) => `${this.relationLabel(key)} (${values.length})`)
+      .join(" · ");
+  }
+
+  private getActiveMarkdownLeaf(): WorkspaceLeaf | null {
+    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!(activeView?.file instanceof TFile)) {
+      return null;
+    }
+
+    return activeView.leaf;
+  }
+
   private captureMarkdownContext(leaf: WorkspaceLeaf | null): boolean {
     const view = leaf?.view;
     if (!(view instanceof MarkdownView) || !(view.file instanceof TFile)) {
@@ -230,10 +311,9 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   }
 
   getContextMarkdownView(): MarkdownView | null {
-    const activeLeaf = this.app.workspace.activeLeaf;
-    const activeView = activeLeaf?.view;
-    if (activeView instanceof MarkdownView && activeView.file instanceof TFile) {
-      this.captureMarkdownContext(activeLeaf);
+    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (activeView?.file instanceof TFile) {
+      this.captureMarkdownContext(activeView.leaf);
       return activeView;
     }
 
@@ -276,7 +356,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   }
 
   private getNavigationLeaf(): WorkspaceLeaf {
-    const activeLeaf = this.app.workspace.activeLeaf;
+    const activeLeaf = this.getActiveMarkdownLeaf();
     if (activeLeaf?.view instanceof MarkdownView) {
       this.captureMarkdownContext(activeLeaf);
       return activeLeaf;
@@ -302,8 +382,8 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       return;
     }
     await leaf.setViewState({ type: LINK_TAG_INTELLIGENCE_VIEW, active: true });
-    this.app.workspace.revealLeaf(leaf);
-    await this.refreshAllViews();
+    await this.app.workspace.revealLeaf(leaf);
+    this.refreshAllViews();
   }
 
   refreshAllViews(): void {
@@ -323,7 +403,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     new LinkInsertModal(
       this,
       "wikilink",
-      async (candidate) => {
+      (candidate) => {
         new ReferenceInsertModal(this, candidate.file, "block_ref").open();
       },
       { placeholder: this.t("pickBlockRefTarget") }
@@ -334,14 +414,14 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     new LinkInsertModal(
       this,
       "wikilink",
-      async (candidate) => {
+      (candidate) => {
         new ReferenceInsertModal(this, candidate.file, "line_ref").open();
       },
       { placeholder: this.t("pickLineRefTarget") }
     ).open();
   }
 
-  private async insertTextIntoContextEditor(text: string): Promise<boolean> {
+  private insertTextIntoContextEditor(text: string): boolean {
     const view = this.getContextMarkdownView();
     const editor = view?.editor;
     if (!editor) {
@@ -353,7 +433,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     return true;
   }
 
-  async insertLinkIntoEditor(file: TFile, alias = ""): Promise<void> {
+  insertLinkIntoEditor(file: TFile, alias = ""): void {
     const view = this.getContextMarkdownView();
     const editor = view?.editor;
     if (!editor) {
@@ -365,36 +445,32 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       ? `[[${file.basename}|${normalizedAlias}]]`
       : `[[${file.basename}]]`;
 
-    if (normalizedAlias && editor.getSelection().trim()) {
-      editor.replaceSelection(linkText);
-    } else {
-      editor.replaceSelection(linkText);
-    }
+    editor.replaceSelection(linkText);
 
     this.pushRecentTarget(file.path);
     new Notice(this.t("insertedLink", { title: file.basename }));
     this.refreshAllViews();
   }
 
-  async insertBlockReferenceIntoEditor(file: TFile, startLine: number, endLine?: number): Promise<void> {
+  insertBlockReferenceIntoEditor(file: TFile, startLine: number, endLine?: number): void {
     const sourcePath = this.getContextMarkdownFile()?.path ?? "";
     const target = sourcePath
       ? this.app.metadataCache.fileToLinktext(file, sourcePath, true)
       : file.basename;
     const text = formatLegacyBlockReference(target, startLine, endLine);
-    if (await this.insertTextIntoContextEditor(text)) {
+    if (this.insertTextIntoContextEditor(text)) {
       this.pushRecentTarget(file.path);
       new Notice(this.t("blockRefInserted", { title: file.basename }));
     }
   }
 
-  async insertLineReferenceIntoEditor(file: TFile, startLine: number, endLine?: number): Promise<void> {
+  insertLineReferenceIntoEditor(file: TFile, startLine: number, endLine?: number): void {
     const sourcePath = this.getContextMarkdownFile()?.path ?? "";
     const target = sourcePath
       ? this.app.metadataCache.fileToLinktext(file, sourcePath, true)
       : file.basename;
     const text = formatLegacyLineReference(target, startLine, endLine);
-    if (await this.insertTextIntoContextEditor(text)) {
+    if (this.insertTextIntoContextEditor(text)) {
       this.pushRecentTarget(file.path);
       new Notice(this.t("lineRefInserted", { title: file.basename }));
     }
@@ -577,7 +653,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     void this.saveSettings();
   }
 
-  async openRelationFlow(): Promise<void> {
+  openRelationFlow(): void {
     const currentFile = this.getContextMarkdownFile();
     if (!(currentFile instanceof TFile)) {
       return;
@@ -708,7 +784,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     if (!file) {
       return;
     }
-    void this.insertLinkIntoEditor(file, this.getContextSelection());
+    this.insertLinkIntoEditor(file, this.getContextSelection());
   }
 
   async addSuggestedTags(tags: string[]): Promise<void> {

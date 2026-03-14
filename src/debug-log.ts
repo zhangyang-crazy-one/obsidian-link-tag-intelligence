@@ -1,55 +1,78 @@
-import { FileSystemAdapter, type App } from "obsidian";
-import { appendFileSync, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
-import path from "node:path";
+import { FileSystemAdapter, normalizePath, type App, type DataAdapter } from "obsidian";
 
 const MAX_LOG_BYTES = 512 * 1024;
+const writeQueues = new WeakMap<App, Promise<void>>();
 
-function resolveLogPath(app: App): string | null {
+function getLogRelativePath(app: App): string {
+  return normalizePath(`${app.vault.configDir}/plugins/link-tag-intelligence/debug-runtime.log`);
+}
+
+function getParentPath(normalizedPath: string): string {
+  const lastSlash = normalizedPath.lastIndexOf("/");
+  return lastSlash >= 0 ? normalizedPath.slice(0, lastSlash) : "";
+}
+
+function resolveDisplayPath(app: App, relativePath: string): string {
   const adapter = app.vault.adapter;
-  if (!(adapter instanceof FileSystemAdapter)) {
-    return null;
+  if (adapter instanceof FileSystemAdapter) {
+    return `${adapter.getBasePath()}/${relativePath}`;
   }
 
-  return path.join(
-    adapter.getBasePath(),
-    app.vault.configDir,
-    "plugins",
-    "link-tag-intelligence",
-    "debug-runtime.log"
-  );
+  return relativePath;
 }
 
-export function resetDebugLog(app: App): string | null {
-  const logPath = resolveLogPath(app);
-  if (!logPath) {
-    return null;
-  }
-
-  mkdirSync(path.dirname(logPath), { recursive: true });
-  writeFileSync(logPath, "", "utf8");
-  return logPath;
-}
-
-export function debugLog(app: App, scope: string, details: Record<string, unknown> = {}): void {
-  const logPath = resolveLogPath(app);
-  if (!logPath) {
+async function ensureDirectory(adapter: DataAdapter, filePath: string): Promise<void> {
+  const directory = getParentPath(filePath);
+  if (!directory) {
     return;
   }
 
+  if (!(await adapter.exists(directory))) {
+    await adapter.mkdir(directory);
+  }
+}
+
+function queueWrite(app: App, writer: () => Promise<void>): void {
+  const next = (writeQueues.get(app) ?? Promise.resolve())
+    .catch(() => undefined)
+    .then(writer)
+    .catch((error) => {
+      console.error("[lti-debug-log] failed to write log", error);
+    });
+
+  writeQueues.set(app, next);
+}
+
+export async function resetDebugLog(app: App): Promise<string | null> {
+  const adapter = app.vault.adapter;
+  const logPath = getLogRelativePath(app);
+
   try {
-    mkdirSync(path.dirname(logPath), { recursive: true });
-    if (existsSync(logPath) && statSync(logPath).size > MAX_LOG_BYTES) {
-      writeFileSync(logPath, "", "utf8");
+    await ensureDirectory(adapter, logPath);
+    await adapter.write(logPath, "", {});
+    return resolveDisplayPath(app, logPath);
+  } catch (error) {
+    console.error("[lti-debug-log] failed to reset log", error);
+    return null;
+  }
+}
+
+export function debugLog(app: App, scope: string, details: Record<string, unknown> = {}): void {
+  const adapter = app.vault.adapter;
+  const logPath = getLogRelativePath(app);
+  const payload = {
+    ts: new Date().toISOString(),
+    scope,
+    ...details
+  };
+
+  queueWrite(app, async () => {
+    await ensureDirectory(adapter, logPath);
+    const stat = await adapter.stat(logPath);
+    if (stat && stat.size > MAX_LOG_BYTES) {
+      await adapter.write(logPath, "", {});
     }
 
-    const payload = {
-      ts: new Date().toISOString(),
-      scope,
-      ...details
-    };
-
-    appendFileSync(logPath, `${JSON.stringify(payload)}\n`, "utf8");
-  } catch (error) {
-    console.error("[lti-debug-log] failed to write log", error);
-  }
+    await adapter.append(logPath, `${JSON.stringify(payload)}\n`, {});
+  });
 }

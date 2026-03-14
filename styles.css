@@ -1159,9 +1159,11 @@
 
 .lti-hover-preview {
   position: fixed;
+  left: var(--lti-preview-left, 0px);
+  top: var(--lti-preview-top, 0px);
   z-index: 9999;
-  width: min(28rem, calc(100vw - 1.5rem));
-  max-height: min(32rem, calc(100vh - 1.5rem));
+  width: var(--lti-preview-max-width, min(28rem, calc(100vw - 1.5rem)));
+  max-height: var(--lti-preview-max-height, min(32rem, calc(100vh - 1.5rem)));
   padding: 0.8rem;
   border: 1px solid var(--background-modifier-border);
   border-radius: 14px;
@@ -1485,4 +1487,60 @@
     justify-self: start;
     width: fit-content;
   }
+}
+
+.lti-settings-guide {
+  margin: 0.85rem 0 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--interactive-accent) 4%, transparent), transparent 100%),
+    color-mix(in srgb, var(--background-secondary) 74%, var(--background-primary));
+}
+
+.lti-settings-guide-title {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.lti-settings-guide-subtitle {
+  margin-top: 0.85rem;
+  margin-bottom: 0.3rem;
+  color: var(--text-normal);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.lti-settings-guide-description,
+.lti-settings-guide-note {
+  margin-top: 0.2rem;
+}
+
+.lti-settings-guide-list {
+  margin: 0.45rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.lti-settings-guide-list li {
+  margin: 0.28rem 0;
+}
+
+.lti-settings-textarea {
+  width: min(100%, 36rem);
+  min-height: 8rem;
+  resize: vertical;
+  font-family: var(--font-monospace-theme, var(--font-monospace), monospace);
+  line-height: 1.5;
+}
+
+.lti-settings-textarea-compact {
+  min-height: 5.5rem;
+}
+
+.lti-settings-inline-note {
+  margin: -0.35rem 0 0.85rem;
+  padding: 0 0.25rem;
+  line-height: 1.6;
 }

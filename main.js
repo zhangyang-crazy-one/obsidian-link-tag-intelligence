@@ -1,9 +1,7 @@
 "use strict";
-var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __export = (target, all) => {
   for (var name in all)
@@ -17,14 +15,6 @@ var __copyProps = (to, from, except, desc) => {
   }
   return to;
 };
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/main.ts
@@ -182,7 +172,7 @@ function formatReferenceTitle(target) {
   const strippedPath = target.split("/").pop() ?? target;
   return strippedPath.replace(/\.md$/i, "");
 }
-async function renderLegacyReferences(el, ctx, helpers) {
+function renderLegacyReferences(el, ctx, helpers) {
   const hoverController = helpers.getReadingHoverController(el, ctx);
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
   const textNodes = [];
@@ -568,51 +558,66 @@ function buildReferenceEditorExtension(plugin) {
 
 // src/debug-log.ts
 var import_obsidian2 = require("obsidian");
-var import_node_fs = require("node:fs");
-var import_node_path = __toESM(require("node:path"), 1);
 var MAX_LOG_BYTES = 512 * 1024;
-function resolveLogPath(app) {
+var writeQueues = /* @__PURE__ */ new WeakMap();
+function getLogRelativePath(app) {
+  return (0, import_obsidian2.normalizePath)(`${app.vault.configDir}/plugins/link-tag-intelligence/debug-runtime.log`);
+}
+function getParentPath(normalizedPath) {
+  const lastSlash = normalizedPath.lastIndexOf("/");
+  return lastSlash >= 0 ? normalizedPath.slice(0, lastSlash) : "";
+}
+function resolveDisplayPath(app, relativePath) {
   const adapter = app.vault.adapter;
-  if (!(adapter instanceof import_obsidian2.FileSystemAdapter)) {
-    return null;
+  if (adapter instanceof import_obsidian2.FileSystemAdapter) {
+    return `${adapter.getBasePath()}/${relativePath}`;
   }
-  return import_node_path.default.join(
-    adapter.getBasePath(),
-    app.vault.configDir,
-    "plugins",
-    "link-tag-intelligence",
-    "debug-runtime.log"
-  );
+  return relativePath;
 }
-function resetDebugLog(app) {
-  const logPath = resolveLogPath(app);
-  if (!logPath) {
-    return null;
-  }
-  (0, import_node_fs.mkdirSync)(import_node_path.default.dirname(logPath), { recursive: true });
-  (0, import_node_fs.writeFileSync)(logPath, "", "utf8");
-  return logPath;
-}
-function debugLog(app, scope, details = {}) {
-  const logPath = resolveLogPath(app);
-  if (!logPath) {
+async function ensureDirectory(adapter, filePath) {
+  const directory = getParentPath(filePath);
+  if (!directory) {
     return;
   }
-  try {
-    (0, import_node_fs.mkdirSync)(import_node_path.default.dirname(logPath), { recursive: true });
-    if ((0, import_node_fs.existsSync)(logPath) && (0, import_node_fs.statSync)(logPath).size > MAX_LOG_BYTES) {
-      (0, import_node_fs.writeFileSync)(logPath, "", "utf8");
-    }
-    const payload = {
-      ts: (/* @__PURE__ */ new Date()).toISOString(),
-      scope,
-      ...details
-    };
-    (0, import_node_fs.appendFileSync)(logPath, `${JSON.stringify(payload)}
-`, "utf8");
-  } catch (error) {
-    console.error("[lti-debug-log] failed to write log", error);
+  if (!await adapter.exists(directory)) {
+    await adapter.mkdir(directory);
   }
+}
+function queueWrite(app, writer) {
+  const next = (writeQueues.get(app) ?? Promise.resolve()).catch(() => void 0).then(writer).catch((error) => {
+    console.error("[lti-debug-log] failed to write log", error);
+  });
+  writeQueues.set(app, next);
+}
+async function resetDebugLog(app) {
+  const adapter = app.vault.adapter;
+  const logPath = getLogRelativePath(app);
+  try {
+    await ensureDirectory(adapter, logPath);
+    await adapter.write(logPath, "", {});
+    return resolveDisplayPath(app, logPath);
+  } catch (error) {
+    console.error("[lti-debug-log] failed to reset log", error);
+    return null;
+  }
+}
+function debugLog(app, scope, details = {}) {
+  const adapter = app.vault.adapter;
+  const logPath = getLogRelativePath(app);
+  const payload = {
+    ts: (/* @__PURE__ */ new Date()).toISOString(),
+    scope,
+    ...details
+  };
+  queueWrite(app, async () => {
+    await ensureDirectory(adapter, logPath);
+    const stat = await adapter.stat(logPath);
+    if (stat && stat.size > MAX_LOG_BYTES) {
+      await adapter.write(logPath, "", {});
+    }
+    await adapter.append(logPath, `${JSON.stringify(payload)}
+`, {});
+  });
 }
 
 // src/i18n.ts
@@ -673,26 +678,51 @@ var TRANSLATIONS = {
     savedRelation: "Saved relation {relation}.",
     insertedLink: "Inserted link to {title}.",
     invalidAliasMap: "Tag alias map is invalid JSON. Falling back to empty map.",
+    invalidFacetMap: "Tag facet map is invalid JSON. Falling back to empty map.",
+    settingsWorkflowMode: "Workflow mode",
+    settingsWorkflowModeDescription: "Choose the default guidance and presets for this vault.",
+    workflowModeResearcher: "Researcher",
+    workflowModeGeneral: "General knowledge base",
     settingsLanguage: "Plugin language",
     settingsRelationKeys: "Relation keys",
+    settingsRelationKeysDescription: "Comma-separated frontmatter keys for typed note relations. Research defaults work well for literature review and drafting.",
+    settingsRelationKeysPreview: "Research default preview",
     settingsTagAliasMap: "Tag alias map JSON",
+    settingsTagAliasMapDescription: "JSON object from canonical tag to aliases. Used for bilingual matching, not automatic rewrites.",
+    settingsTagFacetMap: "Research tag facet map JSON",
+    settingsTagFacetMapDescription: "JSON object from facet name to canonical tags and aliases. Used to boost topic / method / dataset / writing-stage tags.",
     settingsSemanticEnabled: "Enable semantic bridge",
+    settingsSemanticEnabledDescription: "Keep disabled if you only use native links and companion plugins. Enable when you have an external research search CLI.",
     settingsSemanticCommand: "Semantic command",
+    settingsSemanticCommandDescription: "Desktop-only shell command. Supported placeholders: {{query}} {{vault}} {{file}} {{selection}}. Prefer returning citekey / author / year / page / source_type / evidence_kind.",
     settingsSemanticTimeout: "Semantic timeout (ms)",
     settingsRecentLinks: "Recent link memory size",
+    settingsResearchGuideTitle: "Research workflow guide",
+    settingsResearchGuideDescription: "This mode is designed for literature notes, evidence gathering, synthesis, and drafting. Keep exact references, typed relations, and controlled tags aligned.",
+    settingsResearchGuideStep1: "Use Zotero Integration or PDF++ to capture source material and page-level annotations.",
+    settingsResearchGuideStep2: "Use typed relations like supports / contradicts / extends to connect notes and claims.",
+    settingsResearchGuideStep3: "Maintain controlled topic, method, dataset, status, and writing-stage tags to keep recommendation quality high.",
+    settingsCompanionPluginsTitle: "Recommended companion plugins",
+    settingsCompanionZoteroDesc: "Bring in citekeys, literature-note metadata, and source annotations.",
+    settingsCompanionPdfDesc: "Work with PDF highlights, page jumps, and annotation-heavy reading workflows.",
+    settingsCompanionSmartDesc: "Add embeddings-based semantic recall without duplicating this plugin's link and tag layer.",
+    settingsCompanionSemanticDesc: "Use your own research-aware retrieval command when you want citation-grounded semantic results.",
+    settingsSemanticResearchHint: "Recommended semantic result fields: citekey, author, year, page, source_type, evidence_kind, suggested_tags, suggested_relations.",
     mentionsExplanation: "Notes that mention this note title or aliases without already linking to it.",
     selected: "Selected",
     notSelected: "Not selected",
-    modalTagSuggestionsDescription: "Suggestions are ranked from aliases, existing vault tags, source paths, and recurring keywords.",
+    modalTagSuggestionsDescription: "Suggestions are ranked from aliases, research facets, existing vault tags, source paths, and recurring keywords.",
     modalRelationDescription: "Choose a typed relation to write into frontmatter.",
     modalManageTagsDescription: "Rename, merge, or delete native tags across the vault.",
     modalSemanticDescription: "Run your external semantic command against the current note context.",
     tagSuggestionAlias: "Alias match",
+    tagSuggestionFacet: "Research facet",
     tagSuggestionKnown: "Existing vault tag",
     tagSuggestionKeyword: "Keyword candidate",
     tagSuggestionSource: "Source path",
+    tagSuggestionFacetLabel: "Facet: {facet}",
     tagSuggestionMatches: "Matched: {matches}",
-    tagSuggestionSummary: "Primary recommendations are higher-confidence tags. Secondary candidates are looser context hints.",
+    tagSuggestionSummary: "Primary recommendations are higher-confidence research tags. Secondary candidates are looser context hints.",
     tagSuggestionPrimaryGroup: "Primary recommendations",
     tagSuggestionSecondaryGroup: "Secondary candidates",
     tagSuggestionEvidence: "Evidence: {sources}",
@@ -703,7 +733,9 @@ var TRANSLATIONS = {
     tagSuggestionSourceContext: "Linked context",
     tagSuggestionSourceBody: "Body",
     tagSuggestionSourcePath: "Path",
+    tagSuggestionSourceFacet: "Facet map",
     tagSuggestionSourceVault: "Vault tag",
+    tagFacetUnclassified: "Other tags",
     modalBlockRefDescription: "Choose a line range and insert a legacy block reference compatible with your prior note system.",
     modalLineRefDescription: "Choose a line range and insert a direct line reference.",
     referenceExistingBlocks: "Existing block IDs",
@@ -775,26 +807,51 @@ var TRANSLATIONS = {
     savedRelation: "\u5DF2\u4FDD\u5B58\u5173\u7CFB {relation}\u3002",
     insertedLink: "\u5DF2\u63D2\u5165\u6307\u5411 {title} \u7684\u94FE\u63A5\u3002",
     invalidAliasMap: "\u6807\u7B7E\u522B\u540D\u6620\u5C04\u4E0D\u662F\u5408\u6CD5 JSON\uFF0C\u5DF2\u56DE\u9000\u4E3A\u7A7A\u6620\u5C04\u3002",
+    invalidFacetMap: "\u6807\u7B7E\u5206\u9762\u6620\u5C04\u4E0D\u662F\u5408\u6CD5 JSON\uFF0C\u5DF2\u56DE\u9000\u4E3A\u7A7A\u6620\u5C04\u3002",
+    settingsWorkflowMode: "\u5DE5\u4F5C\u6D41\u6A21\u5F0F",
+    settingsWorkflowModeDescription: "\u4E3A\u5F53\u524D\u5E93\u9009\u62E9\u9ED8\u8BA4\u63D0\u793A\u548C\u9884\u8BBE\u3002",
+    workflowModeResearcher: "\u7814\u7A76\u5458",
+    workflowModeGeneral: "\u901A\u7528\u77E5\u8BC6\u5E93",
     settingsLanguage: "\u63D2\u4EF6\u8BED\u8A00",
     settingsRelationKeys: "\u5173\u7CFB\u952E",
+    settingsRelationKeysDescription: "\u4F7F\u7528\u9017\u53F7\u5206\u9694\u7684 frontmatter \u5173\u7CFB\u952E\u3002\u7814\u7A76\u9ED8\u8BA4\u5173\u7CFB\u66F4\u9002\u5408\u6587\u732E\u7EFC\u8FF0\u3001\u8BC1\u636E\u6574\u7406\u548C\u5199\u4F5C\u3002",
+    settingsRelationKeysPreview: "\u7814\u7A76\u9ED8\u8BA4\u5173\u7CFB\u9884\u89C8",
     settingsTagAliasMap: "\u6807\u7B7E\u522B\u540D\u6620\u5C04 JSON",
+    settingsTagAliasMapDescription: "\u4ECE\u89C4\u8303\u6807\u7B7E\u5230\u522B\u540D\u7684 JSON \u5BF9\u8C61\uFF0C\u7528\u4E8E\u4E2D\u82F1\u6587\u5339\u914D\uFF0C\u4E0D\u4F1A\u81EA\u52A8\u6539\u5199\u5DF2\u6709\u6807\u7B7E\u3002",
+    settingsTagFacetMap: "\u7814\u7A76\u6807\u7B7E\u5206\u9762\u6620\u5C04 JSON",
+    settingsTagFacetMapDescription: "\u4ECE\u5206\u9762\u540D\u5230\u89C4\u8303\u6807\u7B7E\u53CA\u522B\u540D\u7684 JSON \u5BF9\u8C61\uFF0C\u7528\u4E8E\u4F18\u5148\u8BC6\u522B topic / method / dataset / writing-stage \u7B49\u7814\u7A76\u6807\u7B7E\u3002",
     settingsSemanticEnabled: "\u542F\u7528\u8BED\u4E49\u6865\u63A5",
+    settingsSemanticEnabledDescription: "\u5982\u679C\u4F60\u53EA\u4F7F\u7528\u539F\u751F\u94FE\u63A5\u548C\u642D\u914D\u63D2\u4EF6\uFF0C\u53EF\u4EE5\u5173\u95ED\u3002\u82E5\u6709\u5916\u90E8\u7814\u7A76\u68C0\u7D22 CLI\uFF0C\u518D\u5F00\u542F\u3002",
     settingsSemanticCommand: "\u8BED\u4E49\u547D\u4EE4",
+    settingsSemanticCommandDescription: "\u4EC5\u684C\u9762\u7AEF\u7684 shell \u547D\u4EE4\u3002\u652F\u6301\u5360\u4F4D\u7B26\uFF1A{{query}} {{vault}} {{file}} {{selection}}\u3002\u5EFA\u8BAE\u8FD4\u56DE citekey / author / year / page / source_type / evidence_kind\u3002",
     settingsSemanticTimeout: "\u8BED\u4E49\u8D85\u65F6\uFF08\u6BEB\u79D2\uFF09",
     settingsRecentLinks: "\u6700\u8FD1\u94FE\u63A5\u8BB0\u5FC6\u957F\u5EA6",
+    settingsResearchGuideTitle: "\u7814\u7A76\u5DE5\u4F5C\u6D41\u6307\u5357",
+    settingsResearchGuideDescription: "\u8BE5\u6A21\u5F0F\u9762\u5411\u6587\u732E\u7B14\u8BB0\u3001\u8BC1\u636E\u91C7\u96C6\u3001\u7EFC\u5408\u6574\u7406\u4E0E\u8BBA\u6587\u5199\u4F5C\u3002\u5C3D\u91CF\u8BA9\u7CBE\u786E\u5F15\u7528\u3001\u5173\u7CFB\u7C7B\u578B\u4E0E\u53D7\u63A7\u6807\u7B7E\u4FDD\u6301\u4E00\u81F4\u3002",
+    settingsResearchGuideStep1: "\u7528 Zotero Integration \u6216 PDF++ \u91C7\u96C6\u6587\u732E\u5143\u6570\u636E\u3001\u9875\u7801\u5B9A\u4F4D\u548C\u6279\u6CE8\u5185\u5BB9\u3002",
+    settingsResearchGuideStep2: "\u7528 supports / contradicts / extends \u7B49\u5173\u7CFB\u8FDE\u63A5\u6587\u732E\u3001\u89C2\u70B9\u548C\u8BC1\u636E\u3002",
+    settingsResearchGuideStep3: "\u7EF4\u62A4 topic\u3001method\u3001dataset\u3001status\u3001writing-stage \u7B49\u53D7\u63A7\u6807\u7B7E\uFF0C\u80FD\u663E\u8457\u63D0\u5347\u63A8\u8350\u8D28\u91CF\u3002",
+    settingsCompanionPluginsTitle: "\u63A8\u8350\u642D\u914D\u63D2\u4EF6",
+    settingsCompanionZoteroDesc: "\u5BFC\u5165 citekey\u3001\u6587\u732E\u7B14\u8BB0\u5143\u6570\u636E\u548C\u6765\u6E90\u6279\u6CE8\u3002",
+    settingsCompanionPdfDesc: "\u5904\u7406 PDF \u9AD8\u4EAE\u3001\u9875\u7801\u8DF3\u8F6C\u548C\u91CD\u6807\u6CE8\u9605\u8BFB\u6D41\u7A0B\u3002",
+    settingsCompanionSmartDesc: "\u63D0\u4F9B embedding \u8BED\u4E49\u53EC\u56DE\uFF0C\u540C\u65F6\u4E0D\u4E0E\u672C\u63D2\u4EF6\u7684\u94FE\u63A5\u4E0E\u6807\u7B7E\u5C42\u91CD\u590D\u3002",
+    settingsCompanionSemanticDesc: "\u5F53\u4F60\u9700\u8981\u53EF\u63A7\u7684\u7814\u7A76\u68C0\u7D22\u534F\u8BAE\u65F6\uFF0C\u4F7F\u7528\u81EA\u5DF1\u7684\u7814\u7A76\u578B\u5916\u90E8\u547D\u4EE4\u3002",
+    settingsSemanticResearchHint: "\u63A8\u8350\u8BED\u4E49\u7ED3\u679C\u5B57\u6BB5\uFF1Acitekey\u3001author\u3001year\u3001page\u3001source_type\u3001evidence_kind\u3001suggested_tags\u3001suggested_relations\u3002",
     mentionsExplanation: "\u5217\u51FA\u63D0\u53CA\u5F53\u524D\u7B14\u8BB0\u6807\u9898\u6216\u522B\u540D\u3001\u4F46\u5C1A\u672A\u5EFA\u7ACB\u94FE\u63A5\u7684\u7B14\u8BB0\u3002",
     selected: "\u5DF2\u9009",
     notSelected: "\u672A\u9009",
-    modalTagSuggestionsDescription: "\u5EFA\u8BAE\u4F1A\u4F18\u5148\u53C2\u8003\u522B\u540D\u3001\u73B0\u6709 vault \u6807\u7B7E\u3001\u6B63\u6587\u5173\u952E\u8BCD\u4E0E\u5F15\u7528\u8BED\u5883\uFF0C\u5C3D\u91CF\u907F\u514D\u76EE\u5F55\u8DEF\u5F84\u566A\u58F0\u3002",
+    modalTagSuggestionsDescription: "\u5EFA\u8BAE\u4F1A\u4F18\u5148\u53C2\u8003\u522B\u540D\u3001\u7814\u7A76\u5206\u9762\u3001\u73B0\u6709 vault \u6807\u7B7E\u3001\u6B63\u6587\u5173\u952E\u8BCD\u4E0E\u5F15\u7528\u8BED\u5883\uFF0C\u5C3D\u91CF\u907F\u514D\u76EE\u5F55\u8DEF\u5F84\u566A\u58F0\u3002",
     modalRelationDescription: "\u9009\u62E9\u8981\u5199\u5165 frontmatter \u7684\u5173\u7CFB\u7C7B\u578B\u3002",
     modalManageTagsDescription: "\u5BF9\u6574\u4E2A\u5E93\u7684\u539F\u751F\u6807\u7B7E\u8FDB\u884C\u91CD\u547D\u540D\u3001\u5408\u5E76\u6216\u5220\u9664\u3002",
     modalSemanticDescription: "\u57FA\u4E8E\u5F53\u524D\u7B14\u8BB0\u4E0A\u4E0B\u6587\u6267\u884C\u4F60\u7684\u5916\u90E8\u8BED\u4E49\u547D\u4EE4\u3002",
     tagSuggestionAlias: "\u522B\u540D\u547D\u4E2D",
+    tagSuggestionFacet: "\u7814\u7A76\u5206\u9762",
     tagSuggestionKnown: "\u5DF2\u6709\u6807\u7B7E",
     tagSuggestionKeyword: "\u5173\u952E\u8BCD\u5019\u9009",
     tagSuggestionSource: "\u6765\u6E90\u8DEF\u5F84",
+    tagSuggestionFacetLabel: "\u5206\u9762\uFF1A{facet}",
     tagSuggestionMatches: "\u547D\u4E2D\uFF1A{matches}",
-    tagSuggestionSummary: "\u4E3B\u63A8\u8350\u662F\u66F4\u9AD8\u7F6E\u4FE1\u5EA6\u7684\u6807\u7B7E\uFF0C\u8865\u5145\u5019\u9009\u7528\u4E8E\u63D0\u4F9B\u8BED\u5883\u7EBF\u7D22\uFF0C\u4F18\u5148\u52FE\u9009\u4E3B\u63A8\u8350\u3002",
+    tagSuggestionSummary: "\u4E3B\u63A8\u8350\u662F\u66F4\u9AD8\u7F6E\u4FE1\u5EA6\u7684\u7814\u7A76\u6807\u7B7E\uFF0C\u8865\u5145\u5019\u9009\u7528\u4E8E\u63D0\u4F9B\u8BED\u5883\u7EBF\u7D22\uFF0C\u4F18\u5148\u52FE\u9009\u4E3B\u63A8\u8350\u3002",
     tagSuggestionPrimaryGroup: "\u4E3B\u63A8\u8350",
     tagSuggestionSecondaryGroup: "\u8865\u5145\u5019\u9009",
     tagSuggestionEvidence: "\u4F9D\u636E\uFF1A{sources}",
@@ -805,7 +862,9 @@ var TRANSLATIONS = {
     tagSuggestionSourceContext: "\u5173\u8054\u8BED\u5883",
     tagSuggestionSourceBody: "\u6B63\u6587",
     tagSuggestionSourcePath: "\u8DEF\u5F84",
+    tagSuggestionSourceFacet: "\u5206\u9762\u8BCD\u8868",
     tagSuggestionSourceVault: "\u73B0\u6709\u6807\u7B7E",
+    tagFacetUnclassified: "\u5176\u4ED6\u6807\u7B7E",
     modalBlockRefDescription: "\u9009\u62E9\u884C\u6BB5\uFF0C\u63D2\u5165\u4E0E\u4F60\u65E7\u7B14\u8BB0\u7CFB\u7EDF\u517C\u5BB9\u7684\u5757\u5F15\u7528\u3002",
     modalLineRefDescription: "\u9009\u62E9\u884C\u53F7\u8303\u56F4\uFF0C\u63D2\u5165\u76F4\u63A5\u5B9A\u4F4D\u7684\u884C\u5F15\u7528\u3002",
     referenceExistingBlocks: "\u73B0\u6709\u5757 ID",
@@ -842,6 +901,46 @@ var RELATION_KEY_LABELS = {
   same_as: {
     en: "Same as",
     zh: "\u540C\u4E49 / \u7B49\u540C"
+  },
+  supports: {
+    en: "Supports",
+    zh: "\u652F\u6301"
+  },
+  contradicts: {
+    en: "Contradicts",
+    zh: "\u53CD\u9A73"
+  },
+  extends: {
+    en: "Extends",
+    zh: "\u6269\u5C55"
+  },
+  uses_method: {
+    en: "Uses method",
+    zh: "\u4F7F\u7528\u65B9\u6CD5"
+  },
+  uses_dataset: {
+    en: "Uses dataset",
+    zh: "\u4F7F\u7528\u6570\u636E\u96C6"
+  },
+  same_question: {
+    en: "Same question",
+    zh: "\u540C\u4E00\u7814\u7A76\u95EE\u9898"
+  },
+  evidence_for: {
+    en: "Evidence for",
+    zh: "\u4E3A\u5176\u63D0\u4F9B\u8BC1\u636E"
+  },
+  counterargument_to: {
+    en: "Counterargument to",
+    zh: "\u53CD\u8BBA\u8BC1\u4E8E"
+  },
+  reviews: {
+    en: "Reviews",
+    zh: "\u7EFC\u8FF0"
+  },
+  inspired_by: {
+    en: "Inspired by",
+    zh: "\u53D7\u5176\u542F\u53D1"
   }
 };
 function resolveLanguage(setting, locale) {
@@ -888,6 +987,18 @@ function readStringArray(value) {
   }
   return [];
 }
+function readScalarString(value) {
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => readScalarString(item)).find((item) => Boolean(item));
+  }
+  return void 0;
+}
 function uniq(values) {
   const seen = /* @__PURE__ */ new Set();
   const result = [];
@@ -928,6 +1039,30 @@ function getAllTagsForFile(app, file) {
   const cache = app.metadataCache.getFileCache(file);
   return uniq([...getFrontmatterTagsFromCache(cache), ...getInlineTagsFromCache(cache)]);
 }
+function getResearchSourceMetadataFromFrontmatter(frontmatter) {
+  if (!frontmatter) {
+    return null;
+  }
+  const author = (() => {
+    const authors = readStringArray(frontmatter.authors ?? frontmatter.author);
+    if (authors.length > 0) {
+      return authors.join(", ");
+    }
+    return readScalarString(frontmatter.author);
+  })();
+  const metadata = {
+    citekey: readScalarString(frontmatter.citekey ?? frontmatter.citationKey ?? frontmatter.citation_key ?? frontmatter.cite_key),
+    author,
+    year: readScalarString(frontmatter.year ?? frontmatter.publication_year ?? frontmatter.date),
+    sourceType: readScalarString(frontmatter.source_type ?? frontmatter.sourceType ?? frontmatter.entry_type ?? frontmatter.itemType),
+    locator: readScalarString(frontmatter.page ?? frontmatter.pages ?? frontmatter.locator),
+    evidenceKind: readScalarString(frontmatter.evidence_kind ?? frontmatter.evidenceKind ?? frontmatter.note_kind)
+  };
+  return Object.values(metadata).some(Boolean) ? metadata : null;
+}
+function getResearchSourceMetadataForFile(app, file) {
+  return getResearchSourceMetadataFromFrontmatter(app.metadataCache.getFileCache(file)?.frontmatter);
+}
 function getRelationMap(app, file, settings) {
   const cache = app.metadataCache.getFileCache(file);
   const frontmatter = cache?.frontmatter ?? {};
@@ -964,6 +1099,7 @@ function resolveNoteTarget(app, target, sourcePath) {
 function buildSearchFields(app, file, aliasMap) {
   const cache = app.metadataCache.getFileCache(file);
   const tags = getAllTagsForFile(app, file);
+  const metadata = getResearchSourceMetadataFromFrontmatter(cache?.frontmatter);
   const reverseAliases = [...aliasMap.entries()].filter(([, aliases]) => aliases.some((alias) => tags.some((tag) => tag.toLowerCase() === alias.toLowerCase()))).map(([canonical]) => canonical);
   const aliasTerms = tags.flatMap((tag) => aliasMap.get(tag) ?? []);
   return uniq([
@@ -972,6 +1108,12 @@ function buildSearchFields(app, file, aliasMap) {
     file.path,
     ...getAliasesFromCache(cache),
     ...tags,
+    metadata?.citekey ?? "",
+    metadata?.author ?? "",
+    metadata?.year ?? "",
+    metadata?.sourceType ?? "",
+    metadata?.locator ?? "",
+    metadata?.evidenceKind ?? "",
     ...aliasTerms,
     ...reverseAliases
   ]);
@@ -987,6 +1129,7 @@ async function collectLinkCandidates(app, currentFile, query, settings, recentTa
       const cache = app.metadataCache.getFileCache(file);
       const aliases = getAliasesFromCache(cache);
       const tags = getAllTagsForFile(app, file);
+      const researchMetadata = getResearchSourceMetadataFromFrontmatter(cache?.frontmatter);
       const sharedTags = tags.filter((tag) => currentTags.has(tag.toLowerCase()));
       const fields = buildSearchFields(app, file, aliasMap);
       const reasons = [];
@@ -1029,6 +1172,7 @@ async function collectLinkCandidates(app, currentFile, query, settings, recentTa
         tags,
         excerpt: getNoteExcerpt(content),
         relationMap: getRelationMap(app, file, settings),
+        researchMetadata,
         sharedTags,
         reasons: uniq(reasons),
         score
@@ -1103,6 +1247,8 @@ async function getOutgoingExactReferences(app, file) {
       raw: reference.raw,
       sourceFile: file,
       targetFile,
+      sourceMetadata: getResearchSourceMetadataForFile(app, file),
+      targetMetadata: getResearchSourceMetadataForFile(app, targetFile),
       sourceContext: buildReferenceContextSnippet(content, reference.position.start, reference.position.end),
       targetPreview: await getLineRangePreview(app, targetFile, reference.startLine, reference.endLine),
       sourceStartLine: sourceRange.startLine,
@@ -1124,6 +1270,8 @@ async function getOutgoingExactReferences(app, file) {
       raw: reference.raw,
       sourceFile: file,
       targetFile,
+      sourceMetadata: getResearchSourceMetadataForFile(app, file),
+      targetMetadata: getResearchSourceMetadataForFile(app, targetFile),
       sourceContext: buildReferenceContextSnippet(content, reference.position.start, reference.position.end),
       targetPreview: blockPreview?.preview ?? "",
       sourceStartLine: sourceRange.startLine,
@@ -1154,6 +1302,8 @@ async function getIncomingExactReferences(app, file) {
         raw: reference.raw,
         sourceFile: otherFile,
         targetFile: file,
+        sourceMetadata: getResearchSourceMetadataForFile(app, otherFile),
+        targetMetadata: getResearchSourceMetadataForFile(app, file),
         sourceContext: buildReferenceContextSnippet(content, reference.position.start, reference.position.end),
         targetPreview: await getLineRangePreview(app, file, reference.startLine, reference.endLine),
         sourceStartLine: sourceRange.startLine,
@@ -1175,6 +1325,8 @@ async function getIncomingExactReferences(app, file) {
         raw: reference.raw,
         sourceFile: otherFile,
         targetFile: file,
+        sourceMetadata: getResearchSourceMetadataForFile(app, otherFile),
+        targetMetadata: getResearchSourceMetadataForFile(app, file),
         sourceContext: buildReferenceContextSnippet(content, reference.position.start, reference.position.end),
         targetPreview: blockPreview?.preview ?? "",
         sourceStartLine: sourceRange.startLine,
@@ -1255,6 +1407,9 @@ function getResolvedRelations(app, file, settings) {
 var import_obsidian4 = require("obsidian");
 
 // src/shared.ts
+function normalizeStringArray(value) {
+  return Array.isArray(value) ? value.map((item) => String(item).trim()).filter(Boolean) : [String(value).trim()].filter(Boolean);
+}
 function parseTagAliasMap(text) {
   if (!text.trim()) {
     return /* @__PURE__ */ new Map();
@@ -1270,6 +1425,47 @@ function parseTagAliasMap(text) {
   }
   return aliasMap;
 }
+function parseTagFacetMap(text) {
+  if (!text.trim()) {
+    return /* @__PURE__ */ new Map();
+  }
+  const parsed = JSON.parse(text);
+  const facetMap = /* @__PURE__ */ new Map();
+  for (const [facet, rawValue] of Object.entries(parsed)) {
+    const normalizedFacet = facet.trim();
+    if (!normalizedFacet) {
+      continue;
+    }
+    const entries = /* @__PURE__ */ new Map();
+    if (Array.isArray(rawValue)) {
+      for (const item of rawValue) {
+        const canonical = String(item).trim();
+        if (canonical) {
+          entries.set(canonical, []);
+        }
+      }
+    } else if (rawValue && typeof rawValue === "object") {
+      for (const [canonical, aliasesValue] of Object.entries(rawValue)) {
+        const normalizedCanonical = canonical.trim();
+        if (!normalizedCanonical) {
+          continue;
+        }
+        entries.set(normalizedCanonical, normalizeStringArray(aliasesValue));
+      }
+    } else {
+      for (const canonical of normalizeStringArray(rawValue)) {
+        entries.set(canonical, []);
+      }
+    }
+    if (entries.size > 0) {
+      facetMap.set(normalizedFacet, entries);
+    }
+  }
+  return facetMap;
+}
+function formatFacetName(facet) {
+  return facet.trim().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+}
 function shellEscape(value) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
@@ -1282,7 +1478,32 @@ function isSemanticBridgeConfigured(settings) {
   return settings.semanticBridgeEnabled && Boolean(settings.semanticCommand.trim());
 }
 function getVaultBasePath(app) {
-  return app.vault.adapter.basePath ?? "";
+  const adapter = app.vault.adapter;
+  return adapter instanceof import_obsidian4.FileSystemAdapter ? adapter.getBasePath() : "";
+}
+function getDesktopRequire() {
+  const desktopRequire = globalThis.require;
+  return typeof desktopRequire === "function" ? desktopRequire : null;
+}
+function getExecFunction() {
+  const desktopRequire = getDesktopRequire();
+  if (!desktopRequire) {
+    throw new Error("desktop-shell-unavailable");
+  }
+  const childProcess = desktopRequire("child_process");
+  if (typeof childProcess?.exec !== "function") {
+    throw new Error("desktop-shell-unavailable");
+  }
+  return childProcess.exec;
+}
+function readOptionalString(value) {
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return void 0;
 }
 function normalizeResult(result) {
   if (typeof result.path !== "string" || !result.path.trim()) {
@@ -1294,6 +1515,12 @@ function normalizeResult(result) {
     score: typeof result.score === "number" ? result.score : 0,
     excerpt: typeof result.excerpt === "string" ? result.excerpt : "",
     reason: typeof result.reason === "string" ? result.reason : "",
+    citekey: readOptionalString(result.citekey ?? result.citation_key),
+    author: readOptionalString(result.author ?? result.authors),
+    year: readOptionalString(result.year),
+    page: readOptionalString(result.page ?? result.locator),
+    source_type: readOptionalString(result.source_type ?? result.sourceType),
+    evidence_kind: readOptionalString(result.evidence_kind ?? result.evidenceKind),
     suggested_tags: Array.isArray(result.suggested_tags) ? result.suggested_tags.map(String) : [],
     suggested_relations: result.suggested_relations && typeof result.suggested_relations === "object" ? Object.fromEntries(
       Object.entries(result.suggested_relations).map(([key, value]) => [
@@ -1316,7 +1543,7 @@ async function runSemanticSearch(app, settings, query, activeFile, selection) {
     filePath: activeFile?.path ?? "",
     selection
   });
-  const { exec } = await import("node:child_process");
+  const exec = getExecFunction();
   const stdout = await new Promise((resolve, reject) => {
     exec(command, { timeout: settings.semanticTimeoutMs, cwd: getVaultBasePath(app) || void 0 }, (error, resultStdout, stderr) => {
       if (error) {
@@ -1635,7 +1862,7 @@ function getNaturalLanguageBody(content) {
   return stripFrontmatter(content).split("\n").map((line) => line.trim()).filter(looksLikeNaturalLanguageLine).join("\n");
 }
 function splitCandidateTerms(input) {
-  return input.split(/[\/_|()[\]{}:：,，。.!?？、\-\s]+/).map((item) => item.trim()).filter(Boolean);
+  return input.split(/[/_|()[\]{}:：,，。.!?？、\-\s]+/).map((item) => item.trim()).filter(Boolean);
 }
 function splitCjkBlock(block) {
   const parts = block.split(/[的是在与和及并或对从将把为等由以其让使所而到于中上下内外前后再各就也很更最可能需要已未被向给按]/).map((item) => item.trim()).filter((item) => item.length >= 2);
@@ -1713,7 +1940,7 @@ function isNoisyToken(token) {
   }
   return false;
 }
-async function collectReferencedContextTerms(app, file, content) {
+function collectReferencedContextTerms(app, file, content) {
   const cache = app.metadataCache.getFileCache(file);
   const linkTargets = [
     ...cache?.links ?? [],
@@ -1767,7 +1994,13 @@ function mutateFrontmatterTags(frontmatter, oldTag, newTag) {
   }
 }
 function getTagStats(app, aliasMapText) {
-  const aliasMap = parseTagAliasMap(aliasMapText);
+  const aliasMap = (() => {
+    try {
+      return parseTagAliasMap(aliasMapText);
+    } catch {
+      return /* @__PURE__ */ new Map();
+    }
+  })();
   const stats = /* @__PURE__ */ new Map();
   for (const file of getAllMarkdownFiles(app)) {
     const tags = getAllTagsForFile(app, file);
@@ -1844,6 +2077,15 @@ function hasPhrase(text, phrase) {
 function normalizeCandidateTag(tag) {
   return normalizeTag(tag).replace(/\s+/g, " ").trim();
 }
+function facetPriorityBonus(facet) {
+  if (["topic", "method", "dataset", "writing_stage", "status"].includes(facet)) {
+    return 10;
+  }
+  if (["theory", "project"].includes(facet)) {
+    return 8;
+  }
+  return 6;
+}
 function addTagTermSignal(signals, rawTerm, source, weight, matchText = rawTerm) {
   const normalized = normalizeCandidateTag(rawTerm);
   if (!normalized || isNoisyToken(normalized) || isStructuralTerm(normalized) || isLowSignalTagTerm(normalized)) {
@@ -1889,7 +2131,7 @@ function isRedundantKeywordSuggestion(term, score, accepted) {
     return false;
   });
 }
-function mergeSuggestion(suggestions, tag, kind, score, matches, bucket, sources) {
+function mergeSuggestion(suggestions, tag, kind, score, matches, bucket, sources, facet) {
   const normalizedTag = normalizeCandidateTag(tag);
   if (!normalizedTag || isNoisyToken(normalizedTag) || isStructuralTerm(normalizedTag)) {
     return;
@@ -1907,6 +2149,7 @@ function mergeSuggestion(suggestions, tag, kind, score, matches, bucket, sources
       kind,
       score,
       bucket,
+      facet,
       matches: normalizedMatches,
       sources: normalizedSources
     });
@@ -1917,19 +2160,36 @@ function mergeSuggestion(suggestions, tag, kind, score, matches, bucket, sources
   existing.bucket = existing.bucket === "primary" || bucket === "primary" ? "primary" : "secondary";
   existing.matches = uniq2([...existing.matches, ...normalizedMatches]);
   existing.sources = uniq2([...existing.sources, ...normalizedSources]);
+  existing.facet = existing.facet ?? facet;
   if (shouldReplaceKind) {
     existing.kind = kind;
+    if (facet) {
+      existing.facet = facet;
+    }
   }
 }
-async function suggestTagsForFile(app, file, aliasMapText) {
+async function suggestTagsForFile(app, file, aliasMapText, facetMapText = "") {
   const content = await app.vault.cachedRead(file);
   const cache = app.metadataCache.getFileCache(file);
   const existing = new Set(getAllTagsForFile(app, file).map((tag) => tag.toLowerCase()));
   const knownTags = getTagStats(app, aliasMapText);
-  const aliasMap = parseTagAliasMap(aliasMapText);
+  const aliasMap = (() => {
+    try {
+      return parseTagAliasMap(aliasMapText);
+    } catch {
+      return /* @__PURE__ */ new Map();
+    }
+  })();
+  const facetMap = (() => {
+    try {
+      return parseTagFacetMap(facetMapText);
+    } catch {
+      return /* @__PURE__ */ new Map();
+    }
+  })();
   const titleTerms = extractTagTermCandidates(file.basename);
   const headings = (cache?.headings ?? []).map((heading) => heading.heading).flatMap(extractTagTermCandidates);
-  const referencedContext = await collectReferencedContextTerms(app, file, content);
+  const referencedContext = collectReferencedContextTerms(app, file, content);
   const directReferenceTerms = collectReferenceTargetTerms(content);
   const naturalBody = getNaturalLanguageBody(content);
   const noteAliases = getAliasesFromCache(cache);
@@ -1947,6 +2207,15 @@ async function suggestTagsForFile(app, file, aliasMapText) {
   const suggestions = /* @__PURE__ */ new Map();
   const keywordSignals = /* @__PURE__ */ new Map();
   const acceptedKeywordSuggestions = [];
+  const sourceTexts = [
+    ["title", file.basename],
+    ["alias", noteAliases.join("\n")],
+    ["heading", headings.join("\n")],
+    ["reference", directReferenceTerms.join("\n")],
+    ["context", [...referencedContext.terms, ...referencedContext.tags].join("\n")],
+    ["path", pathTerms.join("\n")],
+    ["body", naturalBody]
+  ];
   collectSignalsFromText(keywordSignals, file.basename, "title", 9);
   for (const alias of noteAliases) {
     collectSignalsFromText(keywordSignals, alias, "alias", 7);
@@ -1971,6 +2240,36 @@ async function suggestTagsForFile(app, file, aliasMapText) {
       continue;
     }
     mergeSuggestion(suggestions, tag, "known-tag", 24, [tag], "primary", ["context", "vault-tag"]);
+  }
+  for (const [facet, entries] of facetMap.entries()) {
+    for (const [canonical, aliases] of entries.entries()) {
+      if (existing.has(canonical.toLowerCase()) || isNoisyToken(canonical)) {
+        continue;
+      }
+      const terms = uniq2([canonical, ...aliases]);
+      const matches = [];
+      const matchedSources = /* @__PURE__ */ new Set(["facet"]);
+      for (const term of terms) {
+        for (const [source, text] of sourceTexts) {
+          if (text && hasPhrase(text, term)) {
+            matches.push(term);
+            matchedSources.add(source);
+          }
+        }
+      }
+      if (matches.length > 0) {
+        mergeSuggestion(
+          suggestions,
+          canonical,
+          "facet-tag",
+          54 + matches.length * 4 + facetPriorityBonus(facet),
+          matches,
+          "primary",
+          [...matchedSources],
+          facet
+        );
+      }
+    }
   }
   for (const [canonical, aliases] of aliasMap.entries()) {
     if (existing.has(canonical.toLowerCase()) || isNoisyToken(canonical)) {
@@ -2022,10 +2321,20 @@ async function suggestTagsForFile(app, file, aliasMapText) {
       score,
       kind,
       bucket,
+      facet: void 0,
       matches: uniq2([...signal.matches].filter((item) => item && item.toLowerCase() !== term.toLowerCase())).slice(0, 4),
       sources: uniq2([...signal.sources])
     };
-    mergeSuggestion(suggestions, suggestion.tag, suggestion.kind, suggestion.score, suggestion.matches, suggestion.bucket, suggestion.sources);
+    mergeSuggestion(
+      suggestions,
+      suggestion.tag,
+      suggestion.kind,
+      suggestion.score,
+      suggestion.matches,
+      suggestion.bucket,
+      suggestion.sources,
+      suggestion.facet
+    );
     acceptedKeywordSuggestions.push(suggestion);
   }
   return [...suggestions.values()].filter((suggestion) => Boolean(suggestion.tag)).sort((left, right) => (left.bucket === right.bucket ? 0 : left.bucket === "primary" ? -1 : 1) || right.score - left.score || left.tag.localeCompare(right.tag, "zh-Hans-CN")).slice(0, 14);
@@ -2037,6 +2346,23 @@ function renderModalHeader(parent, title, description) {
   header.createDiv({ text: title, cls: "lti-modal-title" });
   if (description) {
     header.createDiv({ text: description, cls: "lti-modal-description" });
+  }
+}
+function isPromiseLike(value) {
+  return typeof value === "object" && value !== null && "then" in value && typeof value.then === "function";
+}
+function runModalTask(task) {
+  const onError = (error) => {
+    console.error("[lti-modal] action failed", error);
+    new import_obsidian6.Notice(error instanceof Error ? error.message : String(error));
+  };
+  try {
+    const result = task();
+    if (isPromiseLike(result)) {
+      void Promise.resolve(result).catch(onError);
+    }
+  } catch (error) {
+    onError(error);
   }
 }
 var TextPromptModal = class extends import_obsidian6.Modal {
@@ -2058,27 +2384,25 @@ var TextPromptModal = class extends import_obsidian6.Modal {
       placeholder: this.placeholder
     });
     const actions = contentEl.createDiv({ cls: "lti-modal-actions" });
-    new import_obsidian6.ButtonComponent(actions).setButtonText("OK").setCta().onClick(async () => {
+    new import_obsidian6.ButtonComponent(actions).setButtonText("OK").setCta().onClick(() => this.submitValue(input));
+    new import_obsidian6.ButtonComponent(actions).setButtonText("Cancel").onClick(() => this.close());
+    input.focus();
+    input.select();
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        this.submitValue(input);
+      }
+    });
+  }
+  submitValue(input) {
+    runModalTask(async () => {
       const value = input.value.trim();
       if (!value) {
         return;
       }
       await this.onSubmit(value);
       this.close();
-    });
-    new import_obsidian6.ButtonComponent(actions).setButtonText("Cancel").onClick(() => this.close());
-    input.focus();
-    input.select();
-    input.addEventListener("keydown", async (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        const value = input.value.trim();
-        if (!value) {
-          return;
-        }
-        await this.onSubmit(value);
-        this.close();
-      }
     });
   }
 };
@@ -2139,6 +2463,10 @@ var LinkInsertModal = class extends import_obsidian6.SuggestModal {
     if (candidate.aliases.length > 0) {
       container.createDiv({ text: `${this.plugin.t("aliases")}: ${candidate.aliases.join(", ")}`, cls: "suggestion-meta" });
     }
+    const researchSummary = this.plugin.formatResearchMetadataSummary(candidate.researchMetadata);
+    if (researchSummary) {
+      container.createDiv({ text: researchSummary, cls: "suggestion-meta" });
+    }
     container.createDiv({ text: candidate.path, cls: "suggestion-meta" });
     if (candidate.sharedTags.length > 0) {
       container.createDiv({
@@ -2156,8 +2484,8 @@ var LinkInsertModal = class extends import_obsidian6.SuggestModal {
       container.createDiv({ text: candidate.excerpt, cls: "suggestion-preview" });
     }
   }
-  async onChooseSuggestion(candidate) {
-    await this.onChoose(candidate);
+  onChooseSuggestion(candidate) {
+    runModalTask(() => this.onChoose(candidate));
   }
 };
 var ReferenceInsertModal = class extends import_obsidian6.Modal {
@@ -2233,15 +2561,16 @@ var ReferenceInsertModal = class extends import_obsidian6.Modal {
       cls: "lti-ref-preview"
     });
     const actions = contentEl.createDiv({ cls: "lti-modal-actions" });
-    new import_obsidian6.ButtonComponent(actions).setButtonText(this.plugin.t(this.mode === "block_ref" ? "insertBlockRef" : "insertLineRef")).setCta().onClick(async () => {
-      if (this.mode === "block_ref") {
-        await this.plugin.insertBlockReferenceIntoEditor(this.file, this.startLine, this.endLine);
-      } else {
-        await this.plugin.insertLineReferenceIntoEditor(this.file, this.startLine, this.endLine);
-      }
-      this.close();
-    });
+    new import_obsidian6.ButtonComponent(actions).setButtonText(this.plugin.t(this.mode === "block_ref" ? "insertBlockRef" : "insertLineRef")).setCta().onClick(() => this.submitSelection());
     new import_obsidian6.ButtonComponent(actions).setButtonText(this.plugin.t("cancel")).onClick(() => this.close());
+  }
+  submitSelection() {
+    if (this.mode === "block_ref") {
+      this.plugin.insertBlockReferenceIntoEditor(this.file, this.startLine, this.endLine);
+    } else {
+      this.plugin.insertLineReferenceIntoEditor(this.file, this.startLine, this.endLine);
+    }
+    this.close();
   }
 };
 var TagManagerModal = class extends import_obsidian6.Modal {
@@ -2303,11 +2632,13 @@ var TagManagerModal = class extends import_obsidian6.Modal {
         }).open();
       });
       const deleteButton = actions.createEl("button", { text: this.plugin.t("delete"), cls: "lti-inline-button" });
-      deleteButton.addEventListener("click", async () => {
-        const updated = await deleteTagAcrossVault(this.plugin.app, stat.tag);
-        new import_obsidian6.Notice(`${this.plugin.t("tagsUpdated")} (${updated})`);
-        this.render();
-        this.plugin.refreshAllViews();
+      deleteButton.addEventListener("click", () => {
+        runModalTask(async () => {
+          const updated = await deleteTagAcrossVault(this.plugin.app, stat.tag);
+          new import_obsidian6.Notice(`${this.plugin.t("tagsUpdated")} (${updated})`);
+          this.render();
+          this.plugin.refreshAllViews();
+        });
       });
     }
   }
@@ -2326,7 +2657,12 @@ var TagSuggestionModal = class extends import_obsidian6.Modal {
     this.contentEl.empty();
     renderModalHeader(this.contentEl, this.plugin.t("suggestTags"), this.plugin.t("modalTagSuggestionsDescription"));
     this.contentEl.createDiv({ text: this.plugin.t("loading"), cls: "lti-empty" });
-    this.suggestions = await suggestTagsForFile(this.plugin.app, this.file, this.plugin.settings.tagAliasMapText);
+    this.suggestions = await suggestTagsForFile(
+      this.plugin.app,
+      this.file,
+      this.plugin.settings.tagAliasMapText,
+      this.plugin.settings.tagFacetMapText
+    );
     const preferred = this.suggestions.filter((item) => item.bucket === "primary");
     const fallback = this.suggestions.filter((item) => item.bucket === "secondary");
     this.selected = new Set(
@@ -2358,11 +2694,13 @@ var TagSuggestionModal = class extends import_obsidian6.Modal {
       this.renderSuggestionGroup(contentEl, this.plugin.t("tagSuggestionSecondaryGroup"), secondary);
     }
     const actions = contentEl.createDiv({ cls: "lti-modal-actions" });
-    new import_obsidian6.ButtonComponent(actions).setButtonText(this.plugin.t("apply")).setCta().onClick(async () => {
-      await appendTagsToFrontmatter(this.plugin.app, this.file, [...this.selected]);
-      new import_obsidian6.Notice(this.plugin.t("createdFrontmatterTag"));
-      this.plugin.refreshAllViews();
-      this.close();
+    new import_obsidian6.ButtonComponent(actions).setButtonText(this.plugin.t("apply")).setCta().onClick(() => {
+      runModalTask(async () => {
+        await appendTagsToFrontmatter(this.plugin.app, this.file, [...this.selected]);
+        new import_obsidian6.Notice(this.plugin.t("createdFrontmatterTag"));
+        this.plugin.refreshAllViews();
+        this.close();
+      });
     });
     new import_obsidian6.ButtonComponent(actions).setButtonText(this.plugin.t("cancel")).onClick(() => this.close());
   }
@@ -2401,6 +2739,12 @@ var TagSuggestionModal = class extends import_obsidian6.Modal {
       const meta = row.createDiv({ cls: "lti-tag-card-meta" });
       meta.createSpan({ text: this.kindLabel(suggestion.kind), cls: "lti-tag-card-kind" });
       meta.createSpan({ text: `${this.plugin.t("semanticScore")}: ${suggestion.score}`, cls: "lti-tag-card-score" });
+      if (suggestion.facet) {
+        row.createDiv({
+          text: this.plugin.t("tagSuggestionFacetLabel", { facet: this.plugin.formatFacetLabel(suggestion.facet) }),
+          cls: "lti-tag-card-evidence"
+        });
+      }
       if (suggestion.sources.length > 0) {
         row.createDiv({
           text: this.plugin.t("tagSuggestionEvidence", { sources: this.formatSources(suggestion.sources) }),
@@ -2418,6 +2762,9 @@ var TagSuggestionModal = class extends import_obsidian6.Modal {
   kindLabel(kind) {
     if (kind === "alias") {
       return this.plugin.t("tagSuggestionAlias");
+    }
+    if (kind === "facet-tag") {
+      return this.plugin.t("tagSuggestionFacet");
     }
     if (kind === "known-tag") {
       return this.plugin.t("tagSuggestionKnown");
@@ -2437,6 +2784,9 @@ var TagSuggestionModal = class extends import_obsidian6.Modal {
       }
       if (source === "heading") {
         return this.plugin.t("tagSuggestionSourceHeading");
+      }
+      if (source === "facet") {
+        return this.plugin.t("tagSuggestionSourceFacet");
       }
       if (source === "reference") {
         return this.plugin.t("tagSuggestionSourceReference");
@@ -2476,24 +2826,26 @@ var SemanticSearchModal = class extends import_obsidian6.Modal {
       placeholder: this.plugin.t("query")
     });
     const searchButton = form.createEl("button", { text: this.plugin.t("semanticSearch"), cls: "lti-action-button" });
-    searchButton.addEventListener("click", async () => {
-      try {
-        this.results = await runSemanticSearch(
-          this.plugin.app,
-          this.plugin.settings,
-          input.value.trim(),
-          this.activeFile,
-          this.plugin.getContextSelection()
-        );
-        if (this.results.length === 0) {
-          this.render(this.plugin.t("semanticNoResults"));
-          return;
+    searchButton.addEventListener("click", () => {
+      runModalTask(async () => {
+        try {
+          this.results = await runSemanticSearch(
+            this.plugin.app,
+            this.plugin.settings,
+            input.value.trim(),
+            this.activeFile,
+            this.plugin.getContextSelection()
+          );
+          if (this.results.length === 0) {
+            this.render(this.plugin.t("semanticNoResults"));
+            return;
+          }
+          this.render();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.render(this.plugin.semanticErrorToMessage(message));
         }
-        this.render();
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.render(this.plugin.semanticErrorToMessage(message));
-      }
+      });
     });
     if (resultsError) {
       contentEl.createDiv({ text: resultsError, cls: "lti-empty" });
@@ -2503,10 +2855,28 @@ var SemanticSearchModal = class extends import_obsidian6.Modal {
       const card = resultsContainer.createDiv({ cls: "lti-result-card" });
       card.createEl("div", { text: result.title, cls: "suggestion-title" });
       card.createDiv({ text: result.path, cls: "suggestion-meta" });
+      const researchSummary = this.plugin.formatResearchMetadataSummary({
+        citekey: result.citekey,
+        author: result.author,
+        year: result.year,
+        locator: result.page,
+        sourceType: result.source_type,
+        evidenceKind: result.evidence_kind
+      });
+      if (researchSummary) {
+        card.createDiv({ text: researchSummary, cls: "suggestion-meta" });
+      }
       if (result.reason) {
         card.createDiv({ text: `${this.plugin.t("reason")}: ${result.reason}`, cls: "suggestion-meta" });
       }
       card.createDiv({ text: `${this.plugin.t("semanticScore")}: ${result.score}`, cls: "suggestion-meta" });
+      if (result.suggested_tags.length > 0) {
+        card.createDiv({ text: `${this.plugin.t("tags")}: ${result.suggested_tags.join(", ")}`, cls: "suggestion-meta" });
+      }
+      const relationSummary = this.plugin.formatSuggestedRelationSummary(result.suggested_relations);
+      if (relationSummary) {
+        card.createDiv({ text: `${this.plugin.t("relations")}: ${relationSummary}`, cls: "suggestion-meta" });
+      }
       if (result.excerpt) {
         card.createDiv({ text: result.excerpt, cls: "suggestion-preview" });
       }
@@ -2629,11 +2999,11 @@ var _ReferencePreviewPopover = class _ReferencePreviewPopover {
     head.append(location);
     const title = document.createElement("div");
     title.className = "lti-hover-preview-title";
-    const path2 = document.createElement("div");
-    path2.className = "lti-hover-preview-path";
+    const path = document.createElement("div");
+    path.className = "lti-hover-preview-path";
     const snippet = document.createElement("pre");
     snippet.className = "lti-hover-preview-snippet";
-    root.append(head, title, path2, snippet);
+    root.append(head, title, path, snippet);
     root.addEventListener("mouseenter", () => this.cancelHide());
     root.addEventListener("mouseleave", () => this.scheduleHide());
     document.body.appendChild(root);
@@ -2641,7 +3011,7 @@ var _ReferencePreviewPopover = class _ReferencePreviewPopover {
     this.kindEl = kind;
     this.locationEl = location;
     this.titleEl = title;
-    this.pathEl = path2;
+    this.pathEl = path;
     this.snippetEl = snippet;
   }
   cleanupDuplicateRoots() {
@@ -2659,10 +3029,12 @@ var _ReferencePreviewPopover = class _ReferencePreviewPopover {
     const margin = 12;
     const safeTop = 20;
     const anchorRect = anchor.getBoundingClientRect();
-    this.rootEl.style.left = "0px";
-    this.rootEl.style.top = "0px";
-    this.rootEl.style.maxWidth = `min(28rem, calc(100vw - ${margin * 2}px))`;
-    this.rootEl.style.maxHeight = `calc(100vh - ${margin * 2}px)`;
+    this.rootEl.setCssProps({
+      "--lti-preview-left": "0px",
+      "--lti-preview-top": "0px",
+      "--lti-preview-max-width": `min(28rem, calc(100vw - ${margin * 2}px))`,
+      "--lti-preview-max-height": `calc(100vh - ${margin * 2}px)`
+    });
     const previewRect = this.rootEl.getBoundingClientRect();
     const left = clamp2(anchorRect.left, margin, window.innerWidth - previewRect.width - margin);
     const availableHeight = Math.max(160, window.innerHeight - margin * 2);
@@ -2682,8 +3054,10 @@ var _ReferencePreviewPopover = class _ReferencePreviewPopover {
       top = anchorRect.top - previewHeight - gap;
     }
     top = clamp2(top, safeTop, window.innerHeight - previewHeight - margin);
-    this.rootEl.style.left = `${left}px`;
-    this.rootEl.style.top = `${top}px`;
+    this.rootEl.setCssProps({
+      "--lti-preview-left": `${left}px`,
+      "--lti-preview-top": `${top}px`
+    });
   }
 };
 _ReferencePreviewPopover.ROOT_SELECTOR = ".lti-hover-preview";
@@ -2707,10 +3081,10 @@ function buildReadingHoverContent(doc, data) {
   title.textContent = data.title;
   root.append(title);
   if (data.path) {
-    const path2 = doc.createElement("div");
-    path2.className = "lti-reading-hover-path";
-    path2.textContent = data.path;
-    root.append(path2);
+    const path = doc.createElement("div");
+    path.className = "lti-reading-hover-path";
+    path.textContent = data.path;
+    root.append(path);
   }
   const snippet = doc.createElement("pre");
   snippet.className = "lti-reading-hover-snippet";
@@ -2897,23 +3271,125 @@ function getReadingReferenceHoverController(app, containerEl, ctx, getPreviewDat
 
 // src/settings.ts
 var import_obsidian8 = require("obsidian");
+var LEGACY_RELATION_KEYS = ["related", "see_also", "parent", "child", "same_as"];
+var RESEARCH_RELATION_KEYS = [
+  "supports",
+  "contradicts",
+  "extends",
+  "uses_method",
+  "uses_dataset",
+  "same_question",
+  "evidence_for",
+  "counterargument_to",
+  "reviews",
+  "inspired_by"
+];
+var DEFAULT_TAG_FACET_MAP_TEXT = JSON.stringify(
+  {
+    topic: {
+      "literature-review": ["\u6587\u732E\u7EFC\u8FF0", "literature review"],
+      "research-gap": ["\u7814\u7A76\u7A7A\u767D", "research gap"],
+      "knowledge-synthesis": ["\u77E5\u8BC6\u7EFC\u5408", "synthesis"]
+    },
+    method: {
+      experiment: ["\u5B9E\u9A8C", "experimental"],
+      qualitative: ["\u5B9A\u6027\u7814\u7A76", "qualitative"],
+      quantitative: ["\u5B9A\u91CF\u7814\u7A76", "quantitative"],
+      "case-study": ["\u6848\u4F8B\u7814\u7A76", "case study"]
+    },
+    dataset: {
+      survey: ["\u95EE\u5377", "survey"],
+      corpus: ["\u8BED\u6599", "corpus"],
+      interview: ["\u8BBF\u8C08", "interview"]
+    },
+    theory: {
+      framework: ["\u7406\u8BBA\u6846\u67B6", "framework"],
+      model: ["\u6A21\u578B", "model"]
+    },
+    status: {
+      "to-read": ["\u5F85\u8BFB", "to read"],
+      annotated: ["\u5DF2\u6279\u6CE8", "annotated"],
+      cited: ["\u5DF2\u5F15\u7528", "cited"]
+    },
+    writing_stage: {
+      outline: ["\u63D0\u7EB2", "outline"],
+      draft: ["\u8349\u7A3F", "draft"],
+      revision: ["\u4FEE\u8BA2", "revision"],
+      final: ["\u5B9A\u7A3F", "final"]
+    }
+  },
+  null,
+  2
+);
 var DEFAULT_SETTINGS = {
   language: "system",
-  relationKeys: ["related", "see_also", "parent", "child", "same_as"],
+  workflowMode: "researcher",
+  relationKeys: [...RESEARCH_RELATION_KEYS],
   tagAliasMapText: JSON.stringify(
     {
       "\u5927\u8BED\u8A00\u6A21\u578B": ["llm", "large-language-model"],
-      "\u624B\u51B2\u5496\u5561": ["pour-over", "coffee-brewing"]
+      "\u624B\u51B2\u5496\u5561": ["pour-over", "coffee-brewing"],
+      "\u6587\u732E\u7EFC\u8FF0": ["literature-review", "lit review"],
+      "\u7814\u7A76\u7A7A\u767D": ["research gap"]
     },
     null,
     2
   ),
+  tagFacetMapText: DEFAULT_TAG_FACET_MAP_TEXT,
   semanticBridgeEnabled: false,
   semanticCommand: "",
   semanticTimeoutMs: 3e4,
   recentLinkMemorySize: 24,
   recentLinkTargets: []
 };
+function arraysEqual(left, right) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+function normalizeLoadedSettings(data) {
+  const raw = data && typeof data === "object" ? data : {};
+  const normalized = {
+    ...DEFAULT_SETTINGS,
+    ...raw
+  };
+  if (Array.isArray(raw.relationKeys) && arraysEqual(raw.relationKeys.map(String), LEGACY_RELATION_KEYS)) {
+    normalized.relationKeys = [...RESEARCH_RELATION_KEYS];
+  }
+  if (!Array.isArray(normalized.relationKeys) || normalized.relationKeys.length === 0) {
+    normalized.relationKeys = [...RESEARCH_RELATION_KEYS];
+  } else {
+    normalized.relationKeys = normalized.relationKeys.map(String).map((item) => item.trim()).filter(Boolean);
+  }
+  normalized.workflowMode = normalized.workflowMode === "general" ? "general" : "researcher";
+  normalized.tagAliasMapText = typeof normalized.tagAliasMapText === "string" ? normalized.tagAliasMapText : DEFAULT_SETTINGS.tagAliasMapText;
+  normalized.tagFacetMapText = typeof normalized.tagFacetMapText === "string" ? normalized.tagFacetMapText : DEFAULT_TAG_FACET_MAP_TEXT;
+  normalized.semanticCommand = typeof normalized.semanticCommand === "string" ? normalized.semanticCommand : "";
+  normalized.semanticTimeoutMs = Number.isFinite(normalized.semanticTimeoutMs) && normalized.semanticTimeoutMs > 0 ? normalized.semanticTimeoutMs : DEFAULT_SETTINGS.semanticTimeoutMs;
+  normalized.recentLinkMemorySize = Number.isFinite(normalized.recentLinkMemorySize) && normalized.recentLinkMemorySize > 0 ? normalized.recentLinkMemorySize : DEFAULT_SETTINGS.recentLinkMemorySize;
+  normalized.recentLinkTargets = Array.isArray(normalized.recentLinkTargets) ? normalized.recentLinkTargets.map(String).filter(Boolean) : [];
+  return normalized;
+}
+var COMPANION_PLUGINS = [
+  {
+    name: "Zotero Integration",
+    url: "https://github.com/mgmeyers/obsidian-zotero-integration",
+    descriptionKey: "settingsCompanionZoteroDesc"
+  },
+  {
+    name: "PDF++",
+    url: "https://github.com/RyotaUshio/obsidian-pdf-plus",
+    descriptionKey: "settingsCompanionPdfDesc"
+  },
+  {
+    name: "Smart Connections",
+    url: "https://github.com/brianpetro/obsidian-smart-connections",
+    descriptionKey: "settingsCompanionSmartDesc"
+  },
+  {
+    name: "External semantic CLI",
+    url: "https://github.com/zhangyang-crazy-one/obsidian-link-tag-intelligence#external-semantic-bridge",
+    descriptionKey: "settingsCompanionSemanticDesc"
+  }
+];
 var LinkTagIntelligenceSettingTab = class extends import_obsidian8.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
@@ -2922,7 +3398,7 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian8.PluginSetting
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: this.plugin.t("pluginName") });
+    new import_obsidian8.Setting(containerEl).setName(this.plugin.t("pluginName")).setHeading();
     new import_obsidian8.Setting(containerEl).setName(this.plugin.t("settingsLanguage")).addDropdown(
       (dropdown) => dropdown.addOption("system", "System").addOption("en", "English").addOption("zh", "\u4E2D\u6587").setValue(this.plugin.settings.language).onChange(async (value) => {
         this.plugin.settings.language = value;
@@ -2930,28 +3406,57 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian8.PluginSetting
         this.display();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName(this.plugin.t("settingsRelationKeys")).setDesc("Comma-separated frontmatter keys for typed note relations.").addTextArea(
-      (area) => area.setValue(this.plugin.settings.relationKeys.join(", ")).onChange(async (value) => {
-        this.plugin.settings.relationKeys = value.split(",").map((item) => item.trim()).filter(Boolean);
+    new import_obsidian8.Setting(containerEl).setName(this.plugin.t("settingsWorkflowMode")).setDesc(this.plugin.t("settingsWorkflowModeDescription")).addDropdown(
+      (dropdown) => dropdown.addOption("researcher", this.plugin.t("workflowModeResearcher")).addOption("general", this.plugin.t("workflowModeGeneral")).setValue(this.plugin.settings.workflowMode).onChange(async (value) => {
+        this.plugin.settings.workflowMode = value;
         await this.plugin.saveSettings();
+        this.display();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName(this.plugin.t("settingsTagAliasMap")).setDesc("JSON object from canonical tag to aliases. Used for bilingual matching, not automatic rewrites.").addTextArea((area) => {
+    this.renderResearchGuide(containerEl);
+    new import_obsidian8.Setting(containerEl).setName(this.plugin.t("settingsRelationKeys")).setDesc(this.plugin.t("settingsRelationKeysDescription")).addTextArea((area) => {
+      area.inputEl.rows = 4;
+      area.inputEl.addClass("lti-settings-textarea", "lti-settings-textarea-compact");
+      area.inputEl.style.resize = "vertical";
+      area.setValue(this.plugin.settings.relationKeys.join(", ")).setPlaceholder(RESEARCH_RELATION_KEYS.join(", ")).onChange(async (value) => {
+        this.plugin.settings.relationKeys = value.split(",").map((item) => item.trim()).filter(Boolean);
+        await this.plugin.saveSettings();
+      });
+    });
+    const relationPreview = containerEl.createDiv({ cls: "setting-item-description lti-settings-inline-note" });
+    relationPreview.createSpan({ text: `${this.plugin.t("settingsRelationKeysPreview")}: ` });
+    relationPreview.appendText(
+      this.plugin.settings.relationKeys.map((key) => `${key} (${this.plugin.relationLabel(key)})`).join(" \xB7 ")
+    );
+    new import_obsidian8.Setting(containerEl).setName(this.plugin.t("settingsTagAliasMap")).setDesc(this.plugin.t("settingsTagAliasMapDescription")).addTextArea((area) => {
       area.inputEl.rows = 10;
+      area.inputEl.addClass("lti-settings-textarea");
+      area.inputEl.style.resize = "vertical";
       area.setValue(this.plugin.settings.tagAliasMapText).onChange(async (value) => {
         this.plugin.settings.tagAliasMapText = value;
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian8.Setting(containerEl).setName(this.plugin.t("settingsSemanticEnabled")).addToggle(
+    new import_obsidian8.Setting(containerEl).setName(this.plugin.t("settingsTagFacetMap")).setDesc(this.plugin.t("settingsTagFacetMapDescription")).addTextArea((area) => {
+      area.inputEl.rows = 14;
+      area.inputEl.addClass("lti-settings-textarea");
+      area.inputEl.style.resize = "vertical";
+      area.setValue(this.plugin.settings.tagFacetMapText).onChange(async (value) => {
+        this.plugin.settings.tagFacetMapText = value;
+        await this.plugin.saveSettings();
+      });
+    });
+    new import_obsidian8.Setting(containerEl).setName(this.plugin.t("settingsSemanticEnabled")).setDesc(this.plugin.t("settingsSemanticEnabledDescription")).addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.semanticBridgeEnabled).onChange(async (value) => {
         this.plugin.settings.semanticBridgeEnabled = value;
         await this.plugin.saveSettings();
         this.plugin.refreshAllViews();
       })
     );
-    new import_obsidian8.Setting(containerEl).setName(this.plugin.t("settingsSemanticCommand")).setDesc("Desktop-only shell command. Supported placeholders: {{query}} {{vault}} {{file}} {{selection}}").addTextArea((area) => {
+    new import_obsidian8.Setting(containerEl).setName(this.plugin.t("settingsSemanticCommand")).setDesc(this.plugin.t("settingsSemanticCommandDescription")).addTextArea((area) => {
       area.inputEl.rows = 4;
+      area.inputEl.addClass("lti-settings-textarea", "lti-settings-textarea-compact");
+      area.inputEl.style.resize = "vertical";
       area.setValue(this.plugin.settings.semanticCommand).setPlaceholder("python3 /path/tool.py --vault {{vault}} --query {{query}}").onChange(async (value) => {
         this.plugin.settings.semanticCommand = value;
         await this.plugin.saveSettings();
@@ -2977,6 +3482,42 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian8.PluginSetting
         }
       })
     );
+  }
+  renderResearchGuide(containerEl) {
+    const guide = containerEl.createDiv({ cls: "lti-settings-guide" });
+    guide.createEl("h3", { text: this.plugin.t("settingsResearchGuideTitle"), cls: "lti-settings-guide-title" });
+    guide.createDiv({
+      text: this.plugin.t("settingsResearchGuideDescription"),
+      cls: "setting-item-description lti-settings-guide-description"
+    });
+    const setup = guide.createEl("ol", { cls: "lti-settings-guide-list" });
+    for (const key of ["settingsResearchGuideStep1", "settingsResearchGuideStep2", "settingsResearchGuideStep3"]) {
+      setup.createEl("li", {
+        text: this.plugin.t(key),
+        cls: "setting-item-description"
+      });
+    }
+    const companionTitle = guide.createDiv({
+      text: this.plugin.t("settingsCompanionPluginsTitle"),
+      cls: "lti-settings-guide-subtitle"
+    });
+    companionTitle.setAttribute("role", "heading");
+    companionTitle.setAttribute("aria-level", "4");
+    const list = guide.createEl("ul", { cls: "lti-settings-guide-list" });
+    for (const companion of COMPANION_PLUGINS) {
+      const item = list.createEl("li", { cls: "setting-item-description" });
+      const link = item.createEl("a", {
+        text: companion.name,
+        href: companion.url
+      });
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      item.appendText(` - ${this.plugin.t(companion.descriptionKey)}`);
+    }
+    guide.createDiv({
+      text: this.plugin.t("settingsSemanticResearchHint"),
+      cls: "setting-item-description lti-settings-guide-note"
+    });
   }
 };
 
@@ -3043,6 +3584,7 @@ var LinkTagIntelligenceView = class extends import_obsidian9.ItemView {
         this.plugin.openFile(activeFile);
       });
       noteCard.createSpan({ text: activeFile.path, cls: "lti-item-meta lti-item-path" });
+      this.renderMetadataPills(noteCard, getResearchSourceMetadataForFile(this.app, activeFile));
     }
     this.renderFileSection(content, "outgoing-links", this.plugin.t("outgoingLinks"), await getOutgoingLinkFiles(this.app, activeFile), true);
     this.renderFileSection(content, "backlinks", this.plugin.t("backlinks"), await getBacklinkFiles(this.app, activeFile), false);
@@ -3122,6 +3664,7 @@ var LinkTagIntelligenceView = class extends import_obsidian9.ItemView {
         cls: "lti-pill"
       });
       meta.createSpan({ text: reference.raw, cls: "lti-ref-syntax lti-list-row-code" });
+      this.renderMetadataPills(row, direction === "outgoing" ? reference.targetMetadata : reference.sourceMetadata);
       const preview = direction === "outgoing" ? reference.targetPreview : reference.sourceContext;
       if (preview) {
         row.createDiv({ text: preview, cls: "lti-list-row-snippet" });
@@ -3168,9 +3711,42 @@ var LinkTagIntelligenceView = class extends import_obsidian9.ItemView {
       section.createDiv({ text: this.plugin.t("emptyList"), cls: "lti-empty" });
       return;
     }
-    const pills = section.createDiv({ cls: "lti-pill-row lti-tag-grid" });
+    const grouped = /* @__PURE__ */ new Map();
+    const unclassified = [];
     for (const tag of tags) {
-      pills.createSpan({ text: `#${tag}`, cls: "lti-pill lti-tag-chip" });
+      const facet = this.plugin.getFacetForTag(tag);
+      if (!facet) {
+        unclassified.push(tag);
+        continue;
+      }
+      grouped.set(facet, [...grouped.get(facet) ?? [], tag]);
+    }
+    if (grouped.size === 0) {
+      const pills = section.createDiv({ cls: "lti-pill-row lti-tag-grid" });
+      for (const tag of tags) {
+        pills.createSpan({ text: `#${tag}`, cls: "lti-pill lti-tag-chip" });
+      }
+      return;
+    }
+    for (const [facet, facetTags] of [...grouped.entries()].sort((left, right) => left[0].localeCompare(right[0], "zh-Hans-CN"))) {
+      const block = section.createDiv({ cls: "lti-item lti-item-compact" });
+      const header = block.createDiv({ cls: "lti-section-inline-head" });
+      header.createDiv({ text: this.plugin.formatFacetLabel(facet), cls: "suggestion-title" });
+      header.createSpan({ text: String(facetTags.length), cls: "suggestion-meta" });
+      const pills = block.createDiv({ cls: "lti-pill-row lti-tag-grid" });
+      for (const tag of facetTags) {
+        pills.createSpan({ text: `#${tag}`, cls: "lti-pill lti-tag-chip" });
+      }
+    }
+    if (unclassified.length > 0) {
+      const block = section.createDiv({ cls: "lti-item lti-item-compact" });
+      const header = block.createDiv({ cls: "lti-section-inline-head" });
+      header.createDiv({ text: this.plugin.t("tagFacetUnclassified"), cls: "suggestion-title" });
+      header.createSpan({ text: String(unclassified.length), cls: "suggestion-meta" });
+      const pills = block.createDiv({ cls: "lti-pill-row lti-tag-grid" });
+      for (const tag of unclassified) {
+        pills.createSpan({ text: `#${tag}`, cls: "lti-pill lti-tag-chip" });
+      }
     }
   }
   async renderMentionsSection(parent, activeFile) {
@@ -3212,6 +3788,22 @@ var LinkTagIntelligenceView = class extends import_obsidian9.ItemView {
       text: isSemanticBridgeConfigured(this.plugin.settings) ? this.plugin.t("configured") : this.plugin.t("notConfigured"),
       cls: "lti-item-subtext"
     });
+    if (this.plugin.settings.workflowMode === "researcher") {
+      section.createDiv({
+        text: this.plugin.t("settingsSemanticResearchHint"),
+        cls: "lti-item-subtext"
+      });
+    }
+  }
+  renderMetadataPills(parent, metadata) {
+    const chips = this.plugin.formatResearchMetadataChips(metadata);
+    if (chips.length === 0) {
+      return;
+    }
+    const metaRow = parent.createDiv({ cls: "lti-pill-row lti-pill-row-compact lti-reference-meta" });
+    for (const chip of chips) {
+      metaRow.createSpan({ text: chip, cls: "lti-pill" });
+    }
   }
   createSection(parent, id, title, count, defaultExpanded = false, emphasized = false) {
     const expanded = this.getSectionExpanded(id, defaultExpanded);
@@ -3276,8 +3868,9 @@ var LinkTagIntelligenceView = class extends import_obsidian9.ItemView {
     }
     this.plugin.openFile(reference.sourceFile);
   }
-  async onClose() {
+  onClose() {
     this.contentEl.empty();
+    return Promise.resolve();
   }
 };
 
@@ -3293,7 +3886,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
   }
   async onload() {
     await this.loadSettings();
-    const debugLogPath = resetDebugLog(this.app);
+    const debugLogPath = await resetDebugLog(this.app);
     debugLog(this.app, "plugin.onload", {
       version: this.manifest.version,
       debugLogPath,
@@ -3310,14 +3903,14 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
       LINK_TAG_INTELLIGENCE_VIEW,
       (leaf) => new LinkTagIntelligenceView(leaf, this)
     );
-    this.addRibbonIcon("links-coming-in", this.t("openPanel"), async () => {
-      await this.openIntelligencePanel();
+    this.addRibbonIcon("links-coming-in", this.t("openPanel"), () => {
+      void this.openIntelligencePanel();
     });
     this.addCommand({
-      id: "open-link-tag-intelligence",
+      id: "open-panel",
       name: this.t("openPanel"),
-      callback: async () => {
-        await this.openIntelligencePanel();
+      callback: () => {
+        void this.openIntelligencePanel();
       }
     });
     this.addCommand({
@@ -3391,7 +3984,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
       display: this.t("pluginName"),
       defaultMod: false
     });
-    this.captureMarkdownContext(this.app.workspace.activeLeaf);
+    this.captureMarkdownContext(this.getActiveMarkdownLeaf());
     if (!this.lastMarkdownLeaf) {
       this.captureMarkdownContext(this.app.workspace.getLeavesOfType("markdown")[0] ?? null);
     }
@@ -3423,13 +4016,9 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
   }
   onunload() {
     this.referencePreview.destroy();
-    this.app.workspace.detachLeavesOfType(LINK_TAG_INTELLIGENCE_VIEW);
   }
   async loadSettings() {
-    this.settings = {
-      ...DEFAULT_SETTINGS,
-      ...await this.loadData()
-    };
+    this.settings = normalizeLoadedSettings(await this.loadData());
   }
   async saveSettings() {
     const memory = Math.max(1, this.settings.recentLinkMemorySize);
@@ -3454,6 +4043,70 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
       return /* @__PURE__ */ new Map();
     }
   }
+  getTagFacetMap(options = {}) {
+    try {
+      return parseTagFacetMap(this.settings.tagFacetMapText);
+    } catch (error) {
+      console.warn(error);
+      if (!options.suppressNotice) {
+        new import_obsidian10.Notice(this.t("invalidFacetMap"));
+      }
+      return /* @__PURE__ */ new Map();
+    }
+  }
+  formatFacetLabel(facet) {
+    return formatFacetName(facet);
+  }
+  getFacetForTag(tag) {
+    const normalizedTag = tag.trim().toLowerCase();
+    if (!normalizedTag) {
+      return null;
+    }
+    for (const [facet, entries] of this.getTagFacetMap({ suppressNotice: true })) {
+      for (const [canonical, aliases] of entries) {
+        if (canonical.toLowerCase() === normalizedTag || aliases.some((alias) => alias.toLowerCase() === normalizedTag)) {
+          return facet;
+        }
+      }
+    }
+    return null;
+  }
+  formatResearchMetadataChips(metadata) {
+    if (!metadata) {
+      return [];
+    }
+    const chips = [];
+    if (metadata.citekey) {
+      chips.push(`@${metadata.citekey}`);
+    }
+    const authorYear = [metadata.author, metadata.year].filter(Boolean).join(" ");
+    if (authorYear) {
+      chips.push(authorYear);
+    }
+    if (metadata.sourceType) {
+      chips.push(formatFacetName(metadata.sourceType));
+    }
+    if (metadata.evidenceKind) {
+      chips.push(formatFacetName(metadata.evidenceKind));
+    }
+    if (metadata.locator) {
+      chips.push(/^(p|pp|sec|chapter|ch)\b/i.test(metadata.locator) ? metadata.locator : `p. ${metadata.locator}`);
+    }
+    return chips;
+  }
+  formatResearchMetadataSummary(metadata) {
+    return this.formatResearchMetadataChips(metadata).join(" \xB7 ");
+  }
+  formatSuggestedRelationSummary(relations) {
+    return Object.entries(relations).filter(([, values]) => values.length > 0).map(([key, values]) => `${this.relationLabel(key)} (${values.length})`).join(" \xB7 ");
+  }
+  getActiveMarkdownLeaf() {
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian10.MarkdownView);
+    if (!(activeView?.file instanceof import_obsidian10.TFile)) {
+      return null;
+    }
+    return activeView.leaf;
+  }
   captureMarkdownContext(leaf) {
     const view = leaf?.view;
     if (!(view instanceof import_obsidian10.MarkdownView) || !(view.file instanceof import_obsidian10.TFile)) {
@@ -3465,10 +4118,9 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     return changed;
   }
   getContextMarkdownView() {
-    const activeLeaf = this.app.workspace.activeLeaf;
-    const activeView = activeLeaf?.view;
-    if (activeView instanceof import_obsidian10.MarkdownView && activeView.file instanceof import_obsidian10.TFile) {
-      this.captureMarkdownContext(activeLeaf);
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian10.MarkdownView);
+    if (activeView?.file instanceof import_obsidian10.TFile) {
+      this.captureMarkdownContext(activeView.leaf);
       return activeView;
     }
     const rememberedView = this.lastMarkdownLeaf?.view;
@@ -3503,7 +4155,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     return this.getContextMarkdownView()?.editor?.getSelection() ?? "";
   }
   getNavigationLeaf() {
-    const activeLeaf = this.app.workspace.activeLeaf;
+    const activeLeaf = this.getActiveMarkdownLeaf();
     if (activeLeaf?.view instanceof import_obsidian10.MarkdownView) {
       this.captureMarkdownContext(activeLeaf);
       return activeLeaf;
@@ -3525,8 +4177,8 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
       return;
     }
     await leaf.setViewState({ type: LINK_TAG_INTELLIGENCE_VIEW, active: true });
-    this.app.workspace.revealLeaf(leaf);
-    await this.refreshAllViews();
+    await this.app.workspace.revealLeaf(leaf);
+    this.refreshAllViews();
   }
   refreshAllViews() {
     for (const leaf of this.app.workspace.getLeavesOfType(LINK_TAG_INTELLIGENCE_VIEW)) {
@@ -3543,7 +4195,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     new LinkInsertModal(
       this,
       "wikilink",
-      async (candidate) => {
+      (candidate) => {
         new ReferenceInsertModal(this, candidate.file, "block_ref").open();
       },
       { placeholder: this.t("pickBlockRefTarget") }
@@ -3553,13 +4205,13 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     new LinkInsertModal(
       this,
       "wikilink",
-      async (candidate) => {
+      (candidate) => {
         new ReferenceInsertModal(this, candidate.file, "line_ref").open();
       },
       { placeholder: this.t("pickLineRefTarget") }
     ).open();
   }
-  async insertTextIntoContextEditor(text) {
+  insertTextIntoContextEditor(text) {
     const view = this.getContextMarkdownView();
     const editor = view?.editor;
     if (!editor) {
@@ -3570,7 +4222,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     this.refreshAllViews();
     return true;
   }
-  async insertLinkIntoEditor(file, alias = "") {
+  insertLinkIntoEditor(file, alias = "") {
     const view = this.getContextMarkdownView();
     const editor = view?.editor;
     if (!editor) {
@@ -3579,29 +4231,25 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     }
     const normalizedAlias = alias.trim();
     const linkText = normalizedAlias ? `[[${file.basename}|${normalizedAlias}]]` : `[[${file.basename}]]`;
-    if (normalizedAlias && editor.getSelection().trim()) {
-      editor.replaceSelection(linkText);
-    } else {
-      editor.replaceSelection(linkText);
-    }
+    editor.replaceSelection(linkText);
     this.pushRecentTarget(file.path);
     new import_obsidian10.Notice(this.t("insertedLink", { title: file.basename }));
     this.refreshAllViews();
   }
-  async insertBlockReferenceIntoEditor(file, startLine, endLine) {
+  insertBlockReferenceIntoEditor(file, startLine, endLine) {
     const sourcePath = this.getContextMarkdownFile()?.path ?? "";
     const target = sourcePath ? this.app.metadataCache.fileToLinktext(file, sourcePath, true) : file.basename;
     const text = formatLegacyBlockReference(target, startLine, endLine);
-    if (await this.insertTextIntoContextEditor(text)) {
+    if (this.insertTextIntoContextEditor(text)) {
       this.pushRecentTarget(file.path);
       new import_obsidian10.Notice(this.t("blockRefInserted", { title: file.basename }));
     }
   }
-  async insertLineReferenceIntoEditor(file, startLine, endLine) {
+  insertLineReferenceIntoEditor(file, startLine, endLine) {
     const sourcePath = this.getContextMarkdownFile()?.path ?? "";
     const target = sourcePath ? this.app.metadataCache.fileToLinktext(file, sourcePath, true) : file.basename;
     const text = formatLegacyLineReference(target, startLine, endLine);
-    if (await this.insertTextIntoContextEditor(text)) {
+    if (this.insertTextIntoContextEditor(text)) {
       this.pushRecentTarget(file.path);
       new import_obsidian10.Notice(this.t("lineRefInserted", { title: file.basename }));
     }
@@ -3721,14 +4369,14 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     });
     this.referencePreview.hide(true);
   }
-  pushRecentTarget(path2) {
-    this.settings.recentLinkTargets = [path2, ...this.settings.recentLinkTargets.filter((item) => item !== path2)].slice(
+  pushRecentTarget(path) {
+    this.settings.recentLinkTargets = [path, ...this.settings.recentLinkTargets.filter((item) => item !== path)].slice(
       0,
       this.settings.recentLinkMemorySize
     );
     void this.saveSettings();
   }
-  async openRelationFlow() {
+  openRelationFlow() {
     const currentFile = this.getContextMarkdownFile();
     if (!(currentFile instanceof import_obsidian10.TFile)) {
       return;
@@ -3814,13 +4462,13 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
       this.app.workspace.setActiveLeaf(leaf, { focus: true });
     });
   }
-  openResolvedPath(path2) {
-    const file = resolveNoteTarget(this.app, path2);
+  openResolvedPath(path) {
+    const file = resolveNoteTarget(this.app, path);
     if (file) {
       this.openFile(file);
       return;
     }
-    new import_obsidian10.Notice(path2);
+    new import_obsidian10.Notice(path);
   }
   openResolvedLineReference(target, sourcePath, startLine, endLine) {
     const file = resolveNoteTarget(this.app, target, sourcePath);
@@ -3838,12 +4486,12 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     }
     new import_obsidian10.Notice(target);
   }
-  insertLinkFromPath(path2) {
-    const file = resolveNoteTarget(this.app, path2);
+  insertLinkFromPath(path) {
+    const file = resolveNoteTarget(this.app, path);
     if (!file) {
       return;
     }
-    void this.insertLinkIntoEditor(file, this.getContextSelection());
+    this.insertLinkIntoEditor(file, this.getContextSelection());
   }
   async addSuggestedTags(tags) {
     const currentFile = this.getContextMarkdownFile();

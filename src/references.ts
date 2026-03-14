@@ -268,7 +268,7 @@ function formatReferenceTitle(target: string): string {
   return strippedPath.replace(/\.md$/i, "");
 }
 
-export async function renderLegacyReferences(
+export function renderLegacyReferences(
   el: HTMLElement,
   ctx: MarkdownPostProcessorContext,
   helpers: {
@@ -277,7 +277,7 @@ export async function renderLegacyReferences(
     openResolvedLineReference: (target: string, sourcePath: string, startLine: number, endLine?: number) => void;
     getReadingHoverController: (containerEl: HTMLElement, ctx: MarkdownPostProcessorContext) => ReadingReferenceHoverController;
   }
-): Promise<void> {
+): void {
   const hoverController = helpers.getReadingHoverController(el, ctx);
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
   const textNodes: Text[] = [];

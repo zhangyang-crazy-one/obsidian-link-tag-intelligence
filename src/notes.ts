@@ -17,6 +17,7 @@ export interface NoteSummary {
   tags: string[];
   excerpt: string;
   relationMap: Record<string, string[]>;
+  researchMetadata: ResearchSourceMetadata | null;
 }
 
 export interface LinkCandidate extends NoteSummary {
@@ -36,6 +37,8 @@ export interface ExactReference {
   raw: string;
   sourceFile: TFile;
   targetFile: TFile;
+  sourceMetadata: ResearchSourceMetadata | null;
+  targetMetadata: ResearchSourceMetadata | null;
   sourceContext: string;
   targetPreview: string;
   sourceStartLine?: number;
@@ -43,6 +46,15 @@ export interface ExactReference {
   startLine?: number;
   endLine?: number;
   blockId?: string;
+}
+
+export interface ResearchSourceMetadata {
+  citekey?: string;
+  author?: string;
+  year?: string;
+  sourceType?: string;
+  locator?: string;
+  evidenceKind?: string;
 }
 
 function getOffsetLineRange(content: string, start: number, end: number): { startLine: number; endLine: number } {
@@ -64,6 +76,19 @@ function readStringArray(value: unknown): string[] {
     return [value.trim()].filter(Boolean);
   }
   return [];
+}
+
+function readScalarString(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => readScalarString(item)).find((item): item is string => Boolean(item));
+  }
+  return undefined;
 }
 
 function uniq(values: string[]): string[] {
@@ -129,6 +154,35 @@ export function getAllTagsForFile(app: App, file: TFile): string[] {
   return uniq([...getFrontmatterTagsFromCache(cache), ...getInlineTagsFromCache(cache)]);
 }
 
+export function getResearchSourceMetadataFromFrontmatter(frontmatter?: Record<string, unknown> | null): ResearchSourceMetadata | null {
+  if (!frontmatter) {
+    return null;
+  }
+
+  const author = (() => {
+    const authors = readStringArray(frontmatter.authors ?? frontmatter.author);
+    if (authors.length > 0) {
+      return authors.join(", ");
+    }
+    return readScalarString(frontmatter.author);
+  })();
+
+  const metadata: ResearchSourceMetadata = {
+    citekey: readScalarString(frontmatter.citekey ?? frontmatter.citationKey ?? frontmatter.citation_key ?? frontmatter.cite_key),
+    author,
+    year: readScalarString(frontmatter.year ?? frontmatter.publication_year ?? frontmatter.date),
+    sourceType: readScalarString(frontmatter.source_type ?? frontmatter.sourceType ?? frontmatter.entry_type ?? frontmatter.itemType),
+    locator: readScalarString(frontmatter.page ?? frontmatter.pages ?? frontmatter.locator),
+    evidenceKind: readScalarString(frontmatter.evidence_kind ?? frontmatter.evidenceKind ?? frontmatter.note_kind)
+  };
+
+  return Object.values(metadata).some(Boolean) ? metadata : null;
+}
+
+export function getResearchSourceMetadataForFile(app: App, file: TFile): ResearchSourceMetadata | null {
+  return getResearchSourceMetadataFromFrontmatter(app.metadataCache.getFileCache(file)?.frontmatter);
+}
+
 export function getRelationMap(app: App, file: TFile, settings: LinkTagIntelligenceSettings): Record<string, string[]> {
   const cache = app.metadataCache.getFileCache(file);
   const frontmatter = cache?.frontmatter ?? {};
@@ -173,6 +227,7 @@ export function resolveNoteTarget(app: App, target: string, sourcePath?: string)
 function buildSearchFields(app: App, file: TFile, aliasMap: Map<string, string[]>): string[] {
   const cache = app.metadataCache.getFileCache(file);
   const tags = getAllTagsForFile(app, file);
+  const metadata = getResearchSourceMetadataFromFrontmatter(cache?.frontmatter);
   const reverseAliases = [...aliasMap.entries()]
     .filter(([, aliases]) => aliases.some((alias: string) => tags.some((tag) => tag.toLowerCase() === alias.toLowerCase())))
     .map(([canonical]) => canonical);
@@ -185,6 +240,12 @@ function buildSearchFields(app: App, file: TFile, aliasMap: Map<string, string[]
     file.path,
     ...getAliasesFromCache(cache),
     ...tags,
+    metadata?.citekey ?? "",
+    metadata?.author ?? "",
+    metadata?.year ?? "",
+    metadata?.sourceType ?? "",
+    metadata?.locator ?? "",
+    metadata?.evidenceKind ?? "",
     ...aliasTerms,
     ...reverseAliases
   ]);
@@ -211,6 +272,7 @@ export async function collectLinkCandidates(
         const cache = app.metadataCache.getFileCache(file);
         const aliases = getAliasesFromCache(cache);
         const tags = getAllTagsForFile(app, file);
+        const researchMetadata = getResearchSourceMetadataFromFrontmatter(cache?.frontmatter);
         const sharedTags = tags.filter((tag) => currentTags.has(tag.toLowerCase()));
         const fields = buildSearchFields(app, file, aliasMap);
         const reasons: string[] = [];
@@ -260,6 +322,7 @@ export async function collectLinkCandidates(
           tags,
           excerpt: getNoteExcerpt(content),
           relationMap: getRelationMap(app, file, settings),
+          researchMetadata,
           sharedTags,
           reasons: uniq(reasons),
           score
@@ -299,7 +362,7 @@ export async function getOutgoingLinkFiles(app: App, file: TFile): Promise<TFile
 }
 
 export async function getBacklinkFiles(app: App, file: TFile): Promise<TFile[]> {
-  const resolvedLinks = app.metadataCache.resolvedLinks as Record<string, Record<string, number>>;
+  const resolvedLinks = app.metadataCache.resolvedLinks;
   const seen = new Set<string>();
   const backlinks: TFile[] = [];
 
@@ -349,6 +412,8 @@ export async function getOutgoingExactReferences(app: App, file: TFile): Promise
       raw: reference.raw,
       sourceFile: file,
       targetFile,
+      sourceMetadata: getResearchSourceMetadataForFile(app, file),
+      targetMetadata: getResearchSourceMetadataForFile(app, targetFile),
       sourceContext: buildReferenceContextSnippet(content, reference.position.start, reference.position.end),
       targetPreview: await getLineRangePreview(app, targetFile, reference.startLine, reference.endLine),
       sourceStartLine: sourceRange.startLine,
@@ -367,14 +432,16 @@ export async function getOutgoingExactReferences(app: App, file: TFile): Promise
     const sourceRange = getOffsetLineRange(content, reference.position.start, reference.position.end);
 
     const blockPreview = await getBlockReferencePreview(app, targetFile, reference.blockId);
-    collected.push({
-      kind: "block",
-      raw: reference.raw,
-      sourceFile: file,
-      targetFile,
-      sourceContext: buildReferenceContextSnippet(content, reference.position.start, reference.position.end),
-      targetPreview: blockPreview?.preview ?? "",
-      sourceStartLine: sourceRange.startLine,
+      collected.push({
+        kind: "block",
+        raw: reference.raw,
+        sourceFile: file,
+        targetFile,
+        sourceMetadata: getResearchSourceMetadataForFile(app, file),
+        targetMetadata: getResearchSourceMetadataForFile(app, targetFile),
+        sourceContext: buildReferenceContextSnippet(content, reference.position.start, reference.position.end),
+        targetPreview: blockPreview?.preview ?? "",
+        sourceStartLine: sourceRange.startLine,
       sourceEndLine: sourceRange.endLine,
       blockId: reference.blockId,
       startLine: blockPreview?.startLine,
@@ -410,6 +477,8 @@ export async function getIncomingExactReferences(app: App, file: TFile): Promise
         raw: reference.raw,
         sourceFile: otherFile,
         targetFile: file,
+        sourceMetadata: getResearchSourceMetadataForFile(app, otherFile),
+        targetMetadata: getResearchSourceMetadataForFile(app, file),
         sourceContext: buildReferenceContextSnippet(content, reference.position.start, reference.position.end),
         targetPreview: await getLineRangePreview(app, file, reference.startLine, reference.endLine),
         sourceStartLine: sourceRange.startLine,
@@ -433,6 +502,8 @@ export async function getIncomingExactReferences(app: App, file: TFile): Promise
         raw: reference.raw,
         sourceFile: otherFile,
         targetFile: file,
+        sourceMetadata: getResearchSourceMetadataForFile(app, otherFile),
+        targetMetadata: getResearchSourceMetadataForFile(app, file),
         sourceContext: buildReferenceContextSnippet(content, reference.position.start, reference.position.end),
         targetPreview: blockPreview?.preview ?? "",
         sourceStartLine: sourceRange.startLine,
@@ -482,7 +553,7 @@ export async function findUnlinkedMentions(
   }
 
   const results: MentionCandidate[] = [];
-  const resolvedLinks = app.metadataCache.resolvedLinks as Record<string, Record<string, number>>;
+  const resolvedLinks = app.metadataCache.resolvedLinks;
 
   for (const otherFile of getAllMarkdownFiles(app)) {
     if (otherFile.path === file.path) {

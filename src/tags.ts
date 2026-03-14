@@ -2,7 +2,7 @@ import { App, CachedMetadata, TFile } from "obsidian";
 
 import { getAllMarkdownFiles, getAliasesFromCache, getAllTagsForFile, resolveNoteTarget, stripFrontmatter } from "./notes";
 import { extractLegacyLineReferences, extractNativeBlockReferences } from "./references";
-import { parseTagAliasMap } from "./shared";
+import { parseTagAliasMap, parseTagFacetMap } from "./shared";
 
 export interface TagStat {
   tag: string;
@@ -11,11 +11,12 @@ export interface TagStat {
   aliases: string[];
 }
 
-export type TagSuggestionKind = "alias" | "known-tag" | "keyword" | "source-path";
+export type TagSuggestionKind = "alias" | "facet-tag" | "known-tag" | "keyword" | "source-path";
 export type TagSuggestionBucket = "primary" | "secondary";
 export type TagSuggestionSource =
   | "title"
   | "alias"
+  | "facet"
   | "heading"
   | "reference"
   | "context"
@@ -28,6 +29,7 @@ export interface TagSuggestion {
   score: number;
   kind: TagSuggestionKind;
   bucket: TagSuggestionBucket;
+  facet?: string;
   matches: string[];
   sources: TagSuggestionSource[];
 }
@@ -234,7 +236,7 @@ function getNaturalLanguageBody(content: string): string {
 
 function splitCandidateTerms(input: string): string[] {
   return input
-    .split(/[\/_|()[\]{}:：,，。.!?？、\-\s]+/)
+    .split(/[/_|()[\]{}:：,，。.!?？、\-\s]+/)
     .map((item) => item.trim())
     .filter(Boolean);
 }
@@ -340,10 +342,10 @@ function isNoisyToken(token: string): boolean {
   return false;
 }
 
-async function collectReferencedContextTerms(app: App, file: TFile, content: string): Promise<{
+function collectReferencedContextTerms(app: App, file: TFile, content: string): {
   terms: string[];
   tags: string[];
-}> {
+} {
   const cache = app.metadataCache.getFileCache(file);
   const linkTargets = [
     ...(cache?.links ?? []),
@@ -421,7 +423,13 @@ function mutateFrontmatterTags(frontmatter: Record<string, unknown>, oldTag: str
 }
 
 export function getTagStats(app: App, aliasMapText: string): TagStat[] {
-  const aliasMap = parseTagAliasMap(aliasMapText);
+  const aliasMap = (() => {
+    try {
+      return parseTagAliasMap(aliasMapText);
+    } catch {
+      return new Map<string, string[]>();
+    }
+  })();
   const stats = new Map<string, TagStat>();
 
   for (const file of getAllMarkdownFiles(app)) {
@@ -517,6 +525,16 @@ function normalizeCandidateTag(tag: string): string {
   return normalizeTag(tag).replace(/\s+/g, " ").trim();
 }
 
+function facetPriorityBonus(facet: string): number {
+  if (["topic", "method", "dataset", "writing_stage", "status"].includes(facet)) {
+    return 10;
+  }
+  if (["theory", "project"].includes(facet)) {
+    return 8;
+  }
+  return 6;
+}
+
 function addTagTermSignal(
   signals: Map<string, TagTermSignal>,
   rawTerm: string,
@@ -597,7 +615,8 @@ function mergeSuggestion(
   score: number,
   matches: string[],
   bucket: TagSuggestionBucket,
-  sources: TagSuggestionSource[]
+  sources: TagSuggestionSource[],
+  facet?: string
 ): void {
   const normalizedTag = normalizeCandidateTag(tag);
   if (!normalizedTag || isNoisyToken(normalizedTag) || isStructuralTerm(normalizedTag)) {
@@ -619,6 +638,7 @@ function mergeSuggestion(
       kind,
       score,
       bucket,
+      facet,
       matches: normalizedMatches,
       sources: normalizedSources
     });
@@ -630,20 +650,37 @@ function mergeSuggestion(
   existing.bucket = existing.bucket === "primary" || bucket === "primary" ? "primary" : "secondary";
   existing.matches = uniq([...existing.matches, ...normalizedMatches]);
   existing.sources = uniq([...existing.sources, ...normalizedSources]) as TagSuggestionSource[];
+  existing.facet = existing.facet ?? facet;
   if (shouldReplaceKind) {
     existing.kind = kind;
+    if (facet) {
+      existing.facet = facet;
+    }
   }
 }
 
-export async function suggestTagsForFile(app: App, file: TFile, aliasMapText: string): Promise<TagSuggestion[]> {
+export async function suggestTagsForFile(app: App, file: TFile, aliasMapText: string, facetMapText = ""): Promise<TagSuggestion[]> {
   const content = await app.vault.cachedRead(file);
   const cache = app.metadataCache.getFileCache(file);
   const existing = new Set(getAllTagsForFile(app, file).map((tag) => tag.toLowerCase()));
   const knownTags = getTagStats(app, aliasMapText);
-  const aliasMap = parseTagAliasMap(aliasMapText);
+  const aliasMap = (() => {
+    try {
+      return parseTagAliasMap(aliasMapText);
+    } catch {
+      return new Map<string, string[]>();
+    }
+  })();
+  const facetMap = (() => {
+    try {
+      return parseTagFacetMap(facetMapText);
+    } catch {
+      return new Map();
+    }
+  })();
   const titleTerms = extractTagTermCandidates(file.basename);
   const headings = (cache?.headings ?? []).map((heading) => heading.heading).flatMap(extractTagTermCandidates);
-  const referencedContext = await collectReferencedContextTerms(app, file, content);
+  const referencedContext = collectReferencedContextTerms(app, file, content);
   const directReferenceTerms = collectReferenceTargetTerms(content);
   const naturalBody = getNaturalLanguageBody(content);
   const noteAliases = getAliasesFromCache(cache);
@@ -664,6 +701,15 @@ export async function suggestTagsForFile(app: App, file: TFile, aliasMapText: st
   const suggestions = new Map<string, TagSuggestion>();
   const keywordSignals = new Map<string, TagTermSignal>();
   const acceptedKeywordSuggestions: TagSuggestion[] = [];
+  const sourceTexts: Array<[TagSuggestionSource, string]> = [
+    ["title", file.basename],
+    ["alias", noteAliases.join("\n")],
+    ["heading", headings.join("\n")],
+    ["reference", directReferenceTerms.join("\n")],
+    ["context", [...referencedContext.terms, ...referencedContext.tags].join("\n")],
+    ["path", pathTerms.join("\n")],
+    ["body", naturalBody]
+  ];
 
   collectSignalsFromText(keywordSignals, file.basename, "title", 9);
   for (const alias of noteAliases) {
@@ -690,6 +736,39 @@ export async function suggestTagsForFile(app: App, file: TFile, aliasMapText: st
       continue;
     }
     mergeSuggestion(suggestions, tag, "known-tag", 24, [tag], "primary", ["context", "vault-tag"]);
+  }
+
+  for (const [facet, entries] of facetMap.entries()) {
+    for (const [canonical, aliases] of entries.entries()) {
+      if (existing.has(canonical.toLowerCase()) || isNoisyToken(canonical)) {
+        continue;
+      }
+
+      const terms = uniq([canonical, ...aliases]);
+      const matches: string[] = [];
+      const matchedSources = new Set<TagSuggestionSource>(["facet"]);
+      for (const term of terms) {
+        for (const [source, text] of sourceTexts) {
+          if (text && hasPhrase(text, term)) {
+            matches.push(term);
+            matchedSources.add(source);
+          }
+        }
+      }
+
+      if (matches.length > 0) {
+        mergeSuggestion(
+          suggestions,
+          canonical,
+          "facet-tag",
+          54 + matches.length * 4 + facetPriorityBonus(facet),
+          matches,
+          "primary",
+          [...matchedSources],
+          facet
+        );
+      }
+    }
   }
 
   for (const [canonical, aliases] of aliasMap.entries()) {
@@ -749,15 +828,25 @@ export async function suggestTagsForFile(app: App, file: TFile, aliasMapText: st
 
     const kind: TagSuggestionKind = signal.sources.size === 1 && signal.sources.has("path") ? "source-path" : "keyword";
     const bucket: TagSuggestionBucket = kind === "source-path" || (!strongSource && score < 28) ? "secondary" : "primary";
-    const suggestion: TagSuggestion = {
-      tag: term,
-      score,
-      kind,
-      bucket,
-      matches: uniq([...signal.matches].filter((item) => item && item.toLowerCase() !== term.toLowerCase())).slice(0, 4),
-      sources: uniq([...signal.sources]) as TagSuggestionSource[]
-    };
-    mergeSuggestion(suggestions, suggestion.tag, suggestion.kind, suggestion.score, suggestion.matches, suggestion.bucket, suggestion.sources);
+      const suggestion: TagSuggestion = {
+        tag: term,
+        score,
+        kind,
+        bucket,
+        facet: undefined,
+        matches: uniq([...signal.matches].filter((item) => item && item.toLowerCase() !== term.toLowerCase())).slice(0, 4),
+        sources: uniq([...signal.sources]) as TagSuggestionSource[]
+      };
+    mergeSuggestion(
+      suggestions,
+      suggestion.tag,
+      suggestion.kind,
+      suggestion.score,
+      suggestion.matches,
+      suggestion.bucket,
+      suggestion.sources,
+      suggestion.facet
+    );
     acceptedKeywordSuggestions.push(suggestion);
   }
 

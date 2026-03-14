@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { relationKeyLabel } from "../src/i18n";
+import { getResearchSourceMetadataFromFrontmatter } from "../src/notes";
 import {
   buildReferenceContextSnippet,
   extractLegacyLineReferences,
@@ -7,7 +9,7 @@ import {
   formatLegacyBlockReference,
   formatLegacyLineReference
 } from "../src/references";
-import { buildSemanticCommand, parseTagAliasMap, shellEscape } from "../src/shared";
+import { buildSemanticCommand, parseTagAliasMap, parseTagFacetMap, shellEscape } from "../src/shared";
 import { extractTagTermCandidates } from "../src/tags";
 
 describe("parseTagAliasMap", () => {
@@ -20,6 +22,14 @@ describe("parseTagAliasMap", () => {
 describe("shellEscape", () => {
   it("escapes shell single quotes", () => {
     expect(shellEscape("it's ready")).toBe("'it'\\''s ready'");
+  });
+});
+
+describe("parseTagFacetMap", () => {
+  it("parses facet groups with canonical tags and aliases", () => {
+    const map = parseTagFacetMap('{ "method": { "experiment": ["实验", "experimental"] }, "status": ["draft"] }');
+    expect([...map.get("method")?.entries() ?? []]).toEqual([["experiment", ["实验", "experimental"]]]);
+    expect([...map.get("status")?.entries() ?? []]).toEqual([["draft", []]]);
   });
 });
 
@@ -73,5 +83,34 @@ describe("extractTagTermCandidates", () => {
     expect(candidates).toContain("萃取动力学");
     expect(candidates).toContain("V60");
     expect(candidates).toContain("聪明杯");
+  });
+});
+
+describe("relationKeyLabel", () => {
+  it("resolves researcher relation labels in Chinese", () => {
+    expect(relationKeyLabel("zh", "supports")).toBe("支持");
+    expect(relationKeyLabel("zh", "uses_method")).toBe("使用方法");
+  });
+});
+
+describe("getResearchSourceMetadataFromFrontmatter", () => {
+  it("normalizes literature-note metadata from frontmatter", () => {
+    expect(
+      getResearchSourceMetadataFromFrontmatter({
+        citekey: "smith2024coffee",
+        authors: ["Smith", "Lee"],
+        year: 2024,
+        source_type: "journal-article",
+        page: 18,
+        evidence_kind: "quote"
+      })
+    ).toEqual({
+      citekey: "smith2024coffee",
+      author: "Smith, Lee",
+      year: "2024",
+      sourceType: "journal-article",
+      locator: "18",
+      evidenceKind: "quote"
+    });
   });
 });

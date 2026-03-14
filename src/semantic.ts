@@ -1,4 +1,4 @@
-import { App, Platform, TFile } from "obsidian";
+import { App, FileSystemAdapter, Platform, TFile } from "obsidian";
 
 import type { LinkTagIntelligenceSettings } from "./settings";
 import { buildSemanticCommand } from "./shared";
@@ -9,6 +9,12 @@ export interface SemanticSearchResult {
   score: number;
   excerpt: string;
   reason: string;
+  citekey?: string;
+  author?: string;
+  year?: string;
+  page?: string;
+  source_type?: string;
+  evidence_kind?: string;
   suggested_tags: string[];
   suggested_relations: Record<string, string[]>;
 }
@@ -18,7 +24,50 @@ export function isSemanticBridgeConfigured(settings: LinkTagIntelligenceSettings
 }
 
 function getVaultBasePath(app: App): string {
-  return (app.vault.adapter as { basePath?: string }).basePath ?? "";
+  const adapter = app.vault.adapter;
+  return adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
+}
+
+type ExecFunction = (
+  command: string,
+  options: { timeout?: number; cwd?: string },
+  callback: (error: Error | null, stdout: string, stderr: string) => void
+) => void;
+
+type ChildProcessModule = {
+  exec?: ExecFunction;
+};
+
+function getDesktopRequire(): ((moduleName: string) => unknown) | null {
+  const desktopRequire = (globalThis as typeof globalThis & {
+    require?: (moduleName: string) => unknown;
+  }).require;
+
+  return typeof desktopRequire === "function" ? desktopRequire : null;
+}
+
+function getExecFunction(): ExecFunction {
+  const desktopRequire = getDesktopRequire();
+  if (!desktopRequire) {
+    throw new Error("desktop-shell-unavailable");
+  }
+
+  const childProcess = desktopRequire("child_process") as ChildProcessModule | undefined;
+  if (typeof childProcess?.exec !== "function") {
+    throw new Error("desktop-shell-unavailable");
+  }
+
+  return childProcess.exec;
+}
+
+function readOptionalString(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return undefined;
 }
 
 function normalizeResult(result: Record<string, unknown>): SemanticSearchResult | null {
@@ -32,6 +81,12 @@ function normalizeResult(result: Record<string, unknown>): SemanticSearchResult 
     score: typeof result.score === "number" ? result.score : 0,
     excerpt: typeof result.excerpt === "string" ? result.excerpt : "",
     reason: typeof result.reason === "string" ? result.reason : "",
+    citekey: readOptionalString(result.citekey ?? result.citation_key),
+    author: readOptionalString(result.author ?? result.authors),
+    year: readOptionalString(result.year),
+    page: readOptionalString(result.page ?? result.locator),
+    source_type: readOptionalString(result.source_type ?? result.sourceType),
+    evidence_kind: readOptionalString(result.evidence_kind ?? result.evidenceKind),
     suggested_tags: Array.isArray(result.suggested_tags) ? result.suggested_tags.map(String) : [],
     suggested_relations:
       result.suggested_relations && typeof result.suggested_relations === "object"
@@ -66,7 +121,7 @@ export async function runSemanticSearch(
     selection
   });
 
-  const { exec } = await import("node:child_process");
+  const exec = getExecFunction();
 
   const stdout = await new Promise<string>((resolve, reject) => {
     exec(command, { timeout: settings.semanticTimeoutMs, cwd: getVaultBasePath(app) || undefined }, (error, resultStdout, stderr) => {
