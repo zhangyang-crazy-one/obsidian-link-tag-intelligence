@@ -9,6 +9,13 @@ import {
   resolveNoteTarget
 } from "./notes";
 import {
+  applyCompanionPresetToVault,
+  buildResearchWorkbenchProfile,
+  readResearchWorkbenchState,
+  type CompanionPluginId,
+  type ResearchWorkbenchState
+} from "./companion-plugins";
+import {
   formatLegacyBlockReference,
   formatLegacyLineReference,
   getBlockReferencePreview,
@@ -191,6 +198,76 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     const memory = Math.max(1, this.settings.recentLinkMemorySize);
     this.settings.recentLinkTargets = this.settings.recentLinkTargets.slice(0, memory);
     await this.saveData(this.settings);
+  }
+
+  async getResearchWorkbenchState(): Promise<ResearchWorkbenchState> {
+    return readResearchWorkbenchState(
+      this.app,
+      buildResearchWorkbenchProfile(this.settings, this.currentLanguage())
+    );
+  }
+
+  async applyResearchPreset(): Promise<void> {
+    const state = await this.getResearchWorkbenchState();
+    for (const companionId of ["obsidian-zotero-desktop-connector", "pdf-plus", "smart-connections"] as const) {
+      const status = state.companions.find((item) => item.id === companionId);
+      if (!status?.installed) {
+        continue;
+      }
+      await applyCompanionPresetToVault(this.app, companionId, state.profile);
+    }
+    this.refreshAllViews();
+    new Notice(this.t("settingsWorkbenchPresetApplied"));
+  }
+
+  async applyCompanionPreset(id: CompanionPluginId): Promise<boolean> {
+    if (id === "semantic-bridge") {
+      await this.saveSettings();
+      this.refreshAllViews();
+      new Notice(this.t("settingsWorkbenchCompanionApplied", { name: "Semantic bridge" }));
+      return true;
+    }
+
+    const state = await this.getResearchWorkbenchState();
+    const status = state.companions.find((item) => item.id === id);
+    if (!status?.installed) {
+      new Notice(this.t("settingsWorkbenchPluginMissing"));
+      return false;
+    }
+
+    await applyCompanionPresetToVault(this.app, id, state.profile);
+    this.refreshAllViews();
+    new Notice(this.t("settingsWorkbenchCompanionApplied", { name: this.getCompanionDisplayName(id) }));
+    return true;
+  }
+
+  openCompanionSettings(id: CompanionPluginId): boolean {
+    const settingApi = (this.app as { setting?: { open?: () => void; openTabById?: (tabId: string) => void } }).setting;
+    if (!settingApi?.open || !settingApi.openTabById) {
+      new Notice(this.t("settingsWorkbenchSettingsUnavailable"));
+      return false;
+    }
+    settingApi.open();
+    settingApi.openTabById(id === "semantic-bridge" ? this.manifest.id : id);
+    return true;
+  }
+
+  async importZoteroNotes(): Promise<boolean> {
+    return this.executeCommandByCandidates([
+      "obsidian-zotero-desktop-connector:zdc-import-notes",
+      "zdc-import-notes"
+    ]);
+  }
+
+  async openSmartConnectionsView(): Promise<boolean> {
+    return this.executeCommandByCandidates([
+      "smart-connections:smart-connections-view",
+      "smart-connections-view"
+    ]);
+  }
+
+  async openPdfPlusSettings(): Promise<boolean> {
+    return this.openCompanionSettings("pdf-plus");
   }
 
   currentLanguage(): UILanguage {
@@ -813,5 +890,46 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       return this.formatRangeLabel(options.startLine, options.endLine);
     }
     return undefined;
+  }
+
+  private getCompanionDisplayName(id: CompanionPluginId): string {
+    switch (id) {
+      case "obsidian-zotero-desktop-connector":
+        return "Zotero Integration";
+      case "pdf-plus":
+        return "PDF++";
+      case "smart-connections":
+        return "Smart Connections";
+      case "semantic-bridge":
+        return "Semantic bridge";
+    }
+  }
+
+  private async executeCommandByCandidates(candidates: string[]): Promise<boolean> {
+    const commands = ((this.app as unknown as {
+      commands?: {
+        commands?: Record<string, unknown>;
+        executeCommandById?: (commandId: string) => boolean | Promise<boolean>;
+      };
+    }).commands);
+
+    const commandRegistry = commands?.commands;
+    const commandIds = commandRegistry ? Object.keys(commandRegistry) : [];
+    const resolved = candidates.find((candidate) => commandIds.includes(candidate))
+      ?? candidates
+        .map((candidate) => commandIds.find((commandId) => commandId.endsWith(`:${candidate}`) || commandId.includes(candidate)))
+        .find(Boolean);
+
+    if (!resolved || typeof commands?.executeCommandById !== "function") {
+      new Notice(this.t("settingsWorkbenchCommandUnavailable"));
+      return false;
+    }
+
+    const result = await commands.executeCommandById(resolved);
+    if (result === false) {
+      new Notice(this.t("settingsWorkbenchCommandUnavailable"));
+      return false;
+    }
+    return true;
   }
 }

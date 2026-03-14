@@ -1,7 +1,13 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, PluginSettingTab } from "obsidian";
 
-import type LinkTagIntelligencePlugin from "./main";
+import {
+  type CompanionPluginId,
+  type CompanionPluginStatus,
+  normalizeDelimitedList,
+  type ResearchWorkbenchState
+} from "./companion-plugins";
 import type { LanguageSetting } from "./i18n";
+import type LinkTagIntelligencePlugin from "./main";
 
 export type WorkflowMode = "general" | "researcher";
 
@@ -19,9 +25,29 @@ export const RESEARCH_RELATION_KEYS = [
   "inspired_by"
 ];
 
+const RESEARCH_LITERATURE_PATH = "Knowledge/Research/Literature";
+const RESEARCH_TEMPLATE_PATH = "Knowledge/Research/Templates/zotero-literature-note.md";
+const RESEARCH_ATTACHMENTS_PATH = "Knowledge/Research/Attachments";
+const SMART_CONNECTIONS_EXCLUSIONS = [
+  ".obsidian",
+  ".smart-env",
+  "Archive/Imports",
+  "Excalidraw",
+  "note_reader"
+];
+const SMART_CONNECTIONS_HEADINGS = [
+  "目录",
+  "Contents",
+  "参考文献",
+  "References",
+  "Acknowledgements"
+];
+const DEFAULT_SMART_RESULTS_LIMIT = 20;
+
 export const DEFAULT_TAG_FACET_MAP_TEXT = JSON.stringify(
   {
     topic: {
+      "research-question": ["研究问题", "research question", "rq"],
       "literature-review": ["文献综述", "literature review"],
       "research-gap": ["研究空白", "research gap"],
       "knowledge-synthesis": ["知识综合", "synthesis"]
@@ -30,16 +56,19 @@ export const DEFAULT_TAG_FACET_MAP_TEXT = JSON.stringify(
       experiment: ["实验", "experimental"],
       qualitative: ["定性研究", "qualitative"],
       quantitative: ["定量研究", "quantitative"],
-      "case-study": ["案例研究", "case study"]
+      "case-study": ["案例研究", "case study"],
+      "mixed-methods": ["混合方法", "mixed methods"]
     },
     dataset: {
       survey: ["问卷", "survey"],
       corpus: ["语料", "corpus"],
-      interview: ["访谈", "interview"]
+      interview: ["访谈", "interview"],
+      "field-notes": ["田野笔记", "field notes"]
     },
     theory: {
       framework: ["理论框架", "framework"],
-      model: ["模型", "model"]
+      model: ["模型", "model"],
+      proposition: ["命题", "proposition"]
     },
     status: {
       "to-read": ["待读", "to read"],
@@ -51,6 +80,12 @@ export const DEFAULT_TAG_FACET_MAP_TEXT = JSON.stringify(
       draft: ["草稿", "draft"],
       revision: ["修订", "revision"],
       final: ["定稿", "final"]
+    },
+    source_kind: {
+      "literature-note": ["文献笔记", "literature note", "paper note"],
+      "source-note": ["来源笔记", "source note"],
+      "reading-note": ["阅读笔记", "reading note"],
+      "draft-note": ["写作草稿", "draft note"]
     }
   },
   null,
@@ -68,6 +103,13 @@ export interface LinkTagIntelligenceSettings {
   semanticTimeoutMs: number;
   recentLinkMemorySize: number;
   recentLinkTargets: string[];
+  researchLiteratureFolder: string;
+  researchTemplatePath: string;
+  researchAttachmentsFolder: string;
+  researchOpenNoteAfterImport: boolean;
+  smartConnectionsFolderExclusions: string;
+  smartConnectionsHeadingExclusions: string;
+  smartConnectionsResultsLimit: number;
 }
 
 export const DEFAULT_SETTINGS: LinkTagIntelligenceSettings = {
@@ -76,10 +118,13 @@ export const DEFAULT_SETTINGS: LinkTagIntelligenceSettings = {
   relationKeys: [...RESEARCH_RELATION_KEYS],
   tagAliasMapText: JSON.stringify(
     {
+      "文献笔记": ["literature-note", "paper-note", "source-note"],
+      "研究问题": ["research-question", "rq"],
       "大语言模型": ["llm", "large-language-model"],
       "手冲咖啡": ["pour-over", "coffee-brewing"],
       "文献综述": ["literature-review", "lit review"],
-      "研究空白": ["research gap"]
+      "研究空白": ["research gap"],
+      "方法论": ["methodology", "framework"]
     },
     null,
     2
@@ -89,11 +134,45 @@ export const DEFAULT_SETTINGS: LinkTagIntelligenceSettings = {
   semanticCommand: "",
   semanticTimeoutMs: 30000,
   recentLinkMemorySize: 24,
-  recentLinkTargets: []
+  recentLinkTargets: [],
+  researchLiteratureFolder: RESEARCH_LITERATURE_PATH,
+  researchTemplatePath: RESEARCH_TEMPLATE_PATH,
+  researchAttachmentsFolder: RESEARCH_ATTACHMENTS_PATH,
+  researchOpenNoteAfterImport: true,
+  smartConnectionsFolderExclusions: SMART_CONNECTIONS_EXCLUSIONS.join(", "),
+  smartConnectionsHeadingExclusions: SMART_CONNECTIONS_HEADINGS.join(", "),
+  smartConnectionsResultsLimit: DEFAULT_SMART_RESULTS_LIMIT
 };
+
+const COMPANION_META = {
+  "obsidian-zotero-desktop-connector": {
+    name: "Zotero Integration",
+    descriptionKey: "settingsCompanionZoteroDesc" as const
+  },
+  "pdf-plus": {
+    name: "PDF++",
+    descriptionKey: "settingsCompanionPdfDesc" as const
+  },
+  "smart-connections": {
+    name: "Smart Connections",
+    descriptionKey: "settingsCompanionSmartDesc" as const
+  },
+  "semantic-bridge": {
+    name: "Semantic bridge",
+    descriptionKey: "settingsCompanionSemanticDesc" as const
+  }
+} satisfies Record<CompanionPluginId, { name: string; descriptionKey: Parameters<LinkTagIntelligencePlugin["t"]>[0] }>;
 
 function arraysEqual(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function normalizeJsonText(value: unknown, fallback: string): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function normalizeDelimitedSetting(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value : fallback;
 }
 
 export function normalizeLoadedSettings(data: unknown): LinkTagIntelligenceSettings {
@@ -114,8 +193,8 @@ export function normalizeLoadedSettings(data: unknown): LinkTagIntelligenceSetti
   }
 
   normalized.workflowMode = normalized.workflowMode === "general" ? "general" : "researcher";
-  normalized.tagAliasMapText = typeof normalized.tagAliasMapText === "string" ? normalized.tagAliasMapText : DEFAULT_SETTINGS.tagAliasMapText;
-  normalized.tagFacetMapText = typeof normalized.tagFacetMapText === "string" ? normalized.tagFacetMapText : DEFAULT_TAG_FACET_MAP_TEXT;
+  normalized.tagAliasMapText = normalizeJsonText(normalized.tagAliasMapText, DEFAULT_SETTINGS.tagAliasMapText);
+  normalized.tagFacetMapText = normalizeJsonText(normalized.tagFacetMapText, DEFAULT_TAG_FACET_MAP_TEXT);
   normalized.semanticCommand = typeof normalized.semanticCommand === "string" ? normalized.semanticCommand : "";
   normalized.semanticTimeoutMs = Number.isFinite(normalized.semanticTimeoutMs) && normalized.semanticTimeoutMs > 0
     ? normalized.semanticTimeoutMs
@@ -126,35 +205,34 @@ export function normalizeLoadedSettings(data: unknown): LinkTagIntelligenceSetti
   normalized.recentLinkTargets = Array.isArray(normalized.recentLinkTargets)
     ? normalized.recentLinkTargets.map(String).filter(Boolean)
     : [];
+  normalized.researchLiteratureFolder = normalizeDelimitedSetting(normalized.researchLiteratureFolder, RESEARCH_LITERATURE_PATH);
+  normalized.researchTemplatePath = normalizeDelimitedSetting(normalized.researchTemplatePath, RESEARCH_TEMPLATE_PATH);
+  normalized.researchAttachmentsFolder = normalizeDelimitedSetting(normalized.researchAttachmentsFolder, RESEARCH_ATTACHMENTS_PATH);
+  normalized.researchOpenNoteAfterImport = typeof normalized.researchOpenNoteAfterImport === "boolean"
+    ? normalized.researchOpenNoteAfterImport
+    : DEFAULT_SETTINGS.researchOpenNoteAfterImport;
+  normalized.smartConnectionsFolderExclusions = normalizeDelimitedSetting(
+    normalized.smartConnectionsFolderExclusions,
+    DEFAULT_SETTINGS.smartConnectionsFolderExclusions
+  );
+  normalized.smartConnectionsHeadingExclusions = normalizeDelimitedSetting(
+    normalized.smartConnectionsHeadingExclusions,
+    DEFAULT_SETTINGS.smartConnectionsHeadingExclusions
+  );
+  normalized.smartConnectionsResultsLimit = Number.isFinite(normalized.smartConnectionsResultsLimit) && normalized.smartConnectionsResultsLimit > 0
+    ? normalized.smartConnectionsResultsLimit
+    : DEFAULT_SETTINGS.smartConnectionsResultsLimit;
 
   return normalized;
 }
 
-const COMPANION_PLUGINS = [
-  {
-    name: "Zotero Integration",
-    url: "https://github.com/mgmeyers/obsidian-zotero-integration",
-    descriptionKey: "settingsCompanionZoteroDesc" as const
-  },
-  {
-    name: "PDF++",
-    url: "https://github.com/RyotaUshio/obsidian-pdf-plus",
-    descriptionKey: "settingsCompanionPdfDesc" as const
-  },
-  {
-    name: "Smart Connections",
-    url: "https://github.com/brianpetro/obsidian-smart-connections",
-    descriptionKey: "settingsCompanionSmartDesc" as const
-  },
-  {
-    name: "External semantic CLI",
-    url: "https://github.com/zhangyang-crazy-one/obsidian-link-tag-intelligence#external-semantic-bridge",
-    descriptionKey: "settingsCompanionSemanticDesc" as const
-  }
-];
+type WorkbenchPage = "overview" | "workflow" | "plugins" | "taxonomy";
 
 export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
   plugin: LinkTagIntelligencePlugin;
+  private renderToken = 0;
+  private activePage: WorkbenchPage = "overview";
+  private activeCompanionId: CompanionPluginId | null = null;
 
   constructor(app: App, plugin: LinkTagIntelligencePlugin) {
     super(app, plugin);
@@ -164,198 +242,1092 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
+    containerEl.addClass("lti-settings-root");
 
-    new Setting(containerEl)
-      .setName(this.plugin.t("pluginName"))
-      .setHeading();
+    const shell = containerEl.createDiv({ cls: "lti-workbench" });
+    shell.createDiv({
+      text: this.plugin.t("loading"),
+      cls: "lti-workbench-loading"
+    });
 
-    new Setting(containerEl)
-      .setName(this.plugin.t("settingsLanguage"))
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption("system", "System")
-          .addOption("en", "English")
-          .addOption("zh", "中文")
-          .setValue(this.plugin.settings.language)
-          .onChange(async (value) => {
-            this.plugin.settings.language = value as LanguageSetting;
-            await this.plugin.saveSettings();
-            this.display();
-          })
-      );
+    const token = ++this.renderToken;
+    void this.renderWorkbench(shell, token);
+  }
 
-    new Setting(containerEl)
-      .setName(this.plugin.t("settingsWorkflowMode"))
-      .setDesc(this.plugin.t("settingsWorkflowModeDescription"))
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption("researcher", this.plugin.t("workflowModeResearcher"))
-          .addOption("general", this.plugin.t("workflowModeGeneral"))
-          .setValue(this.plugin.settings.workflowMode)
-          .onChange(async (value) => {
-            this.plugin.settings.workflowMode = value as WorkflowMode;
-            await this.plugin.saveSettings();
-            this.display();
-          })
-      );
+  private async renderWorkbench(containerEl: HTMLElement, token: number): Promise<void> {
+    const state = await this.plugin.getResearchWorkbenchState();
+    if (token !== this.renderToken) {
+      return;
+    }
 
-    this.renderResearchGuide(containerEl);
+    containerEl.empty();
+    const nav = containerEl.createDiv({ cls: "lti-workbench-page-nav" });
+    this.createPageTab(nav, "overview", this.plugin.t("settingsWorkbenchPageOverview"));
+    this.createPageTab(nav, "workflow", this.plugin.t("settingsWorkbenchPageWorkflow"));
+    this.createPageTab(nav, "plugins", this.plugin.t("settingsWorkbenchPagePlugins"));
+    this.createPageTab(nav, "taxonomy", this.plugin.t("settingsWorkbenchPageTaxonomy"));
 
-    new Setting(containerEl)
-      .setName(this.plugin.t("settingsRelationKeys"))
-      .setDesc(this.plugin.t("settingsRelationKeysDescription"))
-      .addTextArea((area) => {
-        area.inputEl.rows = 4;
-        area.inputEl.addClass("lti-settings-textarea", "lti-settings-textarea-compact");
-        area.inputEl.style.resize = "vertical";
-        area
-          .setValue(this.plugin.settings.relationKeys.join(", "))
-          .setPlaceholder(RESEARCH_RELATION_KEYS.join(", "))
-          .onChange(async (value) => {
+    const page = containerEl.createDiv({ cls: "lti-workbench-page" });
+    switch (this.activePage) {
+      case "overview":
+        this.renderOverviewPage(page, state);
+        break;
+      case "workflow":
+        this.renderWorkflowPage(page, state);
+        break;
+      case "plugins":
+        this.renderPluginsPage(page, state);
+        break;
+      case "taxonomy":
+        this.renderTaxonomyPage(page);
+        break;
+    }
+  }
+
+  private openPage(page: WorkbenchPage, companionId: CompanionPluginId | null = null): void {
+    this.activePage = page;
+    if (companionId) {
+      this.activeCompanionId = companionId;
+    } else if (page !== "plugins") {
+      this.activeCompanionId = null;
+    }
+    this.display();
+  }
+
+  private createPageTab(containerEl: HTMLElement, page: WorkbenchPage, label: string): void {
+    const button = containerEl.createEl("button", {
+      cls: `lti-workbench-page-tab${this.activePage === page ? " is-active" : ""}`,
+      text: label,
+      type: "button"
+    });
+    button.addEventListener("click", () => {
+      if (this.activePage !== page) {
+        this.openPage(page);
+      }
+    });
+  }
+
+  private renderOverviewPage(containerEl: HTMLElement, state: ResearchWorkbenchState): void {
+    this.renderHero(containerEl, state);
+    this.renderModuleSection(containerEl);
+    this.renderCompanionSummarySection(containerEl, state);
+  }
+
+  private renderWorkflowPage(containerEl: HTMLElement, state: ResearchWorkbenchState): void {
+    this.renderActionsSection(containerEl);
+
+    const grid = containerEl.createDiv({ cls: "lti-workbench-settings-grid" });
+
+    const preferences = this.createSectionCard(
+      grid,
+      this.plugin.t("settingsWorkbenchPreferencesTitle"),
+      this.plugin.t("settingsWorkbenchPreferencesDescription")
+    );
+    preferences.addClass("is-form");
+    this.renderPreferencesDrawer(preferences);
+
+    const paths = this.createSectionCard(
+      grid,
+      this.plugin.t("settingsWorkbenchPathsTitle"),
+      this.plugin.t("settingsWorkbenchPathsDescription")
+    );
+    paths.addClass("is-form");
+    this.renderPathsDrawer(paths);
+
+    const smart = this.createSectionCard(
+      grid,
+      this.plugin.t("settingsWorkbenchRecallTitle"),
+      this.plugin.t("settingsWorkbenchRecallDescription")
+    );
+    smart.addClass("is-form");
+    this.renderSmartDrawer(smart);
+
+    const semantic = this.createSectionCard(
+      grid,
+      this.plugin.t("settingsWorkbenchSemanticTitle"),
+      this.plugin.t("settingsWorkbenchSemanticDescription")
+    );
+    semantic.addClass("is-form");
+    this.renderSemanticDrawer(semantic, state);
+  }
+
+  private renderPluginsPage(containerEl: HTMLElement, state: ResearchWorkbenchState): void {
+    const section = this.createSectionCard(
+      containerEl,
+      this.plugin.t("settingsWorkbenchCompanionTitle"),
+      this.plugin.t("settingsWorkbenchCompanionDescription")
+    );
+    const list = section.createDiv({ cls: "lti-workbench-plugin-list" });
+    for (const companion of state.companions) {
+      this.renderCompanionPanel(list, companion, state);
+    }
+  }
+
+  private renderTaxonomyPage(containerEl: HTMLElement): void {
+    const section = this.createSectionCard(
+      containerEl,
+      this.plugin.t("settingsWorkbenchAdvancedTitle"),
+      this.plugin.t("settingsWorkbenchAdvancedDescription")
+    );
+    section.addClass("is-form");
+    this.renderTaxonomyDrawer(section);
+  }
+
+  private renderHero(containerEl: HTMLElement, state: ResearchWorkbenchState): void {
+    const readyCompanions = state.companions.filter((item) => item.ready && !item.optional).length;
+    const requiredCompanions = state.companions.filter((item) => !item.optional).length;
+
+    const hero = containerEl.createDiv({ cls: "lti-workbench-hero" });
+    const top = hero.createDiv({ cls: "lti-workbench-hero-top" });
+    const copy = top.createDiv({ cls: "lti-workbench-hero-copy" });
+    copy.createDiv({
+      text: this.plugin.t("settingsWorkbenchEyebrow"),
+      cls: "lti-workbench-eyebrow"
+    });
+    copy.createDiv({
+      text: this.plugin.t("settingsWorkbenchTitle"),
+      cls: "lti-workbench-title"
+    });
+    copy.createDiv({
+      text: this.plugin.t("settingsWorkbenchDescription"),
+      cls: "setting-item-description lti-workbench-description"
+    });
+
+    const side = top.createDiv({ cls: "lti-workbench-hero-side" });
+    const buttons = side.createDiv({ cls: "lti-workbench-hero-action-grid" });
+    this.createAsyncButton(buttons, this.plugin.t("settingsWorkbenchApplyAll"), async () => {
+      await this.plugin.applyResearchPreset();
+    });
+    this.createActionButton(buttons, this.plugin.t("settingsWorkbenchRefresh"), () => this.display());
+    this.createActionButton(buttons, this.plugin.t("settingsWorkbenchPageWorkflow"), () => this.openPage("workflow"));
+
+    const prefs = side.createDiv({ cls: "lti-workbench-hero-meta-grid" });
+    this.renderMetaCard(
+      prefs,
+      this.plugin.t("settingsLanguage"),
+      this.formatLanguageLabel(this.plugin.settings.language)
+    );
+    this.renderMetaCard(
+      prefs,
+      this.plugin.t("settingsWorkflowMode"),
+      this.plugin.t(this.plugin.settings.workflowMode === "researcher" ? "workflowModeResearcher" : "workflowModeGeneral")
+    );
+
+    const stats = hero.createDiv({ cls: "lti-workbench-stat-strip" });
+    this.renderStat(stats, this.plugin.t("settingsWorkbenchStatReady"), `${readyCompanions}/${requiredCompanions}`);
+    this.renderStat(
+      stats,
+      this.plugin.t("settingsWorkbenchStatMode"),
+      this.plugin.t(this.plugin.settings.workflowMode === "researcher" ? "workflowModeResearcher" : "workflowModeGeneral")
+    );
+    this.renderStat(stats, this.plugin.t("settingsWorkbenchStatIndexer"), String(state.enabledPluginIds.length));
+    this.renderStat(
+      stats,
+      this.plugin.t("settingsWorkbenchStatSemantic"),
+      state.profile.semanticEnabled ? this.plugin.t("settingsWorkbenchOn") : this.plugin.t("settingsWorkbenchOff")
+    );
+  }
+
+  private renderActionsSection(containerEl: HTMLElement): void {
+    const section = this.createSectionCard(
+      containerEl,
+      this.plugin.t("settingsWorkbenchQuickActionsTitle"),
+      this.plugin.t("settingsWorkbenchQuickActionsDescription")
+    );
+    section.addClass("is-featured");
+
+    const groups = section.createDiv({ cls: "lti-workbench-action-group-grid" });
+    this.renderActionGroup(
+      groups,
+      this.plugin.t("settingsWorkbenchActionGroupCaptureTitle"),
+      this.plugin.t("settingsWorkbenchActionGroupCaptureDescription"),
+      [
+        {
+          title: this.plugin.t("settingsWorkbenchActionZoteroTitle"),
+          description: this.plugin.t("settingsWorkbenchActionZoteroDescription"),
+          onClick: () => {
+            void this.plugin.importZoteroNotes();
+          }
+        },
+        {
+          title: this.plugin.t("settingsWorkbenchActionPdfTitle"),
+          description: this.plugin.t("settingsWorkbenchActionPdfDescription"),
+          onClick: () => {
+            void this.plugin.openPdfPlusSettings();
+          }
+        }
+      ]
+    );
+    this.renderActionGroup(
+      groups,
+      this.plugin.t("settingsWorkbenchActionGroupRecallTitle"),
+      this.plugin.t("settingsWorkbenchActionGroupRecallDescription"),
+      [
+        {
+          title: this.plugin.t("settingsWorkbenchActionSmartTitle"),
+          description: this.plugin.t("settingsWorkbenchActionSmartDescription"),
+          onClick: () => {
+            void this.plugin.openSmartConnectionsView();
+          }
+        },
+        {
+          title: this.plugin.t("settingsWorkbenchActionSemanticTitle"),
+          description: this.plugin.t("settingsWorkbenchActionSemanticDescription"),
+          onClick: () => this.plugin.openSemanticSearch()
+        },
+        {
+          title: this.plugin.t("settingsWorkbenchActionPanelTitle"),
+          description: this.plugin.t("settingsWorkbenchActionPanelDescription"),
+          onClick: () => {
+            void this.plugin.openIntelligencePanel();
+          }
+        }
+      ]
+    );
+    this.renderActionGroup(
+      groups,
+      this.plugin.t("settingsWorkbenchActionGroupOrganizeTitle"),
+      this.plugin.t("settingsWorkbenchActionGroupOrganizeDescription"),
+      [
+        {
+          title: this.plugin.t("settingsWorkbenchActionTagsTitle"),
+          description: this.plugin.t("settingsWorkbenchActionTagsDescription"),
+          onClick: () => this.plugin.openTagManager()
+        },
+        {
+          title: this.plugin.t("settingsWorkbenchActionSuggestTitle"),
+          description: this.plugin.t("settingsWorkbenchActionSuggestDescription"),
+          onClick: () => this.plugin.openTagSuggestion()
+        }
+      ]
+    );
+  }
+
+  private renderModuleSection(containerEl: HTMLElement): void {
+    const section = this.createSectionCard(
+      containerEl,
+      this.plugin.t("settingsWorkbenchConfigTitle"),
+      this.plugin.t("settingsWorkbenchConfigDescription")
+    );
+    const grid = section.createDiv({ cls: "lti-workbench-module-grid" });
+
+    const preferences = this.createModuleCard(
+      grid,
+      this.plugin.t("settingsWorkbenchPreferencesTitle"),
+      this.plugin.t("settingsWorkbenchPreferencesDescription")
+    );
+    this.renderMetricRow(preferences, this.plugin.t("settingsLanguage"), this.formatLanguageLabel(this.plugin.settings.language));
+    this.renderMetricRow(
+      preferences,
+      this.plugin.t("settingsWorkflowMode"),
+      this.plugin.t(this.plugin.settings.workflowMode === "researcher" ? "workflowModeResearcher" : "workflowModeGeneral")
+    );
+    this.attachModuleAction(preferences, () => this.openPage("workflow"));
+
+    const paths = this.createModuleCard(
+      grid,
+      this.plugin.t("settingsWorkbenchPathsTitle"),
+      this.plugin.t("settingsWorkbenchPathsDescription")
+    );
+    this.renderMetricRow(paths, this.plugin.t("settingsResearchPathLiterature"), this.compactPathLabel(this.plugin.settings.researchLiteratureFolder));
+    this.renderMetricRow(paths, this.plugin.t("settingsResearchPathTemplates"), this.compactPathLabel(this.plugin.settings.researchTemplatePath));
+    this.renderMetricRow(paths, this.plugin.t("settingsResearchPathAttachments"), this.compactPathLabel(this.plugin.settings.researchAttachmentsFolder));
+    this.attachModuleAction(paths, () => this.openPage("workflow"));
+
+    const smart = this.createModuleCard(
+      grid,
+      this.plugin.t("settingsWorkbenchRecallTitle"),
+      this.plugin.t("settingsWorkbenchRecallDescription")
+    );
+    this.renderMetricRow(smart, this.plugin.t("settingsWorkbenchFolderExclusionsTitle"), String(normalizeDelimitedList(this.plugin.settings.smartConnectionsFolderExclusions).length));
+    this.renderMetricRow(smart, this.plugin.t("settingsWorkbenchHeadingExclusionsTitle"), String(normalizeDelimitedList(this.plugin.settings.smartConnectionsHeadingExclusions).length));
+    this.renderMetricRow(smart, this.plugin.t("settingsWorkbenchResultsLimitTitle"), String(this.plugin.settings.smartConnectionsResultsLimit));
+    this.attachModuleAction(smart, () => this.openPage("workflow"));
+
+    const semantic = this.createModuleCard(
+      grid,
+      this.plugin.t("settingsWorkbenchSemanticTitle"),
+      this.plugin.t("settingsWorkbenchSemanticDescription")
+    );
+    this.renderMetricRow(semantic, this.plugin.t("settingsSemanticEnabled"), this.booleanText(this.plugin.settings.semanticBridgeEnabled));
+    this.renderMetricRow(semantic, this.plugin.t("settingsSemanticCommand"), this.plugin.settings.semanticCommand.trim() ? this.plugin.t("configured") : this.plugin.t("notConfigured"));
+    this.renderMetricRow(semantic, this.plugin.t("settingsSemanticTimeout"), String(this.plugin.settings.semanticTimeoutMs));
+    this.attachModuleAction(semantic, () => this.openPage("workflow"));
+
+    const taxonomy = this.createModuleCard(
+      grid,
+      this.plugin.t("settingsWorkbenchAdvancedTitle"),
+      this.plugin.t("settingsWorkbenchAdvancedDescription")
+    );
+    this.renderMetricRow(taxonomy, this.plugin.t("settingsRelationKeys"), String(this.plugin.settings.relationKeys.length));
+    this.renderMetricRow(taxonomy, this.plugin.t("settingsTagAliasMap"), String(this.countAliasEntries(this.plugin.settings.tagAliasMapText)));
+    this.renderMetricRow(taxonomy, this.plugin.t("settingsTagFacetMap"), String(this.plugin.getTagFacetMap({ suppressNotice: true }).size));
+    this.attachModuleAction(taxonomy, () => this.openPage("taxonomy"));
+
+    section.createDiv({
+      text: this.plugin.t("settingsWorkbenchConfigHint"),
+      cls: "setting-item-description lti-workbench-hint"
+    });
+  }
+
+  private renderCompanionSummarySection(containerEl: HTMLElement, state: ResearchWorkbenchState): void {
+    const section = this.createSectionCard(
+      containerEl,
+      this.plugin.t("settingsWorkbenchCompanionTitle"),
+      this.plugin.t("settingsWorkbenchCompanionDescription")
+    );
+    const list = section.createDiv({ cls: "lti-workbench-summary-list" });
+    for (const companion of state.companions) {
+      this.renderCompanionSummaryRow(list, companion);
+    }
+  }
+
+  private renderCompanionSummaryRow(containerEl: HTMLElement, companion: CompanionPluginStatus): void {
+    const meta = COMPANION_META[companion.id];
+    const row = containerEl.createDiv({ cls: "lti-workbench-summary-row" });
+    const copy = row.createDiv({ cls: "lti-workbench-summary-copy" });
+    copy.createDiv({ text: meta.name, cls: "lti-workbench-summary-title" });
+    const chips = copy.createDiv({ cls: "lti-workbench-chip-row" });
+    chips.createDiv({
+      text: this.getStatusLabel(companion),
+      cls: `lti-workbench-status-pill is-${this.getStatusTone(companion)}`
+    });
+    if (companion.mismatches.length > 0) {
+      chips.createDiv({
+        text: this.plugin.t("settingsWorkbenchMismatchCount", { count: companion.mismatches.length }),
+        cls: "lti-workbench-chip"
+      });
+    }
+    this.createActionButton(row, this.plugin.t("settingsWorkbenchPagePlugins"), () => {
+      this.openPage("plugins", companion.id);
+    });
+  }
+
+  private renderPreferencesDrawer(containerEl: HTMLElement): void {
+    this.createSelectField(
+      containerEl,
+      this.plugin.t("settingsLanguage"),
+      "",
+      [
+        { value: "system", label: "System" },
+        { value: "en", label: "English" },
+        { value: "zh", label: "中文" }
+      ],
+      this.plugin.settings.language,
+      async (value) => {
+        this.plugin.settings.language = value as LanguageSetting;
+        await this.plugin.saveSettings();
+        this.display();
+      }
+    );
+
+    this.createSelectField(
+      containerEl,
+      this.plugin.t("settingsWorkflowMode"),
+      this.plugin.t("settingsWorkflowModeDescription"),
+      [
+        { value: "researcher", label: this.plugin.t("workflowModeResearcher") },
+        { value: "general", label: this.plugin.t("workflowModeGeneral") }
+      ],
+      this.plugin.settings.workflowMode,
+      async (value) => {
+        this.plugin.settings.workflowMode = value as WorkflowMode;
+        await this.plugin.saveSettings();
+        this.display();
+      }
+    );
+  }
+
+  private renderPathsDrawer(containerEl: HTMLElement): void {
+    this.createTextField(
+      containerEl,
+      this.plugin.t("settingsResearchPathLiterature"),
+      "",
+      this.plugin.settings.researchLiteratureFolder,
+      async (value) => {
+        this.plugin.settings.researchLiteratureFolder = value.trim() || RESEARCH_LITERATURE_PATH;
+        await this.plugin.saveSettings();
+      }
+    );
+    this.createTextField(
+      containerEl,
+      this.plugin.t("settingsResearchPathTemplates"),
+      "",
+      this.plugin.settings.researchTemplatePath,
+      async (value) => {
+        this.plugin.settings.researchTemplatePath = value.trim() || RESEARCH_TEMPLATE_PATH;
+        await this.plugin.saveSettings();
+      }
+    );
+    this.createTextField(
+      containerEl,
+      this.plugin.t("settingsResearchPathAttachments"),
+      "",
+      this.plugin.settings.researchAttachmentsFolder,
+      async (value) => {
+        this.plugin.settings.researchAttachmentsFolder = value.trim() || RESEARCH_ATTACHMENTS_PATH;
+        await this.plugin.saveSettings();
+      }
+    );
+    this.createToggleField(
+      containerEl,
+      this.plugin.t("settingsWorkbenchOpenImportedTitle"),
+      this.plugin.t("settingsWorkbenchOpenImportedDescription"),
+      this.plugin.settings.researchOpenNoteAfterImport,
+      async (value) => {
+        this.plugin.settings.researchOpenNoteAfterImport = value;
+        await this.plugin.saveSettings();
+      }
+    );
+    const actions = containerEl.createDiv({ cls: "lti-workbench-drawer-actions" });
+    this.createAsyncButton(actions, this.plugin.t("settingsWorkbenchApplyCompanion"), async () => {
+      await this.plugin.applyCompanionPreset("obsidian-zotero-desktop-connector");
+    });
+    this.createActionButton(actions, this.plugin.t("settingsWorkbenchRunZotero"), () => {
+      void this.plugin.importZoteroNotes();
+    });
+  }
+
+  private renderSmartDrawer(containerEl: HTMLElement): void {
+    this.createTextAreaField(
+      containerEl,
+      this.plugin.t("settingsWorkbenchFolderExclusionsTitle"),
+      this.plugin.t("settingsWorkbenchFolderExclusionsDescription"),
+      this.plugin.settings.smartConnectionsFolderExclusions,
+      async (value) => {
+        this.plugin.settings.smartConnectionsFolderExclusions = normalizeDelimitedList(value).join(", ");
+        await this.plugin.saveSettings();
+      },
+      4
+    );
+    this.createTextAreaField(
+      containerEl,
+      this.plugin.t("settingsWorkbenchHeadingExclusionsTitle"),
+      this.plugin.t("settingsWorkbenchHeadingExclusionsDescription"),
+      this.plugin.settings.smartConnectionsHeadingExclusions,
+      async (value) => {
+        this.plugin.settings.smartConnectionsHeadingExclusions = normalizeDelimitedList(value).join(", ");
+        await this.plugin.saveSettings();
+      },
+      4
+    );
+    this.createNumberField(
+      containerEl,
+      this.plugin.t("settingsWorkbenchResultsLimitTitle"),
+      "",
+      String(this.plugin.settings.smartConnectionsResultsLimit),
+      async (value) => {
+        const parsed = Number.parseInt(value, 10);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          this.plugin.settings.smartConnectionsResultsLimit = parsed;
+          await this.plugin.saveSettings();
+        }
+      }
+    );
+    const actions = containerEl.createDiv({ cls: "lti-workbench-drawer-actions" });
+    this.createAsyncButton(actions, this.plugin.t("settingsWorkbenchApplyCompanion"), async () => {
+      await this.plugin.applyCompanionPreset("smart-connections");
+    });
+    this.createActionButton(actions, this.plugin.t("settingsWorkbenchRunSmart"), () => {
+      void this.plugin.openSmartConnectionsView();
+    });
+  }
+
+  private renderSemanticDrawer(containerEl: HTMLElement, state: ResearchWorkbenchState): void {
+    this.createToggleField(
+      containerEl,
+      this.plugin.t("settingsSemanticEnabled"),
+      this.plugin.t("settingsSemanticEnabledDescription"),
+      this.plugin.settings.semanticBridgeEnabled,
+      async (value) => {
+        this.plugin.settings.semanticBridgeEnabled = value;
+        await this.plugin.saveSettings();
+        this.display();
+      }
+    );
+    this.createTextAreaField(
+      containerEl,
+      this.plugin.t("settingsSemanticCommand"),
+      this.plugin.t("settingsSemanticCommandDescription"),
+      this.plugin.settings.semanticCommand,
+      async (value) => {
+        this.plugin.settings.semanticCommand = value;
+        await this.plugin.saveSettings();
+      },
+      5,
+      "python3 /path/tool.py --vault {{vault}} --query {{query}}"
+    );
+    this.createNumberField(
+      containerEl,
+      this.plugin.t("settingsSemanticTimeout"),
+      "",
+      String(this.plugin.settings.semanticTimeoutMs),
+      async (value) => {
+        const parsed = Number.parseInt(value, 10);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          this.plugin.settings.semanticTimeoutMs = parsed;
+          await this.plugin.saveSettings();
+        }
+      }
+    );
+    containerEl.createDiv({
+      text: this.plugin.t("settingsWorkbenchCurrentExclusions", { value: state.profile.smartFolderExclusions.join(", ") }),
+      cls: "setting-item-description lti-workbench-inline-note"
+    });
+    const actions = containerEl.createDiv({ cls: "lti-workbench-drawer-actions" });
+    this.createAsyncButton(actions, this.plugin.t("settingsWorkbenchApplyCompanion"), async () => {
+      await this.plugin.applyCompanionPreset("semantic-bridge");
+    });
+    this.createActionButton(actions, this.plugin.t("settingsWorkbenchRunSemantic"), () => {
+      this.plugin.openSemanticSearch();
+    });
+  }
+
+  private renderTaxonomyDrawer(containerEl: HTMLElement): void {
+    this.createAdvancedPanel(
+      containerEl,
+      this.plugin.t("settingsWorkbenchAdvancedRelationsTitle"),
+      this.plugin.t("settingsWorkbenchAdvancedRelationsDescription"),
+      (contentEl) => {
+        this.createTextAreaField(
+          contentEl,
+          this.plugin.t("settingsRelationKeys"),
+          this.plugin.t("settingsRelationKeysDescription"),
+          this.plugin.settings.relationKeys.join(", "),
+          async (value) => {
             this.plugin.settings.relationKeys = value
               .split(",")
               .map((item) => item.trim())
               .filter(Boolean);
             await this.plugin.saveSettings();
-          });
-      });
-
-    const relationPreview = containerEl.createDiv({ cls: "setting-item-description lti-settings-inline-note" });
-    relationPreview.createSpan({ text: `${this.plugin.t("settingsRelationKeysPreview")}: ` });
-    relationPreview.appendText(
-      this.plugin.settings.relationKeys
-        .map((key) => `${key} (${this.plugin.relationLabel(key)})`)
-        .join(" · ")
+            this.display();
+          },
+          4,
+          RESEARCH_RELATION_KEYS.join(", ")
+        );
+        const chips = contentEl.createDiv({ cls: "lti-workbench-key-chip-row" });
+        for (const key of this.plugin.settings.relationKeys) {
+          const chip = chips.createDiv({ cls: "lti-workbench-key-chip" });
+          chip.createSpan({ text: key });
+          chip.createSpan({ text: this.plugin.relationLabel(key), cls: "lti-workbench-key-chip-meta" });
+        }
+      }
     );
 
-    new Setting(containerEl)
-      .setName(this.plugin.t("settingsTagAliasMap"))
-      .setDesc(this.plugin.t("settingsTagAliasMapDescription"))
-      .addTextArea((area) => {
-        area.inputEl.rows = 10;
-        area.inputEl.addClass("lti-settings-textarea");
-        area.inputEl.style.resize = "vertical";
-        area
-          .setValue(this.plugin.settings.tagAliasMapText)
-          .onChange(async (value) => {
+    this.createAdvancedPanel(
+      containerEl,
+      this.plugin.t("settingsWorkbenchAdvancedAliasTitle"),
+      this.plugin.t("settingsWorkbenchAdvancedAliasDescription"),
+      (contentEl) => {
+        this.createTextAreaField(
+          contentEl,
+          this.plugin.t("settingsTagAliasMap"),
+          this.plugin.t("settingsTagAliasMapDescription"),
+          this.plugin.settings.tagAliasMapText,
+          async (value) => {
             this.plugin.settings.tagAliasMapText = value;
             await this.plugin.saveSettings();
-          });
-      });
+          },
+          10
+        );
+      }
+    );
 
-    new Setting(containerEl)
-      .setName(this.plugin.t("settingsTagFacetMap"))
-      .setDesc(this.plugin.t("settingsTagFacetMapDescription"))
-      .addTextArea((area) => {
-        area.inputEl.rows = 14;
-        area.inputEl.addClass("lti-settings-textarea");
-        area.inputEl.style.resize = "vertical";
-        area
-          .setValue(this.plugin.settings.tagFacetMapText)
-          .onChange(async (value) => {
+    this.createAdvancedPanel(
+      containerEl,
+      this.plugin.t("settingsWorkbenchAdvancedFacetTitle"),
+      this.plugin.t("settingsWorkbenchAdvancedFacetDescription"),
+      (contentEl) => {
+        this.createTextAreaField(
+          contentEl,
+          this.plugin.t("settingsTagFacetMap"),
+          this.plugin.t("settingsTagFacetMapDescription"),
+          this.plugin.settings.tagFacetMapText,
+          async (value) => {
             this.plugin.settings.tagFacetMapText = value;
             await this.plugin.saveSettings();
-          });
-      });
+          },
+          14
+        );
+      }
+    );
 
-    new Setting(containerEl)
-      .setName(this.plugin.t("settingsSemanticEnabled"))
-      .setDesc(this.plugin.t("settingsSemanticEnabledDescription"))
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.semanticBridgeEnabled)
-          .onChange(async (value) => {
-            this.plugin.settings.semanticBridgeEnabled = value;
-            await this.plugin.saveSettings();
-            this.plugin.refreshAllViews();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName(this.plugin.t("settingsSemanticCommand"))
-      .setDesc(this.plugin.t("settingsSemanticCommandDescription"))
-      .addTextArea((area) => {
-        area.inputEl.rows = 4;
-        area.inputEl.addClass("lti-settings-textarea", "lti-settings-textarea-compact");
-        area.inputEl.style.resize = "vertical";
-        area
-          .setValue(this.plugin.settings.semanticCommand)
-          .setPlaceholder("python3 /path/tool.py --vault {{vault}} --query {{query}}")
-          .onChange(async (value) => {
-            this.plugin.settings.semanticCommand = value;
-            await this.plugin.saveSettings();
-            this.plugin.refreshAllViews();
-          });
-      });
-
-    new Setting(containerEl)
-      .setName(this.plugin.t("settingsSemanticTimeout"))
-      .addText((text) =>
-        text
-          .setValue(String(this.plugin.settings.semanticTimeoutMs))
-          .onChange(async (value) => {
-            const parsed = Number.parseInt(value, 10);
-            if (Number.isFinite(parsed) && parsed > 0) {
-              this.plugin.settings.semanticTimeoutMs = parsed;
-              await this.plugin.saveSettings();
-            }
-          })
-      );
-
-    new Setting(containerEl)
-      .setName(this.plugin.t("settingsRecentLinks"))
-      .addText((text) =>
-        text
-          .setValue(String(this.plugin.settings.recentLinkMemorySize))
-          .onChange(async (value) => {
+    this.createAdvancedPanel(
+      containerEl,
+      this.plugin.t("settingsWorkbenchAdvancedMemoryTitle"),
+      this.plugin.t("settingsWorkbenchAdvancedMemoryDescription"),
+      (contentEl) => {
+        this.createNumberField(
+          contentEl,
+          this.plugin.t("settingsRecentLinks"),
+          "",
+          String(this.plugin.settings.recentLinkMemorySize),
+          async (value) => {
             const parsed = Number.parseInt(value, 10);
             if (Number.isFinite(parsed) && parsed > 0) {
               this.plugin.settings.recentLinkMemorySize = parsed;
               this.plugin.settings.recentLinkTargets = this.plugin.settings.recentLinkTargets.slice(0, parsed);
               await this.plugin.saveSettings();
             }
-          })
-      );
+          }
+        );
+      }
+    );
   }
 
-  private renderResearchGuide(containerEl: HTMLElement): void {
-    const guide = containerEl.createDiv({ cls: "lti-settings-guide" });
-    guide.createEl("h3", { text: this.plugin.t("settingsResearchGuideTitle"), cls: "lti-settings-guide-title" });
-    guide.createDiv({
-      text: this.plugin.t("settingsResearchGuideDescription"),
-      cls: "setting-item-description lti-settings-guide-description"
-    });
-
-    const setup = guide.createEl("ol", { cls: "lti-settings-guide-list" });
-    for (const key of ["settingsResearchGuideStep1", "settingsResearchGuideStep2", "settingsResearchGuideStep3"] as const) {
-      setup.createEl("li", {
-        text: this.plugin.t(key),
-        cls: "setting-item-description"
+  private renderPluginDrawer(containerEl: HTMLElement, companion: CompanionPluginStatus, state: ResearchWorkbenchState): void {
+    if (companion.configPath) {
+      containerEl.createDiv({
+        text: companion.configPath,
+        cls: "lti-workbench-plugin-path"
       });
     }
 
-    const companionTitle = guide.createDiv({
-      text: this.plugin.t("settingsCompanionPluginsTitle"),
-      cls: "lti-settings-guide-subtitle"
-    });
-    companionTitle.setAttribute("role", "heading");
-    companionTitle.setAttribute("aria-level", "4");
+    const facts = containerEl.createDiv({ cls: "lti-workbench-fact-list" });
+    this.renderCompanionFacts(facts, companion, state);
 
-    const list = guide.createEl("ul", { cls: "lti-settings-guide-list" });
-    for (const companion of COMPANION_PLUGINS) {
-      const item = list.createEl("li", { cls: "setting-item-description" });
-      const link = item.createEl("a", {
-        text: companion.name,
-        href: companion.url
+    if (companion.mismatches.length > 0) {
+      const mismatches = containerEl.createDiv({ cls: "lti-workbench-mismatch-list" });
+      mismatches.createDiv({
+        text: this.plugin.t("settingsWorkbenchMismatchTitle"),
+        cls: "lti-workbench-subtitle"
       });
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      item.appendText(` - ${this.plugin.t(companion.descriptionKey)}`);
+      for (const mismatch of companion.mismatches) {
+        mismatches.createDiv({
+          text: this.getMismatchLabel(mismatch),
+          cls: "lti-workbench-mismatch-item"
+        });
+      }
     }
 
-    guide.createDiv({
-      text: this.plugin.t("settingsSemanticResearchHint"),
-      cls: "setting-item-description lti-settings-guide-note"
+    const actions = containerEl.createDiv({ cls: "lti-workbench-drawer-actions" });
+    this.createAsyncButton(actions, this.plugin.t("settingsWorkbenchApplyCompanion"), async () => {
+      await this.plugin.applyCompanionPreset(companion.id);
+    }, !companion.installed && !companion.optional);
+    this.createActionButton(actions, this.plugin.t("settingsWorkbenchOpenSettings"), () => {
+      this.plugin.openCompanionSettings(companion.id);
+    }, !companion.installed && !companion.optional);
+    const primary = this.getPrimaryCompanionAction(companion.id);
+    if (primary) {
+      this.createActionButton(actions, primary.label, primary.handler, primary.disabled);
+    }
+  }
+
+  private renderCompanionPanel(containerEl: HTMLElement, companion: CompanionPluginStatus, state: ResearchWorkbenchState): void {
+    const meta = COMPANION_META[companion.id];
+    const panel = containerEl.createEl("details", { cls: "lti-workbench-plugin-panel" });
+    panel.open = this.activeCompanionId === companion.id || companion.mismatches.length > 0;
+    panel.addEventListener("toggle", () => {
+      this.activeCompanionId = panel.open ? companion.id : this.activeCompanionId === companion.id ? null : this.activeCompanionId;
     });
+
+    const summary = panel.createEl("summary", { cls: "lti-workbench-plugin-summary" });
+    const copy = summary.createDiv({ cls: "lti-workbench-plugin-summary-copy" });
+    copy.createDiv({ text: meta.name, cls: "lti-workbench-plugin-title" });
+    copy.createDiv({
+      text: this.plugin.t(meta.descriptionKey),
+      cls: "setting-item-description lti-workbench-plugin-description"
+    });
+
+    const chips = summary.createDiv({ cls: "lti-workbench-chip-row" });
+    chips.createDiv({
+      text: this.getStatusLabel(companion),
+      cls: `lti-workbench-status-pill is-${this.getStatusTone(companion)}`
+    });
+    if (companion.mismatches.length > 0) {
+      chips.createDiv({
+        text: this.plugin.t("settingsWorkbenchMismatchCount", { count: companion.mismatches.length }),
+        cls: "lti-workbench-chip"
+      });
+    }
+
+    const body = panel.createDiv({ cls: "lti-workbench-plugin-body" });
+    this.renderPluginDrawer(body, companion, state);
+  }
+
+  private renderCompanionFacts(containerEl: HTMLElement, companion: CompanionPluginStatus, state: ResearchWorkbenchState): void {
+    switch (companion.id) {
+      case "obsidian-zotero-desktop-connector":
+        this.renderFactRow(containerEl, this.plugin.t("settingsResearchPathLiterature"), this.valueOrFallback(companion.actual.literatureFolder), state.profile.literatureFolder, !companion.mismatches.includes("zotero-folder"));
+        this.renderFactRow(containerEl, this.plugin.t("settingsResearchPathTemplates"), this.valueOrFallback(companion.actual.templatePath), state.profile.templatePath, !companion.mismatches.includes("zotero-template"));
+        this.renderFactRow(containerEl, this.plugin.t("settingsResearchPathAttachments"), this.valueOrFallback(companion.actual.attachmentsFolder), state.profile.attachmentsFolder, !companion.mismatches.includes("zotero-attachments"));
+        this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchOpenImportedTitle"), this.booleanText(companion.actual.openNoteAfterImport), this.booleanText(state.profile.openNoteAfterImport), !companion.mismatches.includes("zotero-open-note"));
+        return;
+      case "pdf-plus":
+        this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchDefaultDisplayTitle"), this.valueOrFallback(companion.actual.defaultDisplayFormat), "Title & page", !companion.mismatches.includes("pdf-default-display"));
+        this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchCopyCommandsTitle"), this.joinList(companion.actual.copyCommandNames), "Literature quote, Evidence callout, Source link", !companion.mismatches.includes("pdf-copy-commands"));
+        this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchHoverPreviewTitle"), this.valueOrFallback(companion.actual.hoverHighlightAction), "preview", !companion.mismatches.includes("pdf-hover-preview"));
+        this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchBacklinksTitle"), this.booleanText(companion.actual.highlightBacklinks), this.plugin.t("settingsWorkbenchOn"), !companion.mismatches.includes("pdf-highlight-backlinks"));
+        return;
+      case "smart-connections":
+        this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchFolderExclusionsTitle"), this.joinList(companion.actual.folderExclusions), state.profile.smartFolderExclusions.join(", "), !companion.mismatches.includes("smart-folder-exclusions"));
+        this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchHeadingExclusionsTitle"), this.joinList(companion.actual.headingExclusions), state.profile.smartHeadingExclusions.join(", "), !companion.mismatches.includes("smart-heading-exclusions"));
+        this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchLanguageTitle"), this.valueOrFallback(companion.actual.language), state.profile.language, !companion.mismatches.includes("smart-language"));
+        this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchResultsLimitTitle"), this.valueOrFallback(companion.actual.resultsLimit), String(state.profile.smartResultsLimit), !companion.mismatches.includes("smart-results-limit"));
+        return;
+      case "semantic-bridge":
+        this.renderFactRow(containerEl, this.plugin.t("settingsSemanticEnabled"), this.booleanText(companion.actual.enabled), undefined, companion.ready || !companion.enabled);
+        this.renderFactRow(containerEl, this.plugin.t("settingsSemanticCommand"), this.valueOrFallback(companion.actual.command), undefined, !companion.mismatches.includes("semantic-command"));
+        this.renderFactRow(containerEl, this.plugin.t("settingsSemanticTimeout"), this.valueOrFallback(companion.actual.timeoutMs), undefined, true);
+    }
+  }
+
+  private createAdvancedPanel(
+    containerEl: HTMLElement,
+    title: string,
+    description: string,
+    renderContent: (contentEl: HTMLElement) => void
+  ): void {
+    const details = containerEl.createEl("details", { cls: "lti-workbench-advanced-panel" });
+    const summary = details.createEl("summary", { cls: "lti-workbench-advanced-summary" });
+    summary.createSpan({ text: title, cls: "lti-workbench-advanced-title" });
+    summary.createSpan({ text: description, cls: "lti-workbench-advanced-description" });
+    const content = details.createDiv({ cls: "lti-workbench-advanced-content" });
+    renderContent(content);
+  }
+
+  private createSectionCard(containerEl: HTMLElement, title: string, description: string): HTMLElement {
+    const card = containerEl.createDiv({ cls: "lti-workbench-section-card" });
+    const header = card.createDiv({ cls: "lti-workbench-section-header" });
+    header.createDiv({ text: title, cls: "lti-workbench-section-title" });
+    header.createDiv({
+      text: description,
+      cls: "setting-item-description lti-workbench-section-description"
+    });
+    return card;
+  }
+
+  private createModuleCard(containerEl: HTMLElement, title: string, description: string): HTMLElement {
+    const card = containerEl.createDiv({ cls: "lti-workbench-module-card" });
+    card.createDiv({ text: title, cls: "lti-workbench-subtitle" });
+    card.createDiv({
+      text: description,
+      cls: "setting-item-description lti-workbench-card-copy"
+    });
+    return card;
+  }
+
+  private attachModuleAction(containerEl: HTMLElement, onClick: () => void): void {
+    const actions = containerEl.createDiv({ cls: "lti-workbench-card-footer" });
+    this.createActionButton(actions, this.plugin.t("settingsWorkbenchDetails"), onClick);
+  }
+
+  private createFieldShell(containerEl: HTMLElement, label: string, description: string): HTMLElement {
+    const field = containerEl.createDiv({ cls: "lti-workbench-field" });
+    field.createDiv({ text: label, cls: "lti-workbench-field-label" });
+    if (description) {
+      field.createDiv({
+        text: description,
+        cls: "setting-item-description lti-workbench-field-description"
+      });
+    }
+    return field;
+  }
+
+  private createTextField(
+    containerEl: HTMLElement,
+    label: string,
+    description: string,
+    value: string,
+    onChange: (value: string) => Promise<void>,
+    placeholder = ""
+  ): void {
+    const field = this.createFieldShell(containerEl, label, description);
+    const input = field.createEl("input", { cls: "lti-workbench-input", type: "text" });
+    input.value = value;
+    input.placeholder = placeholder;
+    input.addEventListener("change", () => {
+      void onChange(input.value);
+    });
+  }
+
+  private createNumberField(
+    containerEl: HTMLElement,
+    label: string,
+    description: string,
+    value: string,
+    onChange: (value: string) => Promise<void>
+  ): void {
+    const field = this.createFieldShell(containerEl, label, description);
+    const input = field.createEl("input", { cls: "lti-workbench-input", type: "number" });
+    input.value = value;
+    input.addEventListener("change", () => {
+      void onChange(input.value);
+    });
+  }
+
+  private createTextAreaField(
+    containerEl: HTMLElement,
+    label: string,
+    description: string,
+    value: string,
+    onChange: (value: string) => Promise<void>,
+    rows: number,
+    placeholder = ""
+  ): void {
+    const field = this.createFieldShell(containerEl, label, description);
+    const area = field.createEl("textarea", { cls: "lti-workbench-textarea" });
+    area.rows = rows;
+    area.value = value;
+    area.placeholder = placeholder;
+    area.addEventListener("change", () => {
+      void onChange(area.value);
+    });
+  }
+
+  private createSelectField(
+    containerEl: HTMLElement,
+    label: string,
+    description: string,
+    options: Array<{ value: string; label: string }>,
+    value: string,
+    onChange: (value: string) => Promise<void>
+  ): void {
+    const field = this.createFieldShell(containerEl, label, description);
+    const select = field.createEl("select", { cls: "lti-workbench-select" });
+    for (const option of options) {
+      const el = select.createEl("option", { text: option.label });
+      el.value = option.value;
+      if (option.value === value) {
+        el.selected = true;
+      }
+    }
+    select.addEventListener("change", () => {
+      void onChange(select.value);
+    });
+  }
+
+  private createToggleField(
+    containerEl: HTMLElement,
+    label: string,
+    description: string,
+    checked: boolean,
+    onChange: (value: boolean) => Promise<void>
+  ): void {
+    const field = this.createFieldShell(containerEl, label, description);
+    const row = field.createDiv({ cls: "lti-workbench-switch-row" });
+    const toggle = row.createEl("label", { cls: "lti-workbench-switch" });
+    const input = toggle.createEl("input", { type: "checkbox" });
+    input.checked = checked;
+    toggle.createSpan({ cls: "lti-workbench-switch-slider" });
+    input.addEventListener("change", () => {
+      void onChange(input.checked);
+    });
+  }
+
+  private renderStat(containerEl: HTMLElement, label: string, value: string): void {
+    const stat = containerEl.createDiv({ cls: "lti-workbench-stat" });
+    stat.createDiv({ text: label, cls: "lti-workbench-stat-label" });
+    stat.createDiv({ text: value, cls: "lti-workbench-stat-value" });
+  }
+
+  private renderMetaCard(containerEl: HTMLElement, label: string, value: string): void {
+    const card = containerEl.createDiv({ cls: "lti-workbench-meta-card" });
+    card.createDiv({ text: label, cls: "lti-workbench-stat-label" });
+    card.createDiv({ text: value, cls: "lti-workbench-meta-value" });
+  }
+
+  private renderMetricRow(containerEl: HTMLElement, label: string, value: string): void {
+    const row = containerEl.createDiv({ cls: "lti-workbench-metric-row" });
+    row.createDiv({ text: label, cls: "lti-workbench-metric-label" });
+    row.createDiv({ text: value, cls: "lti-workbench-metric-value" });
+  }
+
+  private renderFactRow(containerEl: HTMLElement, label: string, actual: string, expected?: string, ok = true): void {
+    const row = containerEl.createDiv({ cls: "lti-workbench-fact-row" });
+    if (!ok) {
+      row.addClass("is-alert");
+    }
+    row.createDiv({ text: label, cls: "lti-workbench-fact-label" });
+    const values = row.createDiv({ cls: "lti-workbench-fact-values" });
+    values.createDiv({ text: actual, cls: "lti-workbench-fact-actual" });
+    if (expected && !ok) {
+      values.createDiv({
+        text: `${this.plugin.t("settingsWorkbenchExpectedPrefix")}: ${expected}`,
+        cls: "lti-workbench-fact-expected"
+      });
+    }
+  }
+
+  private renderActionGroup(
+    containerEl: HTMLElement,
+    title: string,
+    description: string,
+    actions: Array<{ title: string; description: string; onClick: () => void }>
+  ): void {
+    const card = containerEl.createDiv({ cls: "lti-workbench-action-group" });
+    card.createDiv({ text: title, cls: "lti-workbench-subtitle" });
+    card.createDiv({
+      text: description,
+      cls: "setting-item-description lti-workbench-card-copy"
+    });
+
+    const list = card.createDiv({ cls: "lti-workbench-action-list" });
+    for (const action of actions) {
+      this.createActionListItem(list, action.title, action.description, action.onClick);
+    }
+  }
+
+  private createActionListItem(
+    containerEl: HTMLElement,
+    title: string,
+    description: string,
+    onClick: () => void
+  ): void {
+    const button = containerEl.createEl("button", { cls: "lti-workbench-action-item", type: "button" });
+    const copy = button.createDiv({ cls: "lti-workbench-action-item-copy" });
+    const text = copy.createDiv({ cls: "lti-workbench-action-item-text" });
+    text.createDiv({ text: title, cls: "lti-workbench-action-item-title" });
+    text.createDiv({ text: description, cls: "lti-workbench-action-item-description" });
+    button.addEventListener("click", onClick);
+  }
+
+  private createActionButton(containerEl: HTMLElement, label: string, onClick: () => void, disabled = false): HTMLButtonElement {
+    const button = containerEl.createEl("button", { cls: "lti-workbench-button", text: label, type: "button" });
+    button.disabled = disabled;
+    button.addEventListener("click", onClick);
+    return button;
+  }
+
+  private createAsyncButton(containerEl: HTMLElement, label: string, onClick: () => Promise<void>, disabled = false): HTMLButtonElement {
+    const button = this.createActionButton(containerEl, label, () => {
+      void (async () => {
+        button.disabled = true;
+        button.textContent = this.plugin.t("loading");
+        try {
+          await onClick();
+        } finally {
+          this.display();
+        }
+      })();
+    }, disabled);
+    return button;
+  }
+
+  private getPrimaryCompanionAction(id: CompanionPluginId): { label: string; handler: () => void; disabled?: boolean } | null {
+    switch (id) {
+      case "obsidian-zotero-desktop-connector":
+        return {
+          label: this.plugin.t("settingsWorkbenchRunZotero"),
+          handler: () => {
+            void this.plugin.importZoteroNotes();
+          }
+        };
+      case "smart-connections":
+        return {
+          label: this.plugin.t("settingsWorkbenchRunSmart"),
+          handler: () => {
+            void this.plugin.openSmartConnectionsView();
+          }
+        };
+      case "semantic-bridge":
+        return {
+          label: this.plugin.t("settingsWorkbenchRunSemantic"),
+          handler: () => this.plugin.openSemanticSearch()
+        };
+      case "pdf-plus":
+        return {
+          label: this.plugin.t("settingsWorkbenchRunPdf"),
+          handler: () => {
+            void this.plugin.openPdfPlusSettings();
+          }
+        };
+      default:
+        return null;
+    }
+  }
+
+  private getStatusTone(companion: CompanionPluginStatus): "ready" | "alert" | "missing" | "optional" {
+    if (!companion.installed && !companion.optional) {
+      return "missing";
+    }
+    if (companion.ready) {
+      return companion.optional ? "optional" : "ready";
+    }
+    return "alert";
+  }
+
+  private getStatusLabel(companion: CompanionPluginStatus): string {
+    const tone = this.getStatusTone(companion);
+    if (tone === "ready") {
+      return this.plugin.t("settingsWorkbenchStatusReady");
+    }
+    if (tone === "missing") {
+      return this.plugin.t("settingsWorkbenchStatusMissing");
+    }
+    if (tone === "optional") {
+      return this.plugin.t("settingsWorkbenchStatusOptional");
+    }
+    return this.plugin.t("settingsWorkbenchStatusAttention");
+  }
+
+  private getMismatchLabel(code: string): string {
+    const map: Record<string, string> = {
+      "zotero-folder": this.plugin.t("settingsWorkbenchMismatchZoteroFolder"),
+      "zotero-template": this.plugin.t("settingsWorkbenchMismatchZoteroTemplate"),
+      "zotero-attachments": this.plugin.t("settingsWorkbenchMismatchZoteroAttachments"),
+      "zotero-open-note": this.plugin.t("settingsWorkbenchMismatchZoteroOpen"),
+      "zotero-output-template": this.plugin.t("settingsWorkbenchMismatchZoteroOutput"),
+      "zotero-cite-template": this.plugin.t("settingsWorkbenchMismatchZoteroCite"),
+      "pdf-display-formats": this.plugin.t("settingsWorkbenchMismatchPdfDisplayFormats"),
+      "pdf-default-display": this.plugin.t("settingsWorkbenchMismatchPdfDisplayDefault"),
+      "pdf-copy-commands": this.plugin.t("settingsWorkbenchMismatchPdfCopy"),
+      "pdf-hover-preview": this.plugin.t("settingsWorkbenchMismatchPdfHover"),
+      "pdf-highlight-backlinks": this.plugin.t("settingsWorkbenchMismatchPdfBacklinks"),
+      "pdf-selection-menu": this.plugin.t("settingsWorkbenchMismatchPdfSelectionMenu"),
+      "pdf-annotation-menu": this.plugin.t("settingsWorkbenchMismatchPdfAnnotationMenu"),
+      "smart-language": this.plugin.t("settingsWorkbenchMismatchSmartLanguage"),
+      "smart-folder-exclusions": this.plugin.t("settingsWorkbenchMismatchSmartFolders"),
+      "smart-heading-exclusions": this.plugin.t("settingsWorkbenchMismatchSmartHeadings"),
+      "smart-results-limit": this.plugin.t("settingsWorkbenchMismatchSmartResults"),
+      "smart-render-markdown": this.plugin.t("settingsWorkbenchMismatchSmartRender"),
+      "semantic-command": this.plugin.t("settingsWorkbenchMismatchSemanticCommand")
+    };
+    return map[code] ?? code;
+  }
+
+  private compactPathLabel(value: string): string {
+    const normalized = value.trim().replace(/\\/g, "/");
+    if (!normalized) {
+      return this.plugin.t("notConfigured");
+    }
+    const segments = normalized.split("/").filter(Boolean);
+    return segments.at(-1) ?? normalized;
+  }
+
+  private countAliasEntries(text: string): number {
+    try {
+      const parsed = JSON.parse(text) as Record<string, unknown>;
+      return Object.keys(parsed).length;
+    } catch {
+      return 0;
+    }
+  }
+
+  private formatLanguageLabel(setting: LanguageSetting): string {
+    if (setting === "system") {
+      return this.plugin.currentLanguage() === "zh" ? "系统" : "System";
+    }
+    return setting === "zh" ? "中文" : "English";
+  }
+
+  private valueOrFallback(value: unknown): string {
+    if (typeof value === "number") {
+      return String(value);
+    }
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+    return this.plugin.t("notConfigured");
+  }
+
+  private joinList(value: unknown): string {
+    return Array.isArray(value) && value.length > 0
+      ? value.map(String).join(", ")
+      : this.plugin.t("notConfigured");
+  }
+
+  private booleanText(value: unknown): string {
+    return value === true ? this.plugin.t("settingsWorkbenchOn") : this.plugin.t("settingsWorkbenchOff");
   }
 }

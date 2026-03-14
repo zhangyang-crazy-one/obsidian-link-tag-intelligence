@@ -64,6 +64,41 @@ tags:
 - `External semantic bridge CLI`
   Use it when you want fully controlled, research-aware retrieval with citation metadata in the returned results.
 
+## Research stack preset
+
+The current research preset assumes a shallow vault layout so imports and evidence files stay stable:
+
+- `Knowledge/Research/Literature`
+- `Knowledge/Research/Templates/zotero-literature-note.md`
+- `Knowledge/Research/Attachments`
+
+Recommended companion plugin preset:
+
+- `Zotero Integration`
+  Import notes into `Knowledge/Research/Literature`, use `Knowledge/Research/Templates/zotero-literature-note.md` as the export template, and export annotation images into `Knowledge/Research/Attachments`.
+- `PDF++`
+  Keep page-aware quote and cite-callout copy commands available so PDF evidence can move directly into literature notes and draft notes.
+- `Smart Connections`
+  Keep local embeddings enabled, but exclude `.obsidian`, `.smart-env`, `Archive/Imports`, `Excalidraw`, and `note_reader` so archive and system folders do not pollute the semantic index.
+- `Link & Tag Intelligence`
+  Stay in `Researcher` mode, keep typed relations for source-to-claim links, and only enable the semantic bridge after an external CLI command is ready.
+
+Recommended click path inside Obsidian:
+
+1. Run `Zotero Integration: Import notes`.
+2. Open the imported literature note in `Knowledge/Research/Literature`.
+3. Open the source PDF and use a `PDF++` copy format for quote or cite-callout snippets.
+4. Open the `Link & Tag Intelligence` sidebar to add typed relations and review bilingual tag recommendations.
+5. Open `Smart Connections` when drafting and let local semantic recall surface related notes.
+
+Research workbench inside this plugin:
+
+1. Open `Settings -> Link & Tag Intelligence`.
+2. Use `Sync research preset` to write the recommended config into installed companion plugins.
+3. Use the `Workflow actions` section as the primary entry for Zotero import, Smart Connections, tag cleanup, and semantic search.
+4. Use the `Companion stack` cards to see drift, apply only one plugin preset, or open that plugin's native settings when deeper tuning is needed.
+5. Keep long JSON vocabularies under `Advanced taxonomy`, so the first screen remains an operational workbench instead of a documentation page.
+
 ## Suggested setup order
 
 1. Set `Workflow mode` to `Researcher`.

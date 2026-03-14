@@ -697,17 +697,160 @@ var TRANSLATIONS = {
     settingsSemanticCommandDescription: "Desktop-only shell command. Supported placeholders: {{query}} {{vault}} {{file}} {{selection}}. Prefer returning citekey / author / year / page / source_type / evidence_kind.",
     settingsSemanticTimeout: "Semantic timeout (ms)",
     settingsRecentLinks: "Recent link memory size",
+    settingsResearchGuideEyebrow: "Research stack",
     settingsResearchGuideTitle: "Research workflow guide",
     settingsResearchGuideDescription: "This mode is designed for literature notes, evidence gathering, synthesis, and drafting. Keep exact references, typed relations, and controlled tags aligned.",
+    settingsResearchLayoutTitle: "Vault layout",
+    settingsResearchLayoutDescription: "Keep the workflow within a shallow 3-level structure so Zotero imports, templates, and attachments stay predictable across plugins and CLI tools.",
+    settingsResearchPathLiterature: "Literature notes",
+    settingsResearchPathTemplates: "Template",
+    settingsResearchPathAttachments: "Annotation assets",
+    settingsResearchWorkflowTitle: "Working sequence",
+    settingsResearchWorkflowDescription: "A practical loop for capture, page-aware reading, argument linking, and drafting.",
+    settingsResearchWorkflowStep1Title: "Import source notes",
+    settingsResearchWorkflowStep1Body: "Use Zotero Integration to create one structured literature note per citekey.",
+    settingsResearchWorkflowStep2Title: "Quote with page context",
+    settingsResearchWorkflowStep2Body: "Use PDF++ copy actions to move exact page evidence into literature notes or draft notes.",
+    settingsResearchWorkflowStep3Title: "Link claims and tags",
+    settingsResearchWorkflowStep3Body: "Use typed relations and controlled bilingual tags to connect source notes, evidence, and arguments.",
+    settingsResearchWorkflowStep4Title: "Retrieve while drafting",
+    settingsResearchWorkflowStep4Body: "Use Smart Connections for local semantic recall, and enable the external semantic bridge only when you have a research CLI ready.",
     settingsResearchGuideStep1: "Use Zotero Integration or PDF++ to capture source material and page-level annotations.",
     settingsResearchGuideStep2: "Use typed relations like supports / contradicts / extends to connect notes and claims.",
     settingsResearchGuideStep3: "Maintain controlled topic, method, dataset, status, and writing-stage tags to keep recommendation quality high.",
     settingsCompanionPluginsTitle: "Recommended companion plugins",
+    settingsCompanionActionLabel: "What to click",
     settingsCompanionZoteroDesc: "Bring in citekeys, literature-note metadata, and source annotations.",
+    settingsCompanionZoteroSetup: "Configured to write notes into {literaturePath}, use template {templatePath}, and save exported images under {attachmentsPath}.",
+    settingsCompanionZoteroAction: "Command palette -> Zotero Integration: Import notes",
     settingsCompanionPdfDesc: "Work with PDF highlights, page jumps, and annotation-heavy reading workflows.",
+    settingsCompanionPdfSetup: "Configured for page-aware quote and cite-callout copy commands, with bibliography hover kept active for citation-heavy reading.",
+    settingsCompanionPdfAction: "Open a PDF -> select text -> choose a PDF++ copy format",
     settingsCompanionSmartDesc: "Add embeddings-based semantic recall without duplicating this plugin's link and tag layer.",
+    settingsCompanionSmartSetup: "Configured to keep system and archive folders out of the index: {exclusions}. Keep the local embedding model unless you intentionally re-index.",
+    settingsCompanionSmartAction: "Open Smart Connections and wait for the first local index to finish",
     settingsCompanionSemanticDesc: "Use your own research-aware retrieval command when you want citation-grounded semantic results.",
+    settingsCompanionSemanticSetup: "Optional. Only enable after your external command can return JSON fields like citekey, author, year, page, suggested_tags, and suggested_relations.",
+    settingsCompanionSemanticAction: "Paste the command below, then enable Semantic bridge",
     settingsSemanticResearchHint: "Recommended semantic result fields: citekey, author, year, page, source_type, evidence_kind, suggested_tags, suggested_relations.",
+    settingsWorkbenchEyebrow: "Research workbench",
+    settingsWorkbenchTitle: "Research workflow control center",
+    settingsWorkbenchDescription: "Inspect companion plugins, sync critical research settings, and launch the next reading or writing step from one place.",
+    settingsWorkbenchPreferencesTitle: "Workbench preferences",
+    settingsWorkbenchPreferencesDescription: "Keep language and default mode in the detail drawer, not on the dashboard.",
+    settingsWorkbenchStatReady: "Ready companions",
+    settingsWorkbenchStatMode: "Workflow mode",
+    settingsWorkbenchStatIndexer: "Detected plugins",
+    settingsWorkbenchStatSemantic: "Semantic bridge",
+    settingsWorkbenchPageOverview: "Overview",
+    settingsWorkbenchPagePlugins: "Plugins",
+    settingsWorkbenchPageWorkflow: "Workflow",
+    settingsWorkbenchPageTaxonomy: "Taxonomy",
+    settingsWorkbenchOn: "On",
+    settingsWorkbenchOff: "Off",
+    settingsWorkbenchDetails: "Details",
+    settingsWorkbenchClose: "Close",
+    settingsWorkbenchDrawerEmptyTitle: "Choose a module",
+    settingsWorkbenchDrawerEmptyDescription: "Open a dashboard card, workflow module, or plugin row to inspect and edit the detailed configuration here.",
+    settingsWorkbenchApplyAll: "Sync preset",
+    settingsWorkbenchRefresh: "Refresh",
+    settingsWorkbenchQuickActionsTitle: "Workflow entry points",
+    settingsWorkbenchQuickActionsDescription: "Group high-frequency actions by capture, recall, and organization so the workbench stays readable.",
+    settingsWorkbenchActionGroupCaptureTitle: "Capture & import",
+    settingsWorkbenchActionGroupCaptureDescription: "Keep literature import and PDF reading tools together.",
+    settingsWorkbenchActionGroupRecallTitle: "Recall & retrieval",
+    settingsWorkbenchActionGroupRecallDescription: "Open semantic views and current-note intelligence without leaving the workbench.",
+    settingsWorkbenchActionGroupOrganizeTitle: "Tags & structure",
+    settingsWorkbenchActionGroupOrganizeDescription: "Clean native tags and keep controlled suggestions aligned while drafting.",
+    settingsWorkbenchActionZoteroTitle: "Import Zotero notes",
+    settingsWorkbenchActionZoteroDescription: "Run the import command directly.",
+    settingsWorkbenchActionSmartTitle: "Open Smart Connections",
+    settingsWorkbenchActionSmartDescription: "Jump into local semantic recall.",
+    settingsWorkbenchActionPanelTitle: "Open intelligence panel",
+    settingsWorkbenchActionPanelDescription: "Open links, references, and current-note context.",
+    settingsWorkbenchActionPdfTitle: "Check PDF++",
+    settingsWorkbenchActionPdfDescription: "Verify copy formats and reading behavior.",
+    settingsWorkbenchActionTagsTitle: "Manage vault tags",
+    settingsWorkbenchActionTagsDescription: "Clean native tags in place.",
+    settingsWorkbenchActionSuggestTitle: "Suggest tags for note",
+    settingsWorkbenchActionSuggestDescription: "Generate bilingual controlled-tag suggestions.",
+    settingsWorkbenchActionSemanticTitle: "Run semantic search",
+    settingsWorkbenchActionSemanticDescription: "Launch the external citation-aware retrieval bridge.",
+    settingsWorkbenchCompanionTitle: "Companion stack",
+    settingsWorkbenchCompanionDescription: "Each row shows install state and whether the plugin is aligned with this vault's research preset.",
+    settingsWorkbenchInstalled: "Installed",
+    settingsWorkbenchEnabled: "Enabled",
+    settingsWorkbenchYes: "Yes",
+    settingsWorkbenchNo: "No",
+    settingsWorkbenchMismatchCount: "{count} issues",
+    settingsWorkbenchMismatchTitle: "Needs attention",
+    settingsWorkbenchApplyCompanion: "Apply preset",
+    settingsWorkbenchOpenSettings: "Open settings",
+    settingsWorkbenchConfigTitle: "Workflow configuration",
+    settingsWorkbenchConfigDescription: "Edit the research-critical defaults that control imports, local indexing, and the optional semantic bridge.",
+    settingsWorkbenchPathsTitle: "Workspace paths",
+    settingsWorkbenchPathsDescription: "Keep note, template, and attachment paths stable so imports and citations remain predictable.",
+    settingsWorkbenchOpenImportedTitle: "Open imported note",
+    settingsWorkbenchOpenImportedDescription: "When enabled, Zotero imports should open the latest created note immediately.",
+    settingsWorkbenchRecallTitle: "Semantic recall scope",
+    settingsWorkbenchRecallDescription: "Define what Smart Connections should skip and how many results it should return.",
+    settingsWorkbenchFolderExclusionsTitle: "Folder exclusions",
+    settingsWorkbenchFolderExclusionsDescription: "Comma or newline separated folders excluded from the semantic index.",
+    settingsWorkbenchHeadingExclusionsTitle: "Heading exclusions",
+    settingsWorkbenchHeadingExclusionsDescription: "Comma or newline separated headings that should not be embedded.",
+    settingsWorkbenchResultsLimitTitle: "Semantic results limit",
+    settingsWorkbenchSemanticTitle: "External semantic bridge",
+    settingsWorkbenchSemanticDescription: "Keep this optional and enable it only when your research CLI returns structured citation fields.",
+    settingsWorkbenchConfigHint: "Edit here, then sync the preset or apply the matching companion preset.",
+    settingsWorkbenchCurrentExclusions: "Current normalized exclusions: {value}",
+    settingsWorkbenchAdvancedTitle: "Advanced taxonomy",
+    settingsWorkbenchAdvancedDescription: "Keep the dashboard clean and expand these panels only when relation keys or JSON vocabularies need tuning.",
+    settingsWorkbenchAdvancedRelationsTitle: "Typed relations",
+    settingsWorkbenchAdvancedRelationsDescription: "Frontmatter keys for argument and evidence links.",
+    settingsWorkbenchAdvancedAliasTitle: "Tag alias map",
+    settingsWorkbenchAdvancedAliasDescription: "Canonical tags and bilingual aliases.",
+    settingsWorkbenchAdvancedFacetTitle: "Facet vocabulary",
+    settingsWorkbenchAdvancedFacetDescription: "Topic, method, dataset, status, and writing-stage facets.",
+    settingsWorkbenchAdvancedMemoryTitle: "Recent link memory",
+    settingsWorkbenchAdvancedMemoryDescription: "How many recent targets should stay in quick recall.",
+    settingsWorkbenchDefaultDisplayTitle: "Default display",
+    settingsWorkbenchCopyCommandsTitle: "Research copy formats",
+    settingsWorkbenchHoverPreviewTitle: "Hover preview action",
+    settingsWorkbenchBacklinksTitle: "Backlink highlighting",
+    settingsWorkbenchLanguageTitle: "Index language",
+    settingsWorkbenchExpectedPrefix: "Expected",
+    settingsWorkbenchRunZotero: "Run import",
+    settingsWorkbenchRunSmart: "Open view",
+    settingsWorkbenchRunSemantic: "Run search",
+    settingsWorkbenchRunPdf: "Inspect PDF++",
+    settingsWorkbenchStatusReady: "Ready",
+    settingsWorkbenchStatusMissing: "Missing",
+    settingsWorkbenchStatusOptional: "Optional",
+    settingsWorkbenchStatusAttention: "Needs sync",
+    settingsWorkbenchMismatchZoteroFolder: "Literature-note folder does not match the workspace path.",
+    settingsWorkbenchMismatchZoteroTemplate: "Zotero export template path is not aligned.",
+    settingsWorkbenchMismatchZoteroAttachments: "Zotero image export folder does not match the workspace attachments path.",
+    settingsWorkbenchMismatchZoteroOpen: "Zotero import open-note behavior differs from this workbench setting.",
+    settingsWorkbenchMismatchZoteroOutput: "Zotero output path template is not using the expected citekey layout.",
+    settingsWorkbenchMismatchZoteroCite: "Zotero cite template is not the expected literature-note link format.",
+    settingsWorkbenchMismatchPdfDisplayFormats: "Required PDF display formats are missing.",
+    settingsWorkbenchMismatchPdfDisplayDefault: "PDF++ default display is not set to \u201CTitle & page\u201D.",
+    settingsWorkbenchMismatchPdfCopy: "Required research copy commands are missing.",
+    settingsWorkbenchMismatchPdfHover: "PDF++ hover action should be set to preview.",
+    settingsWorkbenchMismatchPdfBacklinks: "PDF++ backlink highlighting should stay enabled.",
+    settingsWorkbenchMismatchPdfSelectionMenu: "PDF++ selection menu should expose copy-format and display controls.",
+    settingsWorkbenchMismatchPdfAnnotationMenu: "PDF++ annotation menu should expose copy-format and display controls.",
+    settingsWorkbenchMismatchSmartLanguage: "Smart Connections language does not match the workbench language.",
+    settingsWorkbenchMismatchSmartFolders: "Smart Connections folder exclusions are out of sync.",
+    settingsWorkbenchMismatchSmartHeadings: "Smart Connections heading exclusions are out of sync.",
+    settingsWorkbenchMismatchSmartResults: "Smart Connections results limit is not aligned.",
+    settingsWorkbenchMismatchSmartRender: "Smart Connections should keep markdown rendering enabled in results.",
+    settingsWorkbenchMismatchSemanticCommand: "Semantic bridge is enabled but the command is empty.",
+    settingsWorkbenchPresetApplied: "Research preset synced to installed companion plugins.",
+    settingsWorkbenchCompanionApplied: "Applied the recommended configuration for {name}.",
+    settingsWorkbenchPluginMissing: "That companion plugin is not installed in the current vault.",
+    settingsWorkbenchSettingsUnavailable: "Obsidian settings could not be opened programmatically.",
+    settingsWorkbenchCommandUnavailable: "The companion command is not available in this vault.",
     mentionsExplanation: "Notes that mention this note title or aliases without already linking to it.",
     selected: "Selected",
     notSelected: "Not selected",
@@ -826,17 +969,160 @@ var TRANSLATIONS = {
     settingsSemanticCommandDescription: "\u4EC5\u684C\u9762\u7AEF\u7684 shell \u547D\u4EE4\u3002\u652F\u6301\u5360\u4F4D\u7B26\uFF1A{{query}} {{vault}} {{file}} {{selection}}\u3002\u5EFA\u8BAE\u8FD4\u56DE citekey / author / year / page / source_type / evidence_kind\u3002",
     settingsSemanticTimeout: "\u8BED\u4E49\u8D85\u65F6\uFF08\u6BEB\u79D2\uFF09",
     settingsRecentLinks: "\u6700\u8FD1\u94FE\u63A5\u8BB0\u5FC6\u957F\u5EA6",
+    settingsResearchGuideEyebrow: "\u7814\u7A76\u6808",
     settingsResearchGuideTitle: "\u7814\u7A76\u5DE5\u4F5C\u6D41\u6307\u5357",
     settingsResearchGuideDescription: "\u8BE5\u6A21\u5F0F\u9762\u5411\u6587\u732E\u7B14\u8BB0\u3001\u8BC1\u636E\u91C7\u96C6\u3001\u7EFC\u5408\u6574\u7406\u4E0E\u8BBA\u6587\u5199\u4F5C\u3002\u5C3D\u91CF\u8BA9\u7CBE\u786E\u5F15\u7528\u3001\u5173\u7CFB\u7C7B\u578B\u4E0E\u53D7\u63A7\u6807\u7B7E\u4FDD\u6301\u4E00\u81F4\u3002",
+    settingsResearchLayoutTitle: "\u76EE\u5F55\u5E03\u5C40",
+    settingsResearchLayoutDescription: "\u4FDD\u6301 3 \u5C42\u4EE5\u5185\u7684\u6D45\u5C42\u7ED3\u6784\uFF0C\u8BA9 Zotero \u5BFC\u5165\u3001\u6A21\u677F\u548C\u6279\u6CE8\u9644\u4EF6\u8DEF\u5F84\u5728\u63D2\u4EF6\u4E0E CLI \u4E4B\u95F4\u957F\u671F\u7A33\u5B9A\u3002",
+    settingsResearchPathLiterature: "\u6587\u732E\u7B14\u8BB0",
+    settingsResearchPathTemplates: "\u6A21\u677F",
+    settingsResearchPathAttachments: "\u6279\u6CE8\u9644\u4EF6",
+    settingsResearchWorkflowTitle: "\u5DE5\u4F5C\u987A\u5E8F",
+    settingsResearchWorkflowDescription: "\u56F4\u7ED5\u91C7\u96C6\u3001\u5E26\u9875\u7801\u9605\u8BFB\u3001\u8BBA\u8BC1\u8FDE\u63A5\u548C\u5199\u4F5C\u68C0\u7D22\u7684\u4E00\u6761\u5B9E\u7528\u95ED\u73AF\u3002",
+    settingsResearchWorkflowStep1Title: "\u5BFC\u5165\u6765\u6E90\u7B14\u8BB0",
+    settingsResearchWorkflowStep1Body: "\u7528 Zotero Integration \u4EE5 citekey \u4E3A\u5355\u4F4D\u751F\u6210\u7ED3\u6784\u5316\u6587\u732E\u7B14\u8BB0\u3002",
+    settingsResearchWorkflowStep2Title: "\u590D\u5236\u5E26\u9875\u7801\u8BC1\u636E",
+    settingsResearchWorkflowStep2Body: "\u7528 PDF++ \u7684\u590D\u5236\u52A8\u4F5C\u628A\u7CBE\u786E\u9875\u7801\u8BC1\u636E\u5E26\u5165\u6587\u732E\u7B14\u8BB0\u6216\u8349\u7A3F\u7B14\u8BB0\u3002",
+    settingsResearchWorkflowStep3Title: "\u8865\u5173\u7CFB\u4E0E\u6807\u7B7E",
+    settingsResearchWorkflowStep3Body: "\u7528\u5173\u7CFB\u952E\u548C\u4E2D\u82F1\u6587\u53D7\u63A7\u6807\u7B7E\u8FDE\u63A5\u6765\u6E90\u3001\u8BC1\u636E\u4E0E\u8BBA\u70B9\u3002",
+    settingsResearchWorkflowStep4Title: "\u5199\u4F5C\u65F6\u518D\u68C0\u7D22",
+    settingsResearchWorkflowStep4Body: "\u7528 Smart Connections \u505A\u672C\u5730\u8BED\u4E49\u53EC\u56DE\uFF1B\u53EA\u6709\u5728\u7814\u7A76 CLI \u51C6\u5907\u597D\u540E\u518D\u542F\u7528\u5916\u90E8\u8BED\u4E49\u6865\u63A5\u3002",
     settingsResearchGuideStep1: "\u7528 Zotero Integration \u6216 PDF++ \u91C7\u96C6\u6587\u732E\u5143\u6570\u636E\u3001\u9875\u7801\u5B9A\u4F4D\u548C\u6279\u6CE8\u5185\u5BB9\u3002",
     settingsResearchGuideStep2: "\u7528 supports / contradicts / extends \u7B49\u5173\u7CFB\u8FDE\u63A5\u6587\u732E\u3001\u89C2\u70B9\u548C\u8BC1\u636E\u3002",
     settingsResearchGuideStep3: "\u7EF4\u62A4 topic\u3001method\u3001dataset\u3001status\u3001writing-stage \u7B49\u53D7\u63A7\u6807\u7B7E\uFF0C\u80FD\u663E\u8457\u63D0\u5347\u63A8\u8350\u8D28\u91CF\u3002",
     settingsCompanionPluginsTitle: "\u63A8\u8350\u642D\u914D\u63D2\u4EF6",
+    settingsCompanionActionLabel: "\u5728 Obsidian \u91CC\u70B9\u51FB",
     settingsCompanionZoteroDesc: "\u5BFC\u5165 citekey\u3001\u6587\u732E\u7B14\u8BB0\u5143\u6570\u636E\u548C\u6765\u6E90\u6279\u6CE8\u3002",
+    settingsCompanionZoteroSetup: "\u5DF2\u914D\u7F6E\u4E3A\u628A\u7B14\u8BB0\u5199\u5165 {literaturePath}\uFF0C\u4F7F\u7528\u6A21\u677F {templatePath}\uFF0C\u5E76\u628A\u5BFC\u51FA\u7684\u6279\u6CE8\u56FE\u7247\u5B58\u5230 {attachmentsPath}\u3002",
+    settingsCompanionZoteroAction: "\u547D\u4EE4\u9762\u677F -> Zotero Integration: Import notes",
     settingsCompanionPdfDesc: "\u5904\u7406 PDF \u9AD8\u4EAE\u3001\u9875\u7801\u8DF3\u8F6C\u548C\u91CD\u6807\u6CE8\u9605\u8BFB\u6D41\u7A0B\u3002",
+    settingsCompanionPdfSetup: "\u5DF2\u914D\u7F6E\u4E3A\u9002\u5408\u7814\u7A76\u6458\u5F55\u7684\u9875\u7801\u5F15\u7528\u4E0E cite callout \u590D\u5236\u52A8\u4F5C\uFF0C\u5E76\u4FDD\u7559\u5F15\u6587\u60AC\u505C\u9884\u89C8\u3002",
+    settingsCompanionPdfAction: "\u6253\u5F00 PDF -> \u9009\u4E2D\u6587\u672C -> \u9009\u62E9 PDF++ \u590D\u5236\u683C\u5F0F",
     settingsCompanionSmartDesc: "\u63D0\u4F9B embedding \u8BED\u4E49\u53EC\u56DE\uFF0C\u540C\u65F6\u4E0D\u4E0E\u672C\u63D2\u4EF6\u7684\u94FE\u63A5\u4E0E\u6807\u7B7E\u5C42\u91CD\u590D\u3002",
+    settingsCompanionSmartSetup: "\u5DF2\u914D\u7F6E\u4E3A\u628A\u7CFB\u7EDF\u76EE\u5F55\u548C\u5F52\u6863\u76EE\u5F55\u6392\u9664\u51FA\u7D22\u5F15\uFF1A{exclusions}\u3002\u672C\u5730 embedding \u6A21\u578B\u4FDD\u6301\u9ED8\u8BA4\uFF0C\u907F\u514D\u8BEF\u89E6\u53D1\u6574\u5E93\u91CD\u5EFA\u3002",
+    settingsCompanionSmartAction: "\u6253\u5F00 Smart Connections\uFF0C\u5E76\u7B49\u5F85\u7B2C\u4E00\u6B21\u672C\u5730\u7D22\u5F15\u5B8C\u6210",
     settingsCompanionSemanticDesc: "\u5F53\u4F60\u9700\u8981\u53EF\u63A7\u7684\u7814\u7A76\u68C0\u7D22\u534F\u8BAE\u65F6\uFF0C\u4F7F\u7528\u81EA\u5DF1\u7684\u7814\u7A76\u578B\u5916\u90E8\u547D\u4EE4\u3002",
+    settingsCompanionSemanticSetup: "\u8FD9\u662F\u53EF\u9009\u9879\u3002\u53EA\u6709\u5F53\u5916\u90E8\u547D\u4EE4\u80FD\u8FD4\u56DE citekey\u3001author\u3001year\u3001page\u3001suggested_tags\u3001suggested_relations \u7B49 JSON \u5B57\u6BB5\u65F6\u518D\u5F00\u542F\u3002",
+    settingsCompanionSemanticAction: "\u5148\u586B\u5165\u547D\u4EE4\uFF0C\u518D\u542F\u7528\u8BED\u4E49\u6865\u63A5",
     settingsSemanticResearchHint: "\u63A8\u8350\u8BED\u4E49\u7ED3\u679C\u5B57\u6BB5\uFF1Acitekey\u3001author\u3001year\u3001page\u3001source_type\u3001evidence_kind\u3001suggested_tags\u3001suggested_relations\u3002",
+    settingsWorkbenchEyebrow: "\u7814\u7A76\u5DE5\u4F5C\u53F0",
+    settingsWorkbenchTitle: "\u7814\u7A76\u5DE5\u4F5C\u6D41\u63A7\u5236\u4E2D\u5FC3",
+    settingsWorkbenchDescription: "\u5728\u4E00\u4E2A\u9875\u9762\u5185\u67E5\u770B companion \u72B6\u6001\u3001\u540C\u6B65\u5173\u952E\u7814\u7A76\u914D\u7F6E\uFF0C\u5E76\u76F4\u63A5\u5F00\u59CB\u4E0B\u4E00\u6B65\u5BFC\u5165\u3001\u68C0\u7D22\u6216\u6574\u7406\u3002",
+    settingsWorkbenchPreferencesTitle: "\u5DE5\u4F5C\u53F0\u504F\u597D",
+    settingsWorkbenchPreferencesDescription: "\u628A\u8BED\u8A00\u548C\u9ED8\u8BA4\u6A21\u5F0F\u6536\u8FDB\u53F3\u4FA7\u8BE6\u60C5\u533A\uFF0C\u4E0D\u518D\u5360\u9996\u9875\u7A7A\u95F4\u3002",
+    settingsWorkbenchStatReady: "\u5DF2\u5C31\u7EEA\u63D2\u4EF6",
+    settingsWorkbenchStatMode: "\u5DE5\u4F5C\u6A21\u5F0F",
+    settingsWorkbenchStatIndexer: "\u5DF2\u68C0\u6D4B\u63D2\u4EF6",
+    settingsWorkbenchStatSemantic: "\u8BED\u4E49\u6865\u63A5",
+    settingsWorkbenchPageOverview: "\u603B\u89C8",
+    settingsWorkbenchPagePlugins: "\u63D2\u4EF6",
+    settingsWorkbenchPageWorkflow: "\u5DE5\u4F5C\u6D41",
+    settingsWorkbenchPageTaxonomy: "\u8BCD\u8868",
+    settingsWorkbenchOn: "\u5F00\u542F",
+    settingsWorkbenchOff: "\u5173\u95ED",
+    settingsWorkbenchDetails: "\u8BE6\u60C5",
+    settingsWorkbenchClose: "\u5173\u95ED",
+    settingsWorkbenchDrawerEmptyTitle: "\u9009\u62E9\u4E00\u4E2A\u6A21\u5757",
+    settingsWorkbenchDrawerEmptyDescription: "\u70B9\u51FB\u5DE6\u4FA7\u7684\u6458\u8981\u5361\u3001\u5DE5\u4F5C\u6D41\u6A21\u5757\u6216\u63D2\u4EF6\u884C\uFF0C\u5C31\u4F1A\u5728\u8FD9\u91CC\u6253\u5F00\u5BF9\u5E94\u8BE6\u60C5\u4E0E\u7F16\u8F91\u9879\u3002",
+    settingsWorkbenchApplyAll: "\u540C\u6B65\u9884\u8BBE",
+    settingsWorkbenchRefresh: "\u5237\u65B0",
+    settingsWorkbenchQuickActionsTitle: "\u5DE5\u4F5C\u6D41\u5165\u53E3",
+    settingsWorkbenchQuickActionsDescription: "\u6309\u91C7\u96C6\u3001\u53EC\u56DE\u3001\u6574\u7406\u5206\u7EC4\u5C55\u793A\u9AD8\u9891\u52A8\u4F5C\uFF0C\u907F\u514D\u9996\u9875\u7EE7\u7EED\u88AB\u957F\u6309\u94AE\u6324\u6EE1\u3002",
+    settingsWorkbenchActionGroupCaptureTitle: "\u91C7\u96C6\u4E0E\u5BFC\u5165",
+    settingsWorkbenchActionGroupCaptureDescription: "\u628A\u6587\u732E\u5BFC\u5165\u4E0E PDF \u9605\u8BFB\u5DE5\u5177\u653E\u5728\u4E00\u8D77\u3002",
+    settingsWorkbenchActionGroupRecallTitle: "\u68C0\u7D22\u4E0E\u53EC\u56DE",
+    settingsWorkbenchActionGroupRecallDescription: "\u96C6\u4E2D\u6253\u5F00\u8BED\u4E49\u68C0\u7D22\u3001\u4E0A\u4E0B\u6587\u4FA7\u680F\u548C\u53EC\u56DE\u89C6\u56FE\u3002",
+    settingsWorkbenchActionGroupOrganizeTitle: "\u6807\u7B7E\u4E0E\u7ED3\u6784",
+    settingsWorkbenchActionGroupOrganizeDescription: "\u5728\u6574\u7406\u7B14\u8BB0\u65F6\u540C\u6B65\u7EF4\u62A4\u539F\u751F\u6807\u7B7E\u548C\u53D7\u63A7\u6807\u7B7E\u5EFA\u8BAE\u3002",
+    settingsWorkbenchActionZoteroTitle: "\u5BFC\u5165 Zotero \u7B14\u8BB0",
+    settingsWorkbenchActionZoteroDescription: "\u76F4\u63A5\u6267\u884C\u5BFC\u5165\u547D\u4EE4\u3002",
+    settingsWorkbenchActionSmartTitle: "\u6253\u5F00 Smart Connections",
+    settingsWorkbenchActionSmartDescription: "\u76F4\u63A5\u8FDB\u5165\u672C\u5730\u8BED\u4E49\u53EC\u56DE\u89C6\u56FE\u3002",
+    settingsWorkbenchActionPanelTitle: "\u6253\u5F00\u667A\u80FD\u4FA7\u680F",
+    settingsWorkbenchActionPanelDescription: "\u6253\u5F00\u94FE\u63A5\u3001\u5F15\u7528\u4E0E\u5F53\u524D\u7B14\u8BB0\u4E0A\u4E0B\u6587\u4FA7\u680F\u3002",
+    settingsWorkbenchActionPdfTitle: "\u68C0\u67E5 PDF++",
+    settingsWorkbenchActionPdfDescription: "\u786E\u8BA4\u590D\u5236\u683C\u5F0F\u548C\u9605\u8BFB\u884C\u4E3A\u3002",
+    settingsWorkbenchActionTagsTitle: "\u7BA1\u7406\u539F\u751F\u6807\u7B7E",
+    settingsWorkbenchActionTagsDescription: "\u5C31\u5730\u6E05\u7406\u548C\u6574\u7406 Obsidian \u6807\u7B7E\u3002",
+    settingsWorkbenchActionSuggestTitle: "\u63A8\u8350\u5F53\u524D\u7B14\u8BB0\u6807\u7B7E",
+    settingsWorkbenchActionSuggestDescription: "\u751F\u6210\u4E2D\u82F1\u6587\u53D7\u63A7\u6807\u7B7E\u63A8\u8350\u3002",
+    settingsWorkbenchActionSemanticTitle: "\u8FD0\u884C\u8BED\u4E49\u68C0\u7D22",
+    settingsWorkbenchActionSemanticDescription: "\u542F\u52A8\u5916\u90E8\u5E26\u5F15\u6587\u8BED\u5883\u7684\u68C0\u7D22\u6865\u63A5\u3002",
+    settingsWorkbenchCompanionTitle: "\u7814\u7A76\u63D2\u4EF6\u6808",
+    settingsWorkbenchCompanionDescription: "\u6BCF\u4E00\u884C\u663E\u793A\u63D2\u4EF6\u662F\u5426\u53EF\u7528\uFF0C\u4EE5\u53CA\u662F\u5426\u5DF2\u4E0E\u5F53\u524D\u7814\u7A76\u9884\u8BBE\u4FDD\u6301\u4E00\u81F4\u3002",
+    settingsWorkbenchInstalled: "\u5DF2\u5B89\u88C5",
+    settingsWorkbenchEnabled: "\u5DF2\u542F\u7528",
+    settingsWorkbenchYes: "\u662F",
+    settingsWorkbenchNo: "\u5426",
+    settingsWorkbenchMismatchCount: "{count} \u9879\u5F85\u540C\u6B65",
+    settingsWorkbenchMismatchTitle: "\u9700\u8981\u5904\u7406",
+    settingsWorkbenchApplyCompanion: "\u5E94\u7528\u9884\u8BBE",
+    settingsWorkbenchOpenSettings: "\u6253\u5F00\u8BBE\u7F6E",
+    settingsWorkbenchConfigTitle: "\u5DE5\u4F5C\u6D41\u914D\u7F6E",
+    settingsWorkbenchConfigDescription: "\u8FD9\u91CC\u7EF4\u62A4\u5BFC\u5165\u3001\u7D22\u5F15\u548C\u5916\u90E8\u8BED\u4E49\u6865\u63A5\u6700\u5173\u952E\u7684\u7814\u7A76\u9ED8\u8BA4\u503C\u3002",
+    settingsWorkbenchPathsTitle: "\u7814\u7A76\u8DEF\u5F84",
+    settingsWorkbenchPathsDescription: "\u4FDD\u6301\u7B14\u8BB0\u3001\u6A21\u677F\u548C\u9644\u4EF6\u8DEF\u5F84\u7A33\u5B9A\uFF0C\u5BFC\u5165\u548C\u5F15\u7528\u624D\u4F1A\u957F\u671F\u53EF\u9884\u6D4B\u3002",
+    settingsWorkbenchOpenImportedTitle: "\u5BFC\u5165\u540E\u6253\u5F00\u7B14\u8BB0",
+    settingsWorkbenchOpenImportedDescription: "\u5F00\u542F\u540E\uFF0CZotero \u5BFC\u5165\u4F1A\u81EA\u52A8\u6253\u5F00\u6700\u65B0\u751F\u6210\u7684\u6587\u732E\u7B14\u8BB0\u3002",
+    settingsWorkbenchRecallTitle: "\u8BED\u4E49\u53EC\u56DE\u8303\u56F4",
+    settingsWorkbenchRecallDescription: "\u63A7\u5236 Smart Connections \u8DF3\u8FC7\u54EA\u4E9B\u5185\u5BB9\uFF0C\u4EE5\u53CA\u5355\u6B21\u8FD4\u56DE\u591A\u5C11\u7ED3\u679C\u3002",
+    settingsWorkbenchFolderExclusionsTitle: "\u6392\u9664\u6587\u4EF6\u5939",
+    settingsWorkbenchFolderExclusionsDescription: "\u7528\u9017\u53F7\u6216\u6362\u884C\u5206\u9694\uFF0C\u9700\u8981\u6392\u9664\u51FA\u8BED\u4E49\u7D22\u5F15\u7684\u6587\u4EF6\u5939\u3002",
+    settingsWorkbenchHeadingExclusionsTitle: "\u6392\u9664\u6807\u9898",
+    settingsWorkbenchHeadingExclusionsDescription: "\u7528\u9017\u53F7\u6216\u6362\u884C\u5206\u9694\uFF0C\u4E0D\u9700\u8981\u8FDB\u5165 embedding \u7684\u6807\u9898\u3002",
+    settingsWorkbenchResultsLimitTitle: "\u8BED\u4E49\u7ED3\u679C\u4E0A\u9650",
+    settingsWorkbenchSemanticTitle: "\u5916\u90E8\u8BED\u4E49\u6865\u63A5",
+    settingsWorkbenchSemanticDescription: "\u8FD9\u662F\u53EF\u9009\u5C42\u3002\u53EA\u6709\u7814\u7A76 CLI \u80FD\u8FD4\u56DE\u7ED3\u6784\u5316\u5F15\u6587\u5B57\u6BB5\u65F6\u518D\u5F00\u542F\u3002",
+    settingsWorkbenchConfigHint: "\u5728\u8FD9\u91CC\u4FEE\u6539\u540E\uFF0C\u540C\u6B65\u603B\u9884\u8BBE\uFF0C\u6216\u5BF9\u5355\u4E2A companion \u5E94\u7528\u5BF9\u5E94\u9884\u8BBE\u3002",
+    settingsWorkbenchCurrentExclusions: "\u5F53\u524D\u6807\u51C6\u5316\u6392\u9664\u9879\uFF1A{value}",
+    settingsWorkbenchAdvancedTitle: "\u9AD8\u7EA7\u8BCD\u8868",
+    settingsWorkbenchAdvancedDescription: "\u9ED8\u8BA4\u4FDD\u6301\u9996\u9875\u6E05\u723D\uFF1B\u53EA\u6709\u5728\u9700\u8981\u8C03\u6574\u5173\u7CFB\u952E\u6216\u5927\u6BB5 JSON \u8BCD\u8868\u65F6\uFF0C\u518D\u5C55\u5F00\u8FD9\u4E9B\u9762\u677F\u3002",
+    settingsWorkbenchAdvancedRelationsTitle: "\u5173\u7CFB\u7C7B\u578B",
+    settingsWorkbenchAdvancedRelationsDescription: "\u7528\u4E8E\u8BBA\u70B9\u3001\u8BC1\u636E\u548C\u6765\u6E90\u4E4B\u95F4\u7684 frontmatter \u5173\u7CFB\u952E\u3002",
+    settingsWorkbenchAdvancedAliasTitle: "\u6807\u7B7E\u522B\u540D\u6620\u5C04",
+    settingsWorkbenchAdvancedAliasDescription: "\u7EF4\u62A4\u89C4\u8303\u6807\u7B7E\u4E0E\u4E2D\u82F1\u6587\u522B\u540D\u3002",
+    settingsWorkbenchAdvancedFacetTitle: "\u6807\u7B7E\u5206\u9762\u8BCD\u8868",
+    settingsWorkbenchAdvancedFacetDescription: "\u7EF4\u62A4 topic\u3001method\u3001dataset\u3001status\u3001writing-stage \u7B49\u7814\u7A76\u5206\u9762\u3002",
+    settingsWorkbenchAdvancedMemoryTitle: "\u8FD1\u671F\u94FE\u63A5\u8BB0\u5FC6",
+    settingsWorkbenchAdvancedMemoryDescription: "\u63A7\u5236\u5FEB\u901F\u53EC\u56DE\u4E2D\u4FDD\u7559\u591A\u5C11\u4E2A\u6700\u8FD1\u76EE\u6807\u3002",
+    settingsWorkbenchDefaultDisplayTitle: "\u9ED8\u8BA4\u663E\u793A\u683C\u5F0F",
+    settingsWorkbenchCopyCommandsTitle: "\u7814\u7A76\u590D\u5236\u683C\u5F0F",
+    settingsWorkbenchHoverPreviewTitle: "\u60AC\u505C\u9884\u89C8\u52A8\u4F5C",
+    settingsWorkbenchBacklinksTitle: "\u53CD\u94FE\u9AD8\u4EAE",
+    settingsWorkbenchLanguageTitle: "\u7D22\u5F15\u8BED\u8A00",
+    settingsWorkbenchExpectedPrefix: "\u671F\u671B\u503C",
+    settingsWorkbenchRunZotero: "\u6267\u884C\u5BFC\u5165",
+    settingsWorkbenchRunSmart: "\u6253\u5F00\u89C6\u56FE",
+    settingsWorkbenchRunSemantic: "\u6267\u884C\u68C0\u7D22",
+    settingsWorkbenchRunPdf: "\u68C0\u67E5 PDF++",
+    settingsWorkbenchStatusReady: "\u5DF2\u5C31\u7EEA",
+    settingsWorkbenchStatusMissing: "\u672A\u5B89\u88C5",
+    settingsWorkbenchStatusOptional: "\u53EF\u9009",
+    settingsWorkbenchStatusAttention: "\u5F85\u540C\u6B65",
+    settingsWorkbenchMismatchZoteroFolder: "\u6587\u732E\u7B14\u8BB0\u76EE\u5F55\u4E0E\u5DE5\u4F5C\u53F0\u8DEF\u5F84\u4E0D\u4E00\u81F4\u3002",
+    settingsWorkbenchMismatchZoteroTemplate: "Zotero \u5BFC\u51FA\u6A21\u677F\u8DEF\u5F84\u672A\u5BF9\u9F50\u3002",
+    settingsWorkbenchMismatchZoteroAttachments: "Zotero \u56FE\u7247\u5BFC\u51FA\u76EE\u5F55\u4E0E\u5DE5\u4F5C\u53F0\u9644\u4EF6\u8DEF\u5F84\u4E0D\u4E00\u81F4\u3002",
+    settingsWorkbenchMismatchZoteroOpen: "Zotero \u5BFC\u5165\u540E\u6253\u5F00\u7B14\u8BB0\u7684\u884C\u4E3A\u4E0E\u5F53\u524D\u8BBE\u7F6E\u4E0D\u540C\u3002",
+    settingsWorkbenchMismatchZoteroOutput: "Zotero \u8F93\u51FA\u8DEF\u5F84\u6A21\u677F\u6CA1\u6709\u4F7F\u7528\u9884\u671F\u7684 citekey \u5E03\u5C40\u3002",
+    settingsWorkbenchMismatchZoteroCite: "Zotero \u5F15\u6587\u6A21\u677F\u4E0D\u662F\u9884\u671F\u7684\u6587\u732E\u7B14\u8BB0\u94FE\u63A5\u683C\u5F0F\u3002",
+    settingsWorkbenchMismatchPdfDisplayFormats: "\u7F3A\u5C11\u7814\u7A76\u5DE5\u4F5C\u6D41\u9700\u8981\u7684 PDF \u663E\u793A\u683C\u5F0F\u3002",
+    settingsWorkbenchMismatchPdfDisplayDefault: "PDF++ \u9ED8\u8BA4\u663E\u793A\u683C\u5F0F\u5E94\u4E3A\u201CTitle & page\u201D\u3002",
+    settingsWorkbenchMismatchPdfCopy: "\u7F3A\u5C11\u7814\u7A76\u6458\u5F55\u6240\u9700\u7684\u590D\u5236\u547D\u4EE4\u3002",
+    settingsWorkbenchMismatchPdfHover: "PDF++ \u60AC\u505C\u52A8\u4F5C\u5E94\u8BBE\u7F6E\u4E3A preview\u3002",
+    settingsWorkbenchMismatchPdfBacklinks: "PDF++ \u5E94\u4FDD\u6301\u53CD\u94FE\u9AD8\u4EAE\u5F00\u542F\u3002",
+    settingsWorkbenchMismatchPdfSelectionMenu: "PDF++ \u9009\u4E2D\u6587\u672C\u83DC\u5355\u5E94\u5305\u542B copy-format \u548C display\u3002",
+    settingsWorkbenchMismatchPdfAnnotationMenu: "PDF++ \u6279\u6CE8\u83DC\u5355\u5E94\u5305\u542B copy-format \u548C display\u3002",
+    settingsWorkbenchMismatchSmartLanguage: "Smart Connections \u7684\u8BED\u8A00\u8BBE\u7F6E\u4E0E\u5DE5\u4F5C\u53F0\u4E0D\u4E00\u81F4\u3002",
+    settingsWorkbenchMismatchSmartFolders: "Smart Connections \u7684\u6587\u4EF6\u5939\u6392\u9664\u9879\u672A\u540C\u6B65\u3002",
+    settingsWorkbenchMismatchSmartHeadings: "Smart Connections \u7684\u6807\u9898\u6392\u9664\u9879\u672A\u540C\u6B65\u3002",
+    settingsWorkbenchMismatchSmartResults: "Smart Connections \u7684\u7ED3\u679C\u4E0A\u9650\u672A\u5BF9\u9F50\u3002",
+    settingsWorkbenchMismatchSmartRender: "Smart Connections \u5E94\u4FDD\u6301\u7ED3\u679C\u4E2D\u7684 Markdown \u6E32\u67D3\u5F00\u542F\u3002",
+    settingsWorkbenchMismatchSemanticCommand: "\u8BED\u4E49\u6865\u63A5\u5DF2\u5F00\u542F\uFF0C\u4F46\u547D\u4EE4\u4ECD\u4E3A\u7A7A\u3002",
+    settingsWorkbenchPresetApplied: "\u5DF2\u5C06\u7814\u7A76\u9884\u8BBE\u540C\u6B65\u5230\u5DF2\u5B89\u88C5\u7684 companion \u63D2\u4EF6\u3002",
+    settingsWorkbenchCompanionApplied: "\u5DF2\u4E3A {name} \u5E94\u7528\u63A8\u8350\u914D\u7F6E\u3002",
+    settingsWorkbenchPluginMissing: "\u5F53\u524D vault \u4E2D\u6CA1\u6709\u5B89\u88C5\u8FD9\u4E2A companion \u63D2\u4EF6\u3002",
+    settingsWorkbenchSettingsUnavailable: "\u65E0\u6CD5\u901A\u8FC7\u7A0B\u5E8F\u65B9\u5F0F\u6253\u5F00 Obsidian \u8BBE\u7F6E\u9875\u3002",
+    settingsWorkbenchCommandUnavailable: "\u5F53\u524D vault \u4E2D\u6CA1\u6709\u627E\u5230\u53EF\u6267\u884C\u7684 companion \u547D\u4EE4\u3002",
     mentionsExplanation: "\u5217\u51FA\u63D0\u53CA\u5F53\u524D\u7B14\u8BB0\u6807\u9898\u6216\u522B\u540D\u3001\u4F46\u5C1A\u672A\u5EFA\u7ACB\u94FE\u63A5\u7684\u7B14\u8BB0\u3002",
     selected: "\u5DF2\u9009",
     notSelected: "\u672A\u9009",
@@ -2889,6 +3175,479 @@ var SemanticSearchModal = class extends import_obsidian6.Modal {
   }
 };
 
+// src/companion-plugins.ts
+var ZOTERO_ID = "obsidian-zotero-desktop-connector";
+var PDF_PLUS_ID = "pdf-plus";
+var SMART_CONNECTIONS_ID = "smart-connections";
+var SEMANTIC_BRIDGE_ID = "semantic-bridge";
+var ZOTERO_CONFIG_PATH = `.obsidian/plugins/${ZOTERO_ID}/data.json`;
+var PDF_PLUS_CONFIG_PATH = `.obsidian/plugins/${PDF_PLUS_ID}/data.json`;
+var SMART_CONNECTIONS_CONFIG_PATH = `.smart-env/smart_env.json`;
+var ZOTERO_EXPORT_FORMAT_NAME = "Research literature note";
+var ZOTERO_CITE_FORMAT_NAME = "Insert literature note link";
+var ZOTERO_CITE_TEMPLATE = "[[{{citekey}}]]";
+var REQUIRED_PDF_DISPLAY_FORMATS = [
+  {
+    name: "Title & page",
+    template: "{{file.basename}}, p.{{pageLabel}}"
+  },
+  {
+    name: "Page",
+    template: "p.{{pageLabel}}"
+  },
+  {
+    name: "Text",
+    template: "{{text}}"
+  }
+];
+var REQUIRED_PDF_COPY_COMMANDS = [
+  {
+    name: "Literature quote",
+    template: "> [!quote] {{linkWithDisplay}}\n> {{text}}\n"
+  },
+  {
+    name: "Evidence callout",
+    template: "> [!cite] {{linkWithDisplay}}\n> {{text}}\n"
+  },
+  {
+    name: "Source link",
+    template: "{{linkWithDisplay}}"
+  }
+];
+function normalizeVaultPath(path) {
+  return path.replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/^\.\//, "").replace(/\/$/, "").trim();
+}
+function ensureString(value, fallback = "") {
+  return typeof value === "string" ? value : fallback;
+}
+function ensureNumber(value, fallback) {
+  return Number.isFinite(value) ? Number(value) : fallback;
+}
+function ensureBoolean(value, fallback = false) {
+  return typeof value === "boolean" ? value : fallback;
+}
+function toRecord(value) {
+  return value && typeof value === "object" ? value : {};
+}
+function ensureArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+function stringifyJson(data) {
+  return JSON.stringify(data, null, 2);
+}
+async function pathExists(app, path) {
+  const adapter = app.vault.adapter;
+  if (typeof adapter.exists === "function") {
+    return adapter.exists(path);
+  }
+  if (typeof adapter.read === "function") {
+    try {
+      await adapter.read(path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+async function ensureParentDirectory(app, filePath) {
+  const adapter = app.vault.adapter;
+  if (typeof adapter.mkdir !== "function") {
+    return;
+  }
+  const parts = normalizeVaultPath(filePath).split("/").slice(0, -1);
+  let current = "";
+  for (const part of parts) {
+    current = current ? `${current}/${part}` : part;
+    const exists = typeof adapter.exists === "function" ? await adapter.exists(current) : true;
+    if (!exists) {
+      try {
+        await adapter.mkdir(current);
+      } catch {
+      }
+    }
+  }
+}
+async function readJson(app, path) {
+  if (!await pathExists(app, path)) {
+    return {};
+  }
+  const raw = await app.vault.adapter.read(path);
+  try {
+    return toRecord(JSON.parse(raw));
+  } catch {
+    return {};
+  }
+}
+async function writeJson(app, path, data) {
+  await ensureParentDirectory(app, path);
+  await app.vault.adapter.write(path, stringifyJson(data));
+}
+function findNamedEntry(items, name) {
+  return items.find((item) => ensureString(item.name) === name) ?? null;
+}
+function upsertNamedEntries(current, required) {
+  const requiredMap = new Map(required.map((item) => [item.name, item]));
+  const remaining = current.filter((item) => !requiredMap.has(item.name));
+  return [...required, ...remaining];
+}
+function mergeMenuConfig(current, required) {
+  const seen = /* @__PURE__ */ new Set();
+  const merged = [];
+  for (const item of [...current, ...required]) {
+    const key = item.trim();
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    merged.push(key);
+  }
+  return merged;
+}
+function normalizeDelimitedList(input) {
+  const seen = /* @__PURE__ */ new Set();
+  const items = [];
+  for (const raw of input.split(/[\n,]/)) {
+    const normalized = normalizeVaultPath(raw);
+    if (!normalized) {
+      continue;
+    }
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    items.push(normalized);
+  }
+  return items;
+}
+function sameNormalizedList(left, right) {
+  if (left.length !== right.length) {
+    return false;
+  }
+  const leftKeys = [...left].map((item) => item.toLowerCase()).sort();
+  const rightKeys = [...right].map((item) => item.toLowerCase()).sort();
+  return leftKeys.every((value, index) => value === rightKeys[index]);
+}
+function includesAll(haystack, needles) {
+  const available = new Set(haystack.map((item) => item.toLowerCase()));
+  return needles.every((item) => available.has(item.toLowerCase()));
+}
+function buildResearchWorkbenchProfile(settings, language) {
+  return {
+    language,
+    literatureFolder: normalizeVaultPath(settings.researchLiteratureFolder),
+    templatePath: normalizeVaultPath(settings.researchTemplatePath),
+    attachmentsFolder: normalizeVaultPath(settings.researchAttachmentsFolder),
+    openNoteAfterImport: settings.researchOpenNoteAfterImport,
+    smartFolderExclusions: normalizeDelimitedList(settings.smartConnectionsFolderExclusions),
+    smartHeadingExclusions: normalizeDelimitedList(settings.smartConnectionsHeadingExclusions),
+    smartResultsLimit: Math.max(5, settings.smartConnectionsResultsLimit),
+    semanticEnabled: settings.semanticBridgeEnabled,
+    semanticCommand: settings.semanticCommand.trim(),
+    semanticTimeoutMs: settings.semanticTimeoutMs
+  };
+}
+function buildRecommendedZoteroConfig(profile) {
+  return {
+    noteImportFolder: profile.literatureFolder,
+    citeSuggestTemplate: ZOTERO_CITE_TEMPLATE,
+    openNoteAfterImport: profile.openNoteAfterImport,
+    whichNotesToOpenAfterImport: "last-imported-note",
+    exportFormats: [
+      {
+        name: ZOTERO_EXPORT_FORMAT_NAME,
+        outputPathTemplate: `${profile.literatureFolder}/{{citekey}}.md`,
+        imageOutputPathTemplate: `${profile.attachmentsFolder}/{{citekey}}`,
+        imageBaseNameTemplate: "{{citekey}}",
+        templatePath: profile.templatePath,
+        cslStyle: "apa"
+      }
+    ],
+    citeFormats: [
+      {
+        name: ZOTERO_CITE_FORMAT_NAME,
+        outputFormat: "markdown",
+        formatAs: "single",
+        format: "template",
+        template: ZOTERO_CITE_TEMPLATE
+      }
+    ]
+  };
+}
+function buildRecommendedPdfConfig() {
+  return {
+    displayTextFormats: REQUIRED_PDF_DISPLAY_FORMATS,
+    defaultDisplayTextFormatIndex: 0,
+    syncDisplayTextFormat: true,
+    highlightBacklinks: true,
+    hoverHighlightAction: "preview",
+    selectionProductMenuConfig: ["copy-format", "display"],
+    annotationProductMenuConfig: ["copy-format", "display"],
+    copyCommands: REQUIRED_PDF_COPY_COMMANDS
+  };
+}
+function extractZoteroActual(config) {
+  const exportFormat = findNamedEntry(ensureArray(config.exportFormats), ZOTERO_EXPORT_FORMAT_NAME);
+  return {
+    literatureFolder: ensureString(config.noteImportFolder),
+    templatePath: ensureString(exportFormat?.templatePath),
+    attachmentsFolder: ensureString(exportFormat?.imageOutputPathTemplate).replace(/\/\{\{citekey\}\}$/, ""),
+    openNoteAfterImport: ensureBoolean(config.openNoteAfterImport, true)
+  };
+}
+function extractPdfActual(config) {
+  const displayFormats = ensureArray(config.displayTextFormats);
+  const defaultDisplayIndex = ensureNumber(config.defaultDisplayTextFormatIndex, 0);
+  const defaultDisplay = displayFormats[defaultDisplayIndex];
+  return {
+    defaultDisplayFormat: ensureString(defaultDisplay?.name),
+    copyCommandNames: ensureArray(config.copyCommands).map((item) => ensureString(item.name)).filter(Boolean),
+    hoverHighlightAction: ensureString(config.hoverHighlightAction),
+    highlightBacklinks: ensureBoolean(config.highlightBacklinks),
+    selectionProductMenuConfig: ensureArray(config.selectionProductMenuConfig).map(String),
+    annotationProductMenuConfig: ensureArray(config.annotationProductMenuConfig).map(String)
+  };
+}
+function extractSmartActual(config) {
+  const smartSources = toRecord(config.smart_sources);
+  const smartViewFilter = toRecord(config.smart_view_filter);
+  const connectionLists = toRecord(config.connections_lists);
+  return {
+    language: ensureString(config.language),
+    folderExclusions: normalizeDelimitedList(ensureString(smartSources.folder_exclusions)),
+    headingExclusions: normalizeDelimitedList(ensureString(smartSources.excluded_headings)),
+    resultsLimit: ensureNumber(connectionLists.results_limit, 20),
+    renderMarkdown: ensureBoolean(smartViewFilter.render_markdown, true)
+  };
+}
+function diffZoteroConfig(actualConfig, profile) {
+  const actual = extractZoteroActual(actualConfig);
+  const exportFormat = findNamedEntry(ensureArray(actualConfig.exportFormats), ZOTERO_EXPORT_FORMAT_NAME);
+  const citeFormat = findNamedEntry(ensureArray(actualConfig.citeFormats), ZOTERO_CITE_FORMAT_NAME);
+  const mismatches = [];
+  if (actual.literatureFolder !== profile.literatureFolder) {
+    mismatches.push("zotero-folder");
+  }
+  if (actual.templatePath !== profile.templatePath) {
+    mismatches.push("zotero-template");
+  }
+  if (actual.attachmentsFolder !== profile.attachmentsFolder) {
+    mismatches.push("zotero-attachments");
+  }
+  if (actual.openNoteAfterImport !== profile.openNoteAfterImport) {
+    mismatches.push("zotero-open-note");
+  }
+  if (ensureString(exportFormat?.outputPathTemplate) !== `${profile.literatureFolder}/{{citekey}}.md`) {
+    mismatches.push("zotero-output-template");
+  }
+  if (ensureString(citeFormat?.template) !== ZOTERO_CITE_TEMPLATE) {
+    mismatches.push("zotero-cite-template");
+  }
+  return mismatches;
+}
+function diffPdfConfig(actualConfig) {
+  const actual = extractPdfActual(actualConfig);
+  const displayFormats = ensureArray(actualConfig.displayTextFormats);
+  const displayFormatNames = displayFormats.map((item) => ensureString(item.name)).filter(Boolean);
+  const copyCommandNames = ensureArray(actualConfig.copyCommands).map((item) => ensureString(item.name)).filter(Boolean);
+  const mismatches = [];
+  if (!includesAll(displayFormatNames, REQUIRED_PDF_DISPLAY_FORMATS.map((item) => item.name))) {
+    mismatches.push("pdf-display-formats");
+  }
+  if (actual.defaultDisplayFormat !== "Title & page") {
+    mismatches.push("pdf-default-display");
+  }
+  if (!includesAll(copyCommandNames, REQUIRED_PDF_COPY_COMMANDS.map((item) => item.name))) {
+    mismatches.push("pdf-copy-commands");
+  }
+  if (actual.hoverHighlightAction !== "preview") {
+    mismatches.push("pdf-hover-preview");
+  }
+  if (actual.highlightBacklinks !== true) {
+    mismatches.push("pdf-highlight-backlinks");
+  }
+  if (!includesAll(ensureArray(actual.selectionProductMenuConfig), ["copy-format", "display"])) {
+    mismatches.push("pdf-selection-menu");
+  }
+  if (!includesAll(ensureArray(actual.annotationProductMenuConfig), ["copy-format", "display"])) {
+    mismatches.push("pdf-annotation-menu");
+  }
+  return mismatches;
+}
+function diffSmartConnectionsConfig(actualConfig, profile) {
+  const actual = extractSmartActual(actualConfig);
+  const mismatches = [];
+  if (actual.language !== profile.language) {
+    mismatches.push("smart-language");
+  }
+  if (!sameNormalizedList(ensureArray(actual.folderExclusions), profile.smartFolderExclusions)) {
+    mismatches.push("smart-folder-exclusions");
+  }
+  if (!sameNormalizedList(ensureArray(actual.headingExclusions), profile.smartHeadingExclusions)) {
+    mismatches.push("smart-heading-exclusions");
+  }
+  if (actual.resultsLimit !== profile.smartResultsLimit) {
+    mismatches.push("smart-results-limit");
+  }
+  if (actual.renderMarkdown !== true) {
+    mismatches.push("smart-render-markdown");
+  }
+  return mismatches;
+}
+function buildSemanticStatus(profile) {
+  const mismatches = [];
+  if (profile.semanticEnabled && !profile.semanticCommand) {
+    mismatches.push("semantic-command");
+  }
+  return {
+    id: SEMANTIC_BRIDGE_ID,
+    installed: true,
+    enabled: profile.semanticEnabled,
+    ready: !profile.semanticEnabled || mismatches.length === 0,
+    optional: true,
+    configPath: null,
+    mismatches,
+    actual: {
+      enabled: profile.semanticEnabled,
+      command: profile.semanticCommand,
+      timeoutMs: profile.semanticTimeoutMs
+    }
+  };
+}
+async function readResearchWorkbenchState(app, profile) {
+  const enabledPluginRaw = await app.vault.adapter.read(".obsidian/community-plugins.json").catch(() => "[]");
+  let enabledPluginIds = [];
+  try {
+    const parsed = JSON.parse(enabledPluginRaw);
+    enabledPluginIds = Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    enabledPluginIds = [];
+  }
+  const zoteroInstalled = await pathExists(app, `.obsidian/plugins/${ZOTERO_ID}/manifest.json`);
+  const zoteroConfig = await readJson(app, ZOTERO_CONFIG_PATH);
+  const zoteroStatus = {
+    id: ZOTERO_ID,
+    installed: zoteroInstalled,
+    enabled: enabledPluginIds.includes(ZOTERO_ID),
+    ready: zoteroInstalled && enabledPluginIds.includes(ZOTERO_ID) && diffZoteroConfig(zoteroConfig, profile).length === 0,
+    optional: false,
+    configPath: ZOTERO_CONFIG_PATH,
+    mismatches: diffZoteroConfig(zoteroConfig, profile),
+    actual: extractZoteroActual(zoteroConfig)
+  };
+  const pdfInstalled = await pathExists(app, `.obsidian/plugins/${PDF_PLUS_ID}/manifest.json`);
+  const pdfConfig = await readJson(app, PDF_PLUS_CONFIG_PATH);
+  const pdfStatus = {
+    id: PDF_PLUS_ID,
+    installed: pdfInstalled,
+    enabled: enabledPluginIds.includes(PDF_PLUS_ID),
+    ready: pdfInstalled && enabledPluginIds.includes(PDF_PLUS_ID) && diffPdfConfig(pdfConfig).length === 0,
+    optional: false,
+    configPath: PDF_PLUS_CONFIG_PATH,
+    mismatches: diffPdfConfig(pdfConfig),
+    actual: extractPdfActual(pdfConfig)
+  };
+  const smartInstalled = await pathExists(app, `.obsidian/plugins/${SMART_CONNECTIONS_ID}/manifest.json`);
+  const smartConfig = await readJson(app, SMART_CONNECTIONS_CONFIG_PATH);
+  const smartStatus = {
+    id: SMART_CONNECTIONS_ID,
+    installed: smartInstalled,
+    enabled: enabledPluginIds.includes(SMART_CONNECTIONS_ID),
+    ready: smartInstalled && enabledPluginIds.includes(SMART_CONNECTIONS_ID) && diffSmartConnectionsConfig(smartConfig, profile).length === 0,
+    optional: false,
+    configPath: SMART_CONNECTIONS_CONFIG_PATH,
+    mismatches: diffSmartConnectionsConfig(smartConfig, profile),
+    actual: extractSmartActual(smartConfig)
+  };
+  return {
+    profile,
+    enabledPluginIds,
+    companions: [
+      zoteroStatus,
+      pdfStatus,
+      smartStatus,
+      buildSemanticStatus(profile)
+    ]
+  };
+}
+async function applyCompanionPresetToVault(app, id, profile) {
+  if (id === ZOTERO_ID) {
+    const current2 = await readJson(app, ZOTERO_CONFIG_PATH);
+    const recommended = buildRecommendedZoteroConfig(profile);
+    const exportFormats = upsertNamedEntries(
+      ensureArray(current2.exportFormats).map((item) => ({ ...item, name: ensureString(item.name) })),
+      ensureArray(recommended.exportFormats).map((item) => ({ ...item, name: ensureString(item.name) }))
+    );
+    const citeFormats = upsertNamedEntries(
+      ensureArray(current2.citeFormats).map((item) => ({ ...item, name: ensureString(item.name) })),
+      ensureArray(recommended.citeFormats).map((item) => ({ ...item, name: ensureString(item.name) }))
+    );
+    const next2 = {
+      ...current2,
+      noteImportFolder: recommended.noteImportFolder,
+      citeSuggestTemplate: recommended.citeSuggestTemplate,
+      openNoteAfterImport: recommended.openNoteAfterImport,
+      whichNotesToOpenAfterImport: recommended.whichNotesToOpenAfterImport,
+      exportFormats,
+      citeFormats
+    };
+    await writeJson(app, ZOTERO_CONFIG_PATH, next2);
+    return;
+  }
+  if (id === PDF_PLUS_ID) {
+    const current2 = await readJson(app, PDF_PLUS_CONFIG_PATH);
+    const recommended = buildRecommendedPdfConfig();
+    const next2 = {
+      ...current2,
+      displayTextFormats: upsertNamedEntries(
+        ensureArray(current2.displayTextFormats).map((item) => ({ ...item, name: ensureString(item.name) })),
+        ensureArray(recommended.displayTextFormats).map((item) => ({ ...item, name: ensureString(item.name) }))
+      ),
+      copyCommands: upsertNamedEntries(
+        ensureArray(current2.copyCommands).map((item) => ({ ...item, name: ensureString(item.name) })),
+        ensureArray(recommended.copyCommands).map((item) => ({ ...item, name: ensureString(item.name) }))
+      ),
+      defaultDisplayTextFormatIndex: 0,
+      syncDisplayTextFormat: true,
+      highlightBacklinks: true,
+      hoverHighlightAction: "preview",
+      selectionProductMenuConfig: mergeMenuConfig(
+        ensureArray(current2.selectionProductMenuConfig).map(String),
+        ensureArray(recommended.selectionProductMenuConfig).map(String)
+      ),
+      annotationProductMenuConfig: mergeMenuConfig(
+        ensureArray(current2.annotationProductMenuConfig).map(String),
+        ensureArray(recommended.annotationProductMenuConfig).map(String)
+      )
+    };
+    await writeJson(app, PDF_PLUS_CONFIG_PATH, next2);
+    return;
+  }
+  const current = await readJson(app, SMART_CONNECTIONS_CONFIG_PATH);
+  const smartSources = toRecord(current.smart_sources);
+  const smartViewFilter = toRecord(current.smart_view_filter);
+  const connectionLists = toRecord(current.connections_lists);
+  const next = {
+    ...current,
+    language: profile.language,
+    smart_sources: {
+      ...smartSources,
+      excluded_headings: profile.smartHeadingExclusions.join(","),
+      folder_exclusions: profile.smartFolderExclusions.join(",")
+    },
+    smart_view_filter: {
+      ...smartViewFilter,
+      render_markdown: true
+    },
+    connections_lists: {
+      ...connectionLists,
+      results_limit: profile.smartResultsLimit
+    }
+  };
+  await writeJson(app, SMART_CONNECTIONS_CONFIG_PATH, next);
+}
+
 // src/reference-preview.ts
 function clamp2(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -3284,9 +4043,28 @@ var RESEARCH_RELATION_KEYS = [
   "reviews",
   "inspired_by"
 ];
+var RESEARCH_LITERATURE_PATH = "Knowledge/Research/Literature";
+var RESEARCH_TEMPLATE_PATH = "Knowledge/Research/Templates/zotero-literature-note.md";
+var RESEARCH_ATTACHMENTS_PATH = "Knowledge/Research/Attachments";
+var SMART_CONNECTIONS_EXCLUSIONS = [
+  ".obsidian",
+  ".smart-env",
+  "Archive/Imports",
+  "Excalidraw",
+  "note_reader"
+];
+var SMART_CONNECTIONS_HEADINGS = [
+  "\u76EE\u5F55",
+  "Contents",
+  "\u53C2\u8003\u6587\u732E",
+  "References",
+  "Acknowledgements"
+];
+var DEFAULT_SMART_RESULTS_LIMIT = 20;
 var DEFAULT_TAG_FACET_MAP_TEXT = JSON.stringify(
   {
     topic: {
+      "research-question": ["\u7814\u7A76\u95EE\u9898", "research question", "rq"],
       "literature-review": ["\u6587\u732E\u7EFC\u8FF0", "literature review"],
       "research-gap": ["\u7814\u7A76\u7A7A\u767D", "research gap"],
       "knowledge-synthesis": ["\u77E5\u8BC6\u7EFC\u5408", "synthesis"]
@@ -3295,16 +4073,19 @@ var DEFAULT_TAG_FACET_MAP_TEXT = JSON.stringify(
       experiment: ["\u5B9E\u9A8C", "experimental"],
       qualitative: ["\u5B9A\u6027\u7814\u7A76", "qualitative"],
       quantitative: ["\u5B9A\u91CF\u7814\u7A76", "quantitative"],
-      "case-study": ["\u6848\u4F8B\u7814\u7A76", "case study"]
+      "case-study": ["\u6848\u4F8B\u7814\u7A76", "case study"],
+      "mixed-methods": ["\u6DF7\u5408\u65B9\u6CD5", "mixed methods"]
     },
     dataset: {
       survey: ["\u95EE\u5377", "survey"],
       corpus: ["\u8BED\u6599", "corpus"],
-      interview: ["\u8BBF\u8C08", "interview"]
+      interview: ["\u8BBF\u8C08", "interview"],
+      "field-notes": ["\u7530\u91CE\u7B14\u8BB0", "field notes"]
     },
     theory: {
       framework: ["\u7406\u8BBA\u6846\u67B6", "framework"],
-      model: ["\u6A21\u578B", "model"]
+      model: ["\u6A21\u578B", "model"],
+      proposition: ["\u547D\u9898", "proposition"]
     },
     status: {
       "to-read": ["\u5F85\u8BFB", "to read"],
@@ -3316,6 +4097,12 @@ var DEFAULT_TAG_FACET_MAP_TEXT = JSON.stringify(
       draft: ["\u8349\u7A3F", "draft"],
       revision: ["\u4FEE\u8BA2", "revision"],
       final: ["\u5B9A\u7A3F", "final"]
+    },
+    source_kind: {
+      "literature-note": ["\u6587\u732E\u7B14\u8BB0", "literature note", "paper note"],
+      "source-note": ["\u6765\u6E90\u7B14\u8BB0", "source note"],
+      "reading-note": ["\u9605\u8BFB\u7B14\u8BB0", "reading note"],
+      "draft-note": ["\u5199\u4F5C\u8349\u7A3F", "draft note"]
     }
   },
   null,
@@ -3327,10 +4114,13 @@ var DEFAULT_SETTINGS = {
   relationKeys: [...RESEARCH_RELATION_KEYS],
   tagAliasMapText: JSON.stringify(
     {
+      "\u6587\u732E\u7B14\u8BB0": ["literature-note", "paper-note", "source-note"],
+      "\u7814\u7A76\u95EE\u9898": ["research-question", "rq"],
       "\u5927\u8BED\u8A00\u6A21\u578B": ["llm", "large-language-model"],
       "\u624B\u51B2\u5496\u5561": ["pour-over", "coffee-brewing"],
       "\u6587\u732E\u7EFC\u8FF0": ["literature-review", "lit review"],
-      "\u7814\u7A76\u7A7A\u767D": ["research gap"]
+      "\u7814\u7A76\u7A7A\u767D": ["research gap"],
+      "\u65B9\u6CD5\u8BBA": ["methodology", "framework"]
     },
     null,
     2
@@ -3340,10 +4130,41 @@ var DEFAULT_SETTINGS = {
   semanticCommand: "",
   semanticTimeoutMs: 3e4,
   recentLinkMemorySize: 24,
-  recentLinkTargets: []
+  recentLinkTargets: [],
+  researchLiteratureFolder: RESEARCH_LITERATURE_PATH,
+  researchTemplatePath: RESEARCH_TEMPLATE_PATH,
+  researchAttachmentsFolder: RESEARCH_ATTACHMENTS_PATH,
+  researchOpenNoteAfterImport: true,
+  smartConnectionsFolderExclusions: SMART_CONNECTIONS_EXCLUSIONS.join(", "),
+  smartConnectionsHeadingExclusions: SMART_CONNECTIONS_HEADINGS.join(", "),
+  smartConnectionsResultsLimit: DEFAULT_SMART_RESULTS_LIMIT
+};
+var COMPANION_META = {
+  "obsidian-zotero-desktop-connector": {
+    name: "Zotero Integration",
+    descriptionKey: "settingsCompanionZoteroDesc"
+  },
+  "pdf-plus": {
+    name: "PDF++",
+    descriptionKey: "settingsCompanionPdfDesc"
+  },
+  "smart-connections": {
+    name: "Smart Connections",
+    descriptionKey: "settingsCompanionSmartDesc"
+  },
+  "semantic-bridge": {
+    name: "Semantic bridge",
+    descriptionKey: "settingsCompanionSemanticDesc"
+  }
 };
 function arraysEqual(left, right) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+function normalizeJsonText(value, fallback) {
+  return typeof value === "string" ? value : fallback;
+}
+function normalizeDelimitedSetting(value, fallback) {
+  return typeof value === "string" && value.trim() ? value : fallback;
 }
 function normalizeLoadedSettings(data) {
   const raw = data && typeof data === "object" ? data : {};
@@ -3360,164 +4181,992 @@ function normalizeLoadedSettings(data) {
     normalized.relationKeys = normalized.relationKeys.map(String).map((item) => item.trim()).filter(Boolean);
   }
   normalized.workflowMode = normalized.workflowMode === "general" ? "general" : "researcher";
-  normalized.tagAliasMapText = typeof normalized.tagAliasMapText === "string" ? normalized.tagAliasMapText : DEFAULT_SETTINGS.tagAliasMapText;
-  normalized.tagFacetMapText = typeof normalized.tagFacetMapText === "string" ? normalized.tagFacetMapText : DEFAULT_TAG_FACET_MAP_TEXT;
+  normalized.tagAliasMapText = normalizeJsonText(normalized.tagAliasMapText, DEFAULT_SETTINGS.tagAliasMapText);
+  normalized.tagFacetMapText = normalizeJsonText(normalized.tagFacetMapText, DEFAULT_TAG_FACET_MAP_TEXT);
   normalized.semanticCommand = typeof normalized.semanticCommand === "string" ? normalized.semanticCommand : "";
   normalized.semanticTimeoutMs = Number.isFinite(normalized.semanticTimeoutMs) && normalized.semanticTimeoutMs > 0 ? normalized.semanticTimeoutMs : DEFAULT_SETTINGS.semanticTimeoutMs;
   normalized.recentLinkMemorySize = Number.isFinite(normalized.recentLinkMemorySize) && normalized.recentLinkMemorySize > 0 ? normalized.recentLinkMemorySize : DEFAULT_SETTINGS.recentLinkMemorySize;
   normalized.recentLinkTargets = Array.isArray(normalized.recentLinkTargets) ? normalized.recentLinkTargets.map(String).filter(Boolean) : [];
+  normalized.researchLiteratureFolder = normalizeDelimitedSetting(normalized.researchLiteratureFolder, RESEARCH_LITERATURE_PATH);
+  normalized.researchTemplatePath = normalizeDelimitedSetting(normalized.researchTemplatePath, RESEARCH_TEMPLATE_PATH);
+  normalized.researchAttachmentsFolder = normalizeDelimitedSetting(normalized.researchAttachmentsFolder, RESEARCH_ATTACHMENTS_PATH);
+  normalized.researchOpenNoteAfterImport = typeof normalized.researchOpenNoteAfterImport === "boolean" ? normalized.researchOpenNoteAfterImport : DEFAULT_SETTINGS.researchOpenNoteAfterImport;
+  normalized.smartConnectionsFolderExclusions = normalizeDelimitedSetting(
+    normalized.smartConnectionsFolderExclusions,
+    DEFAULT_SETTINGS.smartConnectionsFolderExclusions
+  );
+  normalized.smartConnectionsHeadingExclusions = normalizeDelimitedSetting(
+    normalized.smartConnectionsHeadingExclusions,
+    DEFAULT_SETTINGS.smartConnectionsHeadingExclusions
+  );
+  normalized.smartConnectionsResultsLimit = Number.isFinite(normalized.smartConnectionsResultsLimit) && normalized.smartConnectionsResultsLimit > 0 ? normalized.smartConnectionsResultsLimit : DEFAULT_SETTINGS.smartConnectionsResultsLimit;
   return normalized;
 }
-var COMPANION_PLUGINS = [
-  {
-    name: "Zotero Integration",
-    url: "https://github.com/mgmeyers/obsidian-zotero-integration",
-    descriptionKey: "settingsCompanionZoteroDesc"
-  },
-  {
-    name: "PDF++",
-    url: "https://github.com/RyotaUshio/obsidian-pdf-plus",
-    descriptionKey: "settingsCompanionPdfDesc"
-  },
-  {
-    name: "Smart Connections",
-    url: "https://github.com/brianpetro/obsidian-smart-connections",
-    descriptionKey: "settingsCompanionSmartDesc"
-  },
-  {
-    name: "External semantic CLI",
-    url: "https://github.com/zhangyang-crazy-one/obsidian-link-tag-intelligence#external-semantic-bridge",
-    descriptionKey: "settingsCompanionSemanticDesc"
-  }
-];
 var LinkTagIntelligenceSettingTab = class extends import_obsidian8.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
+    this.renderToken = 0;
+    this.activePage = "overview";
+    this.activeCompanionId = null;
     this.plugin = plugin;
   }
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    new import_obsidian8.Setting(containerEl).setName(this.plugin.t("pluginName")).setHeading();
-    new import_obsidian8.Setting(containerEl).setName(this.plugin.t("settingsLanguage")).addDropdown(
-      (dropdown) => dropdown.addOption("system", "System").addOption("en", "English").addOption("zh", "\u4E2D\u6587").setValue(this.plugin.settings.language).onChange(async (value) => {
+    containerEl.addClass("lti-settings-root");
+    const shell = containerEl.createDiv({ cls: "lti-workbench" });
+    shell.createDiv({
+      text: this.plugin.t("loading"),
+      cls: "lti-workbench-loading"
+    });
+    const token = ++this.renderToken;
+    void this.renderWorkbench(shell, token);
+  }
+  async renderWorkbench(containerEl, token) {
+    const state = await this.plugin.getResearchWorkbenchState();
+    if (token !== this.renderToken) {
+      return;
+    }
+    containerEl.empty();
+    const nav = containerEl.createDiv({ cls: "lti-workbench-page-nav" });
+    this.createPageTab(nav, "overview", this.plugin.t("settingsWorkbenchPageOverview"));
+    this.createPageTab(nav, "workflow", this.plugin.t("settingsWorkbenchPageWorkflow"));
+    this.createPageTab(nav, "plugins", this.plugin.t("settingsWorkbenchPagePlugins"));
+    this.createPageTab(nav, "taxonomy", this.plugin.t("settingsWorkbenchPageTaxonomy"));
+    const page = containerEl.createDiv({ cls: "lti-workbench-page" });
+    switch (this.activePage) {
+      case "overview":
+        this.renderOverviewPage(page, state);
+        break;
+      case "workflow":
+        this.renderWorkflowPage(page, state);
+        break;
+      case "plugins":
+        this.renderPluginsPage(page, state);
+        break;
+      case "taxonomy":
+        this.renderTaxonomyPage(page);
+        break;
+    }
+  }
+  openPage(page, companionId = null) {
+    this.activePage = page;
+    if (companionId) {
+      this.activeCompanionId = companionId;
+    } else if (page !== "plugins") {
+      this.activeCompanionId = null;
+    }
+    this.display();
+  }
+  createPageTab(containerEl, page, label) {
+    const button = containerEl.createEl("button", {
+      cls: `lti-workbench-page-tab${this.activePage === page ? " is-active" : ""}`,
+      text: label,
+      type: "button"
+    });
+    button.addEventListener("click", () => {
+      if (this.activePage !== page) {
+        this.openPage(page);
+      }
+    });
+  }
+  renderOverviewPage(containerEl, state) {
+    this.renderHero(containerEl, state);
+    this.renderModuleSection(containerEl);
+    this.renderCompanionSummarySection(containerEl, state);
+  }
+  renderWorkflowPage(containerEl, state) {
+    this.renderActionsSection(containerEl);
+    const grid = containerEl.createDiv({ cls: "lti-workbench-settings-grid" });
+    const preferences = this.createSectionCard(
+      grid,
+      this.plugin.t("settingsWorkbenchPreferencesTitle"),
+      this.plugin.t("settingsWorkbenchPreferencesDescription")
+    );
+    preferences.addClass("is-form");
+    this.renderPreferencesDrawer(preferences);
+    const paths = this.createSectionCard(
+      grid,
+      this.plugin.t("settingsWorkbenchPathsTitle"),
+      this.plugin.t("settingsWorkbenchPathsDescription")
+    );
+    paths.addClass("is-form");
+    this.renderPathsDrawer(paths);
+    const smart = this.createSectionCard(
+      grid,
+      this.plugin.t("settingsWorkbenchRecallTitle"),
+      this.plugin.t("settingsWorkbenchRecallDescription")
+    );
+    smart.addClass("is-form");
+    this.renderSmartDrawer(smart);
+    const semantic = this.createSectionCard(
+      grid,
+      this.plugin.t("settingsWorkbenchSemanticTitle"),
+      this.plugin.t("settingsWorkbenchSemanticDescription")
+    );
+    semantic.addClass("is-form");
+    this.renderSemanticDrawer(semantic, state);
+  }
+  renderPluginsPage(containerEl, state) {
+    const section = this.createSectionCard(
+      containerEl,
+      this.plugin.t("settingsWorkbenchCompanionTitle"),
+      this.plugin.t("settingsWorkbenchCompanionDescription")
+    );
+    const list = section.createDiv({ cls: "lti-workbench-plugin-list" });
+    for (const companion of state.companions) {
+      this.renderCompanionPanel(list, companion, state);
+    }
+  }
+  renderTaxonomyPage(containerEl) {
+    const section = this.createSectionCard(
+      containerEl,
+      this.plugin.t("settingsWorkbenchAdvancedTitle"),
+      this.plugin.t("settingsWorkbenchAdvancedDescription")
+    );
+    section.addClass("is-form");
+    this.renderTaxonomyDrawer(section);
+  }
+  renderHero(containerEl, state) {
+    const readyCompanions = state.companions.filter((item) => item.ready && !item.optional).length;
+    const requiredCompanions = state.companions.filter((item) => !item.optional).length;
+    const hero = containerEl.createDiv({ cls: "lti-workbench-hero" });
+    const top = hero.createDiv({ cls: "lti-workbench-hero-top" });
+    const copy = top.createDiv({ cls: "lti-workbench-hero-copy" });
+    copy.createDiv({
+      text: this.plugin.t("settingsWorkbenchEyebrow"),
+      cls: "lti-workbench-eyebrow"
+    });
+    copy.createDiv({
+      text: this.plugin.t("settingsWorkbenchTitle"),
+      cls: "lti-workbench-title"
+    });
+    copy.createDiv({
+      text: this.plugin.t("settingsWorkbenchDescription"),
+      cls: "setting-item-description lti-workbench-description"
+    });
+    const side = top.createDiv({ cls: "lti-workbench-hero-side" });
+    const buttons = side.createDiv({ cls: "lti-workbench-hero-action-grid" });
+    this.createAsyncButton(buttons, this.plugin.t("settingsWorkbenchApplyAll"), async () => {
+      await this.plugin.applyResearchPreset();
+    });
+    this.createActionButton(buttons, this.plugin.t("settingsWorkbenchRefresh"), () => this.display());
+    this.createActionButton(buttons, this.plugin.t("settingsWorkbenchPageWorkflow"), () => this.openPage("workflow"));
+    const prefs = side.createDiv({ cls: "lti-workbench-hero-meta-grid" });
+    this.renderMetaCard(
+      prefs,
+      this.plugin.t("settingsLanguage"),
+      this.formatLanguageLabel(this.plugin.settings.language)
+    );
+    this.renderMetaCard(
+      prefs,
+      this.plugin.t("settingsWorkflowMode"),
+      this.plugin.t(this.plugin.settings.workflowMode === "researcher" ? "workflowModeResearcher" : "workflowModeGeneral")
+    );
+    const stats = hero.createDiv({ cls: "lti-workbench-stat-strip" });
+    this.renderStat(stats, this.plugin.t("settingsWorkbenchStatReady"), `${readyCompanions}/${requiredCompanions}`);
+    this.renderStat(
+      stats,
+      this.plugin.t("settingsWorkbenchStatMode"),
+      this.plugin.t(this.plugin.settings.workflowMode === "researcher" ? "workflowModeResearcher" : "workflowModeGeneral")
+    );
+    this.renderStat(stats, this.plugin.t("settingsWorkbenchStatIndexer"), String(state.enabledPluginIds.length));
+    this.renderStat(
+      stats,
+      this.plugin.t("settingsWorkbenchStatSemantic"),
+      state.profile.semanticEnabled ? this.plugin.t("settingsWorkbenchOn") : this.plugin.t("settingsWorkbenchOff")
+    );
+  }
+  renderActionsSection(containerEl) {
+    const section = this.createSectionCard(
+      containerEl,
+      this.plugin.t("settingsWorkbenchQuickActionsTitle"),
+      this.plugin.t("settingsWorkbenchQuickActionsDescription")
+    );
+    section.addClass("is-featured");
+    const groups = section.createDiv({ cls: "lti-workbench-action-group-grid" });
+    this.renderActionGroup(
+      groups,
+      this.plugin.t("settingsWorkbenchActionGroupCaptureTitle"),
+      this.plugin.t("settingsWorkbenchActionGroupCaptureDescription"),
+      [
+        {
+          title: this.plugin.t("settingsWorkbenchActionZoteroTitle"),
+          description: this.plugin.t("settingsWorkbenchActionZoteroDescription"),
+          onClick: () => {
+            void this.plugin.importZoteroNotes();
+          }
+        },
+        {
+          title: this.plugin.t("settingsWorkbenchActionPdfTitle"),
+          description: this.plugin.t("settingsWorkbenchActionPdfDescription"),
+          onClick: () => {
+            void this.plugin.openPdfPlusSettings();
+          }
+        }
+      ]
+    );
+    this.renderActionGroup(
+      groups,
+      this.plugin.t("settingsWorkbenchActionGroupRecallTitle"),
+      this.plugin.t("settingsWorkbenchActionGroupRecallDescription"),
+      [
+        {
+          title: this.plugin.t("settingsWorkbenchActionSmartTitle"),
+          description: this.plugin.t("settingsWorkbenchActionSmartDescription"),
+          onClick: () => {
+            void this.plugin.openSmartConnectionsView();
+          }
+        },
+        {
+          title: this.plugin.t("settingsWorkbenchActionSemanticTitle"),
+          description: this.plugin.t("settingsWorkbenchActionSemanticDescription"),
+          onClick: () => this.plugin.openSemanticSearch()
+        },
+        {
+          title: this.plugin.t("settingsWorkbenchActionPanelTitle"),
+          description: this.plugin.t("settingsWorkbenchActionPanelDescription"),
+          onClick: () => {
+            void this.plugin.openIntelligencePanel();
+          }
+        }
+      ]
+    );
+    this.renderActionGroup(
+      groups,
+      this.plugin.t("settingsWorkbenchActionGroupOrganizeTitle"),
+      this.plugin.t("settingsWorkbenchActionGroupOrganizeDescription"),
+      [
+        {
+          title: this.plugin.t("settingsWorkbenchActionTagsTitle"),
+          description: this.plugin.t("settingsWorkbenchActionTagsDescription"),
+          onClick: () => this.plugin.openTagManager()
+        },
+        {
+          title: this.plugin.t("settingsWorkbenchActionSuggestTitle"),
+          description: this.plugin.t("settingsWorkbenchActionSuggestDescription"),
+          onClick: () => this.plugin.openTagSuggestion()
+        }
+      ]
+    );
+  }
+  renderModuleSection(containerEl) {
+    const section = this.createSectionCard(
+      containerEl,
+      this.plugin.t("settingsWorkbenchConfigTitle"),
+      this.plugin.t("settingsWorkbenchConfigDescription")
+    );
+    const grid = section.createDiv({ cls: "lti-workbench-module-grid" });
+    const preferences = this.createModuleCard(
+      grid,
+      this.plugin.t("settingsWorkbenchPreferencesTitle"),
+      this.plugin.t("settingsWorkbenchPreferencesDescription")
+    );
+    this.renderMetricRow(preferences, this.plugin.t("settingsLanguage"), this.formatLanguageLabel(this.plugin.settings.language));
+    this.renderMetricRow(
+      preferences,
+      this.plugin.t("settingsWorkflowMode"),
+      this.plugin.t(this.plugin.settings.workflowMode === "researcher" ? "workflowModeResearcher" : "workflowModeGeneral")
+    );
+    this.attachModuleAction(preferences, () => this.openPage("workflow"));
+    const paths = this.createModuleCard(
+      grid,
+      this.plugin.t("settingsWorkbenchPathsTitle"),
+      this.plugin.t("settingsWorkbenchPathsDescription")
+    );
+    this.renderMetricRow(paths, this.plugin.t("settingsResearchPathLiterature"), this.compactPathLabel(this.plugin.settings.researchLiteratureFolder));
+    this.renderMetricRow(paths, this.plugin.t("settingsResearchPathTemplates"), this.compactPathLabel(this.plugin.settings.researchTemplatePath));
+    this.renderMetricRow(paths, this.plugin.t("settingsResearchPathAttachments"), this.compactPathLabel(this.plugin.settings.researchAttachmentsFolder));
+    this.attachModuleAction(paths, () => this.openPage("workflow"));
+    const smart = this.createModuleCard(
+      grid,
+      this.plugin.t("settingsWorkbenchRecallTitle"),
+      this.plugin.t("settingsWorkbenchRecallDescription")
+    );
+    this.renderMetricRow(smart, this.plugin.t("settingsWorkbenchFolderExclusionsTitle"), String(normalizeDelimitedList(this.plugin.settings.smartConnectionsFolderExclusions).length));
+    this.renderMetricRow(smart, this.plugin.t("settingsWorkbenchHeadingExclusionsTitle"), String(normalizeDelimitedList(this.plugin.settings.smartConnectionsHeadingExclusions).length));
+    this.renderMetricRow(smart, this.plugin.t("settingsWorkbenchResultsLimitTitle"), String(this.plugin.settings.smartConnectionsResultsLimit));
+    this.attachModuleAction(smart, () => this.openPage("workflow"));
+    const semantic = this.createModuleCard(
+      grid,
+      this.plugin.t("settingsWorkbenchSemanticTitle"),
+      this.plugin.t("settingsWorkbenchSemanticDescription")
+    );
+    this.renderMetricRow(semantic, this.plugin.t("settingsSemanticEnabled"), this.booleanText(this.plugin.settings.semanticBridgeEnabled));
+    this.renderMetricRow(semantic, this.plugin.t("settingsSemanticCommand"), this.plugin.settings.semanticCommand.trim() ? this.plugin.t("configured") : this.plugin.t("notConfigured"));
+    this.renderMetricRow(semantic, this.plugin.t("settingsSemanticTimeout"), String(this.plugin.settings.semanticTimeoutMs));
+    this.attachModuleAction(semantic, () => this.openPage("workflow"));
+    const taxonomy = this.createModuleCard(
+      grid,
+      this.plugin.t("settingsWorkbenchAdvancedTitle"),
+      this.plugin.t("settingsWorkbenchAdvancedDescription")
+    );
+    this.renderMetricRow(taxonomy, this.plugin.t("settingsRelationKeys"), String(this.plugin.settings.relationKeys.length));
+    this.renderMetricRow(taxonomy, this.plugin.t("settingsTagAliasMap"), String(this.countAliasEntries(this.plugin.settings.tagAliasMapText)));
+    this.renderMetricRow(taxonomy, this.plugin.t("settingsTagFacetMap"), String(this.plugin.getTagFacetMap({ suppressNotice: true }).size));
+    this.attachModuleAction(taxonomy, () => this.openPage("taxonomy"));
+    section.createDiv({
+      text: this.plugin.t("settingsWorkbenchConfigHint"),
+      cls: "setting-item-description lti-workbench-hint"
+    });
+  }
+  renderCompanionSummarySection(containerEl, state) {
+    const section = this.createSectionCard(
+      containerEl,
+      this.plugin.t("settingsWorkbenchCompanionTitle"),
+      this.plugin.t("settingsWorkbenchCompanionDescription")
+    );
+    const list = section.createDiv({ cls: "lti-workbench-summary-list" });
+    for (const companion of state.companions) {
+      this.renderCompanionSummaryRow(list, companion);
+    }
+  }
+  renderCompanionSummaryRow(containerEl, companion) {
+    const meta = COMPANION_META[companion.id];
+    const row = containerEl.createDiv({ cls: "lti-workbench-summary-row" });
+    const copy = row.createDiv({ cls: "lti-workbench-summary-copy" });
+    copy.createDiv({ text: meta.name, cls: "lti-workbench-summary-title" });
+    const chips = copy.createDiv({ cls: "lti-workbench-chip-row" });
+    chips.createDiv({
+      text: this.getStatusLabel(companion),
+      cls: `lti-workbench-status-pill is-${this.getStatusTone(companion)}`
+    });
+    if (companion.mismatches.length > 0) {
+      chips.createDiv({
+        text: this.plugin.t("settingsWorkbenchMismatchCount", { count: companion.mismatches.length }),
+        cls: "lti-workbench-chip"
+      });
+    }
+    this.createActionButton(row, this.plugin.t("settingsWorkbenchPagePlugins"), () => {
+      this.openPage("plugins", companion.id);
+    });
+  }
+  renderPreferencesDrawer(containerEl) {
+    this.createSelectField(
+      containerEl,
+      this.plugin.t("settingsLanguage"),
+      "",
+      [
+        { value: "system", label: "System" },
+        { value: "en", label: "English" },
+        { value: "zh", label: "\u4E2D\u6587" }
+      ],
+      this.plugin.settings.language,
+      async (value) => {
         this.plugin.settings.language = value;
         await this.plugin.saveSettings();
         this.display();
-      })
+      }
     );
-    new import_obsidian8.Setting(containerEl).setName(this.plugin.t("settingsWorkflowMode")).setDesc(this.plugin.t("settingsWorkflowModeDescription")).addDropdown(
-      (dropdown) => dropdown.addOption("researcher", this.plugin.t("workflowModeResearcher")).addOption("general", this.plugin.t("workflowModeGeneral")).setValue(this.plugin.settings.workflowMode).onChange(async (value) => {
+    this.createSelectField(
+      containerEl,
+      this.plugin.t("settingsWorkflowMode"),
+      this.plugin.t("settingsWorkflowModeDescription"),
+      [
+        { value: "researcher", label: this.plugin.t("workflowModeResearcher") },
+        { value: "general", label: this.plugin.t("workflowModeGeneral") }
+      ],
+      this.plugin.settings.workflowMode,
+      async (value) => {
         this.plugin.settings.workflowMode = value;
         await this.plugin.saveSettings();
         this.display();
-      })
+      }
     );
-    this.renderResearchGuide(containerEl);
-    new import_obsidian8.Setting(containerEl).setName(this.plugin.t("settingsRelationKeys")).setDesc(this.plugin.t("settingsRelationKeysDescription")).addTextArea((area) => {
-      area.inputEl.rows = 4;
-      area.inputEl.addClass("lti-settings-textarea", "lti-settings-textarea-compact");
-      area.inputEl.style.resize = "vertical";
-      area.setValue(this.plugin.settings.relationKeys.join(", ")).setPlaceholder(RESEARCH_RELATION_KEYS.join(", ")).onChange(async (value) => {
-        this.plugin.settings.relationKeys = value.split(",").map((item) => item.trim()).filter(Boolean);
+  }
+  renderPathsDrawer(containerEl) {
+    this.createTextField(
+      containerEl,
+      this.plugin.t("settingsResearchPathLiterature"),
+      "",
+      this.plugin.settings.researchLiteratureFolder,
+      async (value) => {
+        this.plugin.settings.researchLiteratureFolder = value.trim() || RESEARCH_LITERATURE_PATH;
         await this.plugin.saveSettings();
-      });
-    });
-    const relationPreview = containerEl.createDiv({ cls: "setting-item-description lti-settings-inline-note" });
-    relationPreview.createSpan({ text: `${this.plugin.t("settingsRelationKeysPreview")}: ` });
-    relationPreview.appendText(
-      this.plugin.settings.relationKeys.map((key) => `${key} (${this.plugin.relationLabel(key)})`).join(" \xB7 ")
+      }
     );
-    new import_obsidian8.Setting(containerEl).setName(this.plugin.t("settingsTagAliasMap")).setDesc(this.plugin.t("settingsTagAliasMapDescription")).addTextArea((area) => {
-      area.inputEl.rows = 10;
-      area.inputEl.addClass("lti-settings-textarea");
-      area.inputEl.style.resize = "vertical";
-      area.setValue(this.plugin.settings.tagAliasMapText).onChange(async (value) => {
-        this.plugin.settings.tagAliasMapText = value;
+    this.createTextField(
+      containerEl,
+      this.plugin.t("settingsResearchPathTemplates"),
+      "",
+      this.plugin.settings.researchTemplatePath,
+      async (value) => {
+        this.plugin.settings.researchTemplatePath = value.trim() || RESEARCH_TEMPLATE_PATH;
         await this.plugin.saveSettings();
-      });
-    });
-    new import_obsidian8.Setting(containerEl).setName(this.plugin.t("settingsTagFacetMap")).setDesc(this.plugin.t("settingsTagFacetMapDescription")).addTextArea((area) => {
-      area.inputEl.rows = 14;
-      area.inputEl.addClass("lti-settings-textarea");
-      area.inputEl.style.resize = "vertical";
-      area.setValue(this.plugin.settings.tagFacetMapText).onChange(async (value) => {
-        this.plugin.settings.tagFacetMapText = value;
+      }
+    );
+    this.createTextField(
+      containerEl,
+      this.plugin.t("settingsResearchPathAttachments"),
+      "",
+      this.plugin.settings.researchAttachmentsFolder,
+      async (value) => {
+        this.plugin.settings.researchAttachmentsFolder = value.trim() || RESEARCH_ATTACHMENTS_PATH;
         await this.plugin.saveSettings();
-      });
+      }
+    );
+    this.createToggleField(
+      containerEl,
+      this.plugin.t("settingsWorkbenchOpenImportedTitle"),
+      this.plugin.t("settingsWorkbenchOpenImportedDescription"),
+      this.plugin.settings.researchOpenNoteAfterImport,
+      async (value) => {
+        this.plugin.settings.researchOpenNoteAfterImport = value;
+        await this.plugin.saveSettings();
+      }
+    );
+    const actions = containerEl.createDiv({ cls: "lti-workbench-drawer-actions" });
+    this.createAsyncButton(actions, this.plugin.t("settingsWorkbenchApplyCompanion"), async () => {
+      await this.plugin.applyCompanionPreset("obsidian-zotero-desktop-connector");
     });
-    new import_obsidian8.Setting(containerEl).setName(this.plugin.t("settingsSemanticEnabled")).setDesc(this.plugin.t("settingsSemanticEnabledDescription")).addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.semanticBridgeEnabled).onChange(async (value) => {
+    this.createActionButton(actions, this.plugin.t("settingsWorkbenchRunZotero"), () => {
+      void this.plugin.importZoteroNotes();
+    });
+  }
+  renderSmartDrawer(containerEl) {
+    this.createTextAreaField(
+      containerEl,
+      this.plugin.t("settingsWorkbenchFolderExclusionsTitle"),
+      this.plugin.t("settingsWorkbenchFolderExclusionsDescription"),
+      this.plugin.settings.smartConnectionsFolderExclusions,
+      async (value) => {
+        this.plugin.settings.smartConnectionsFolderExclusions = normalizeDelimitedList(value).join(", ");
+        await this.plugin.saveSettings();
+      },
+      4
+    );
+    this.createTextAreaField(
+      containerEl,
+      this.plugin.t("settingsWorkbenchHeadingExclusionsTitle"),
+      this.plugin.t("settingsWorkbenchHeadingExclusionsDescription"),
+      this.plugin.settings.smartConnectionsHeadingExclusions,
+      async (value) => {
+        this.plugin.settings.smartConnectionsHeadingExclusions = normalizeDelimitedList(value).join(", ");
+        await this.plugin.saveSettings();
+      },
+      4
+    );
+    this.createNumberField(
+      containerEl,
+      this.plugin.t("settingsWorkbenchResultsLimitTitle"),
+      "",
+      String(this.plugin.settings.smartConnectionsResultsLimit),
+      async (value) => {
+        const parsed = Number.parseInt(value, 10);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          this.plugin.settings.smartConnectionsResultsLimit = parsed;
+          await this.plugin.saveSettings();
+        }
+      }
+    );
+    const actions = containerEl.createDiv({ cls: "lti-workbench-drawer-actions" });
+    this.createAsyncButton(actions, this.plugin.t("settingsWorkbenchApplyCompanion"), async () => {
+      await this.plugin.applyCompanionPreset("smart-connections");
+    });
+    this.createActionButton(actions, this.plugin.t("settingsWorkbenchRunSmart"), () => {
+      void this.plugin.openSmartConnectionsView();
+    });
+  }
+  renderSemanticDrawer(containerEl, state) {
+    this.createToggleField(
+      containerEl,
+      this.plugin.t("settingsSemanticEnabled"),
+      this.plugin.t("settingsSemanticEnabledDescription"),
+      this.plugin.settings.semanticBridgeEnabled,
+      async (value) => {
         this.plugin.settings.semanticBridgeEnabled = value;
         await this.plugin.saveSettings();
-        this.plugin.refreshAllViews();
-      })
+        this.display();
+      }
     );
-    new import_obsidian8.Setting(containerEl).setName(this.plugin.t("settingsSemanticCommand")).setDesc(this.plugin.t("settingsSemanticCommandDescription")).addTextArea((area) => {
-      area.inputEl.rows = 4;
-      area.inputEl.addClass("lti-settings-textarea", "lti-settings-textarea-compact");
-      area.inputEl.style.resize = "vertical";
-      area.setValue(this.plugin.settings.semanticCommand).setPlaceholder("python3 /path/tool.py --vault {{vault}} --query {{query}}").onChange(async (value) => {
+    this.createTextAreaField(
+      containerEl,
+      this.plugin.t("settingsSemanticCommand"),
+      this.plugin.t("settingsSemanticCommandDescription"),
+      this.plugin.settings.semanticCommand,
+      async (value) => {
         this.plugin.settings.semanticCommand = value;
         await this.plugin.saveSettings();
-        this.plugin.refreshAllViews();
-      });
-    });
-    new import_obsidian8.Setting(containerEl).setName(this.plugin.t("settingsSemanticTimeout")).addText(
-      (text) => text.setValue(String(this.plugin.settings.semanticTimeoutMs)).onChange(async (value) => {
+      },
+      5,
+      "python3 /path/tool.py --vault {{vault}} --query {{query}}"
+    );
+    this.createNumberField(
+      containerEl,
+      this.plugin.t("settingsSemanticTimeout"),
+      "",
+      String(this.plugin.settings.semanticTimeoutMs),
+      async (value) => {
         const parsed = Number.parseInt(value, 10);
         if (Number.isFinite(parsed) && parsed > 0) {
           this.plugin.settings.semanticTimeoutMs = parsed;
           await this.plugin.saveSettings();
         }
-      })
+      }
     );
-    new import_obsidian8.Setting(containerEl).setName(this.plugin.t("settingsRecentLinks")).addText(
-      (text) => text.setValue(String(this.plugin.settings.recentLinkMemorySize)).onChange(async (value) => {
-        const parsed = Number.parseInt(value, 10);
-        if (Number.isFinite(parsed) && parsed > 0) {
-          this.plugin.settings.recentLinkMemorySize = parsed;
-          this.plugin.settings.recentLinkTargets = this.plugin.settings.recentLinkTargets.slice(0, parsed);
-          await this.plugin.saveSettings();
+    containerEl.createDiv({
+      text: this.plugin.t("settingsWorkbenchCurrentExclusions", { value: state.profile.smartFolderExclusions.join(", ") }),
+      cls: "setting-item-description lti-workbench-inline-note"
+    });
+    const actions = containerEl.createDiv({ cls: "lti-workbench-drawer-actions" });
+    this.createAsyncButton(actions, this.plugin.t("settingsWorkbenchApplyCompanion"), async () => {
+      await this.plugin.applyCompanionPreset("semantic-bridge");
+    });
+    this.createActionButton(actions, this.plugin.t("settingsWorkbenchRunSemantic"), () => {
+      this.plugin.openSemanticSearch();
+    });
+  }
+  renderTaxonomyDrawer(containerEl) {
+    this.createAdvancedPanel(
+      containerEl,
+      this.plugin.t("settingsWorkbenchAdvancedRelationsTitle"),
+      this.plugin.t("settingsWorkbenchAdvancedRelationsDescription"),
+      (contentEl) => {
+        this.createTextAreaField(
+          contentEl,
+          this.plugin.t("settingsRelationKeys"),
+          this.plugin.t("settingsRelationKeysDescription"),
+          this.plugin.settings.relationKeys.join(", "),
+          async (value) => {
+            this.plugin.settings.relationKeys = value.split(",").map((item) => item.trim()).filter(Boolean);
+            await this.plugin.saveSettings();
+            this.display();
+          },
+          4,
+          RESEARCH_RELATION_KEYS.join(", ")
+        );
+        const chips = contentEl.createDiv({ cls: "lti-workbench-key-chip-row" });
+        for (const key of this.plugin.settings.relationKeys) {
+          const chip = chips.createDiv({ cls: "lti-workbench-key-chip" });
+          chip.createSpan({ text: key });
+          chip.createSpan({ text: this.plugin.relationLabel(key), cls: "lti-workbench-key-chip-meta" });
         }
-      })
+      }
+    );
+    this.createAdvancedPanel(
+      containerEl,
+      this.plugin.t("settingsWorkbenchAdvancedAliasTitle"),
+      this.plugin.t("settingsWorkbenchAdvancedAliasDescription"),
+      (contentEl) => {
+        this.createTextAreaField(
+          contentEl,
+          this.plugin.t("settingsTagAliasMap"),
+          this.plugin.t("settingsTagAliasMapDescription"),
+          this.plugin.settings.tagAliasMapText,
+          async (value) => {
+            this.plugin.settings.tagAliasMapText = value;
+            await this.plugin.saveSettings();
+          },
+          10
+        );
+      }
+    );
+    this.createAdvancedPanel(
+      containerEl,
+      this.plugin.t("settingsWorkbenchAdvancedFacetTitle"),
+      this.plugin.t("settingsWorkbenchAdvancedFacetDescription"),
+      (contentEl) => {
+        this.createTextAreaField(
+          contentEl,
+          this.plugin.t("settingsTagFacetMap"),
+          this.plugin.t("settingsTagFacetMapDescription"),
+          this.plugin.settings.tagFacetMapText,
+          async (value) => {
+            this.plugin.settings.tagFacetMapText = value;
+            await this.plugin.saveSettings();
+          },
+          14
+        );
+      }
+    );
+    this.createAdvancedPanel(
+      containerEl,
+      this.plugin.t("settingsWorkbenchAdvancedMemoryTitle"),
+      this.plugin.t("settingsWorkbenchAdvancedMemoryDescription"),
+      (contentEl) => {
+        this.createNumberField(
+          contentEl,
+          this.plugin.t("settingsRecentLinks"),
+          "",
+          String(this.plugin.settings.recentLinkMemorySize),
+          async (value) => {
+            const parsed = Number.parseInt(value, 10);
+            if (Number.isFinite(parsed) && parsed > 0) {
+              this.plugin.settings.recentLinkMemorySize = parsed;
+              this.plugin.settings.recentLinkTargets = this.plugin.settings.recentLinkTargets.slice(0, parsed);
+              await this.plugin.saveSettings();
+            }
+          }
+        );
+      }
     );
   }
-  renderResearchGuide(containerEl) {
-    const guide = containerEl.createDiv({ cls: "lti-settings-guide" });
-    guide.createEl("h3", { text: this.plugin.t("settingsResearchGuideTitle"), cls: "lti-settings-guide-title" });
-    guide.createDiv({
-      text: this.plugin.t("settingsResearchGuideDescription"),
-      cls: "setting-item-description lti-settings-guide-description"
-    });
-    const setup = guide.createEl("ol", { cls: "lti-settings-guide-list" });
-    for (const key of ["settingsResearchGuideStep1", "settingsResearchGuideStep2", "settingsResearchGuideStep3"]) {
-      setup.createEl("li", {
-        text: this.plugin.t(key),
-        cls: "setting-item-description"
+  renderPluginDrawer(containerEl, companion, state) {
+    if (companion.configPath) {
+      containerEl.createDiv({
+        text: companion.configPath,
+        cls: "lti-workbench-plugin-path"
       });
     }
-    const companionTitle = guide.createDiv({
-      text: this.plugin.t("settingsCompanionPluginsTitle"),
-      cls: "lti-settings-guide-subtitle"
-    });
-    companionTitle.setAttribute("role", "heading");
-    companionTitle.setAttribute("aria-level", "4");
-    const list = guide.createEl("ul", { cls: "lti-settings-guide-list" });
-    for (const companion of COMPANION_PLUGINS) {
-      const item = list.createEl("li", { cls: "setting-item-description" });
-      const link = item.createEl("a", {
-        text: companion.name,
-        href: companion.url
+    const facts = containerEl.createDiv({ cls: "lti-workbench-fact-list" });
+    this.renderCompanionFacts(facts, companion, state);
+    if (companion.mismatches.length > 0) {
+      const mismatches = containerEl.createDiv({ cls: "lti-workbench-mismatch-list" });
+      mismatches.createDiv({
+        text: this.plugin.t("settingsWorkbenchMismatchTitle"),
+        cls: "lti-workbench-subtitle"
       });
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      item.appendText(` - ${this.plugin.t(companion.descriptionKey)}`);
+      for (const mismatch of companion.mismatches) {
+        mismatches.createDiv({
+          text: this.getMismatchLabel(mismatch),
+          cls: "lti-workbench-mismatch-item"
+        });
+      }
     }
-    guide.createDiv({
-      text: this.plugin.t("settingsSemanticResearchHint"),
-      cls: "setting-item-description lti-settings-guide-note"
+    const actions = containerEl.createDiv({ cls: "lti-workbench-drawer-actions" });
+    this.createAsyncButton(actions, this.plugin.t("settingsWorkbenchApplyCompanion"), async () => {
+      await this.plugin.applyCompanionPreset(companion.id);
+    }, !companion.installed && !companion.optional);
+    this.createActionButton(actions, this.plugin.t("settingsWorkbenchOpenSettings"), () => {
+      this.plugin.openCompanionSettings(companion.id);
+    }, !companion.installed && !companion.optional);
+    const primary = this.getPrimaryCompanionAction(companion.id);
+    if (primary) {
+      this.createActionButton(actions, primary.label, primary.handler, primary.disabled);
+    }
+  }
+  renderCompanionPanel(containerEl, companion, state) {
+    const meta = COMPANION_META[companion.id];
+    const panel = containerEl.createEl("details", { cls: "lti-workbench-plugin-panel" });
+    panel.open = this.activeCompanionId === companion.id || companion.mismatches.length > 0;
+    panel.addEventListener("toggle", () => {
+      this.activeCompanionId = panel.open ? companion.id : this.activeCompanionId === companion.id ? null : this.activeCompanionId;
     });
+    const summary = panel.createEl("summary", { cls: "lti-workbench-plugin-summary" });
+    const copy = summary.createDiv({ cls: "lti-workbench-plugin-summary-copy" });
+    copy.createDiv({ text: meta.name, cls: "lti-workbench-plugin-title" });
+    copy.createDiv({
+      text: this.plugin.t(meta.descriptionKey),
+      cls: "setting-item-description lti-workbench-plugin-description"
+    });
+    const chips = summary.createDiv({ cls: "lti-workbench-chip-row" });
+    chips.createDiv({
+      text: this.getStatusLabel(companion),
+      cls: `lti-workbench-status-pill is-${this.getStatusTone(companion)}`
+    });
+    if (companion.mismatches.length > 0) {
+      chips.createDiv({
+        text: this.plugin.t("settingsWorkbenchMismatchCount", { count: companion.mismatches.length }),
+        cls: "lti-workbench-chip"
+      });
+    }
+    const body = panel.createDiv({ cls: "lti-workbench-plugin-body" });
+    this.renderPluginDrawer(body, companion, state);
+  }
+  renderCompanionFacts(containerEl, companion, state) {
+    switch (companion.id) {
+      case "obsidian-zotero-desktop-connector":
+        this.renderFactRow(containerEl, this.plugin.t("settingsResearchPathLiterature"), this.valueOrFallback(companion.actual.literatureFolder), state.profile.literatureFolder, !companion.mismatches.includes("zotero-folder"));
+        this.renderFactRow(containerEl, this.plugin.t("settingsResearchPathTemplates"), this.valueOrFallback(companion.actual.templatePath), state.profile.templatePath, !companion.mismatches.includes("zotero-template"));
+        this.renderFactRow(containerEl, this.plugin.t("settingsResearchPathAttachments"), this.valueOrFallback(companion.actual.attachmentsFolder), state.profile.attachmentsFolder, !companion.mismatches.includes("zotero-attachments"));
+        this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchOpenImportedTitle"), this.booleanText(companion.actual.openNoteAfterImport), this.booleanText(state.profile.openNoteAfterImport), !companion.mismatches.includes("zotero-open-note"));
+        return;
+      case "pdf-plus":
+        this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchDefaultDisplayTitle"), this.valueOrFallback(companion.actual.defaultDisplayFormat), "Title & page", !companion.mismatches.includes("pdf-default-display"));
+        this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchCopyCommandsTitle"), this.joinList(companion.actual.copyCommandNames), "Literature quote, Evidence callout, Source link", !companion.mismatches.includes("pdf-copy-commands"));
+        this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchHoverPreviewTitle"), this.valueOrFallback(companion.actual.hoverHighlightAction), "preview", !companion.mismatches.includes("pdf-hover-preview"));
+        this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchBacklinksTitle"), this.booleanText(companion.actual.highlightBacklinks), this.plugin.t("settingsWorkbenchOn"), !companion.mismatches.includes("pdf-highlight-backlinks"));
+        return;
+      case "smart-connections":
+        this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchFolderExclusionsTitle"), this.joinList(companion.actual.folderExclusions), state.profile.smartFolderExclusions.join(", "), !companion.mismatches.includes("smart-folder-exclusions"));
+        this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchHeadingExclusionsTitle"), this.joinList(companion.actual.headingExclusions), state.profile.smartHeadingExclusions.join(", "), !companion.mismatches.includes("smart-heading-exclusions"));
+        this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchLanguageTitle"), this.valueOrFallback(companion.actual.language), state.profile.language, !companion.mismatches.includes("smart-language"));
+        this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchResultsLimitTitle"), this.valueOrFallback(companion.actual.resultsLimit), String(state.profile.smartResultsLimit), !companion.mismatches.includes("smart-results-limit"));
+        return;
+      case "semantic-bridge":
+        this.renderFactRow(containerEl, this.plugin.t("settingsSemanticEnabled"), this.booleanText(companion.actual.enabled), void 0, companion.ready || !companion.enabled);
+        this.renderFactRow(containerEl, this.plugin.t("settingsSemanticCommand"), this.valueOrFallback(companion.actual.command), void 0, !companion.mismatches.includes("semantic-command"));
+        this.renderFactRow(containerEl, this.plugin.t("settingsSemanticTimeout"), this.valueOrFallback(companion.actual.timeoutMs), void 0, true);
+    }
+  }
+  createAdvancedPanel(containerEl, title, description, renderContent) {
+    const details = containerEl.createEl("details", { cls: "lti-workbench-advanced-panel" });
+    const summary = details.createEl("summary", { cls: "lti-workbench-advanced-summary" });
+    summary.createSpan({ text: title, cls: "lti-workbench-advanced-title" });
+    summary.createSpan({ text: description, cls: "lti-workbench-advanced-description" });
+    const content = details.createDiv({ cls: "lti-workbench-advanced-content" });
+    renderContent(content);
+  }
+  createSectionCard(containerEl, title, description) {
+    const card = containerEl.createDiv({ cls: "lti-workbench-section-card" });
+    const header = card.createDiv({ cls: "lti-workbench-section-header" });
+    header.createDiv({ text: title, cls: "lti-workbench-section-title" });
+    header.createDiv({
+      text: description,
+      cls: "setting-item-description lti-workbench-section-description"
+    });
+    return card;
+  }
+  createModuleCard(containerEl, title, description) {
+    const card = containerEl.createDiv({ cls: "lti-workbench-module-card" });
+    card.createDiv({ text: title, cls: "lti-workbench-subtitle" });
+    card.createDiv({
+      text: description,
+      cls: "setting-item-description lti-workbench-card-copy"
+    });
+    return card;
+  }
+  attachModuleAction(containerEl, onClick) {
+    const actions = containerEl.createDiv({ cls: "lti-workbench-card-footer" });
+    this.createActionButton(actions, this.plugin.t("settingsWorkbenchDetails"), onClick);
+  }
+  createFieldShell(containerEl, label, description) {
+    const field = containerEl.createDiv({ cls: "lti-workbench-field" });
+    field.createDiv({ text: label, cls: "lti-workbench-field-label" });
+    if (description) {
+      field.createDiv({
+        text: description,
+        cls: "setting-item-description lti-workbench-field-description"
+      });
+    }
+    return field;
+  }
+  createTextField(containerEl, label, description, value, onChange, placeholder = "") {
+    const field = this.createFieldShell(containerEl, label, description);
+    const input = field.createEl("input", { cls: "lti-workbench-input", type: "text" });
+    input.value = value;
+    input.placeholder = placeholder;
+    input.addEventListener("change", () => {
+      void onChange(input.value);
+    });
+  }
+  createNumberField(containerEl, label, description, value, onChange) {
+    const field = this.createFieldShell(containerEl, label, description);
+    const input = field.createEl("input", { cls: "lti-workbench-input", type: "number" });
+    input.value = value;
+    input.addEventListener("change", () => {
+      void onChange(input.value);
+    });
+  }
+  createTextAreaField(containerEl, label, description, value, onChange, rows, placeholder = "") {
+    const field = this.createFieldShell(containerEl, label, description);
+    const area = field.createEl("textarea", { cls: "lti-workbench-textarea" });
+    area.rows = rows;
+    area.value = value;
+    area.placeholder = placeholder;
+    area.addEventListener("change", () => {
+      void onChange(area.value);
+    });
+  }
+  createSelectField(containerEl, label, description, options, value, onChange) {
+    const field = this.createFieldShell(containerEl, label, description);
+    const select = field.createEl("select", { cls: "lti-workbench-select" });
+    for (const option of options) {
+      const el = select.createEl("option", { text: option.label });
+      el.value = option.value;
+      if (option.value === value) {
+        el.selected = true;
+      }
+    }
+    select.addEventListener("change", () => {
+      void onChange(select.value);
+    });
+  }
+  createToggleField(containerEl, label, description, checked, onChange) {
+    const field = this.createFieldShell(containerEl, label, description);
+    const row = field.createDiv({ cls: "lti-workbench-switch-row" });
+    const toggle = row.createEl("label", { cls: "lti-workbench-switch" });
+    const input = toggle.createEl("input", { type: "checkbox" });
+    input.checked = checked;
+    toggle.createSpan({ cls: "lti-workbench-switch-slider" });
+    input.addEventListener("change", () => {
+      void onChange(input.checked);
+    });
+  }
+  renderStat(containerEl, label, value) {
+    const stat = containerEl.createDiv({ cls: "lti-workbench-stat" });
+    stat.createDiv({ text: label, cls: "lti-workbench-stat-label" });
+    stat.createDiv({ text: value, cls: "lti-workbench-stat-value" });
+  }
+  renderMetaCard(containerEl, label, value) {
+    const card = containerEl.createDiv({ cls: "lti-workbench-meta-card" });
+    card.createDiv({ text: label, cls: "lti-workbench-stat-label" });
+    card.createDiv({ text: value, cls: "lti-workbench-meta-value" });
+  }
+  renderMetricRow(containerEl, label, value) {
+    const row = containerEl.createDiv({ cls: "lti-workbench-metric-row" });
+    row.createDiv({ text: label, cls: "lti-workbench-metric-label" });
+    row.createDiv({ text: value, cls: "lti-workbench-metric-value" });
+  }
+  renderFactRow(containerEl, label, actual, expected, ok = true) {
+    const row = containerEl.createDiv({ cls: "lti-workbench-fact-row" });
+    if (!ok) {
+      row.addClass("is-alert");
+    }
+    row.createDiv({ text: label, cls: "lti-workbench-fact-label" });
+    const values = row.createDiv({ cls: "lti-workbench-fact-values" });
+    values.createDiv({ text: actual, cls: "lti-workbench-fact-actual" });
+    if (expected && !ok) {
+      values.createDiv({
+        text: `${this.plugin.t("settingsWorkbenchExpectedPrefix")}: ${expected}`,
+        cls: "lti-workbench-fact-expected"
+      });
+    }
+  }
+  renderActionGroup(containerEl, title, description, actions) {
+    const card = containerEl.createDiv({ cls: "lti-workbench-action-group" });
+    card.createDiv({ text: title, cls: "lti-workbench-subtitle" });
+    card.createDiv({
+      text: description,
+      cls: "setting-item-description lti-workbench-card-copy"
+    });
+    const list = card.createDiv({ cls: "lti-workbench-action-list" });
+    for (const action of actions) {
+      this.createActionListItem(list, action.title, action.description, action.onClick);
+    }
+  }
+  createActionListItem(containerEl, title, description, onClick) {
+    const button = containerEl.createEl("button", { cls: "lti-workbench-action-item", type: "button" });
+    const copy = button.createDiv({ cls: "lti-workbench-action-item-copy" });
+    const text = copy.createDiv({ cls: "lti-workbench-action-item-text" });
+    text.createDiv({ text: title, cls: "lti-workbench-action-item-title" });
+    text.createDiv({ text: description, cls: "lti-workbench-action-item-description" });
+    button.addEventListener("click", onClick);
+  }
+  createActionButton(containerEl, label, onClick, disabled = false) {
+    const button = containerEl.createEl("button", { cls: "lti-workbench-button", text: label, type: "button" });
+    button.disabled = disabled;
+    button.addEventListener("click", onClick);
+    return button;
+  }
+  createAsyncButton(containerEl, label, onClick, disabled = false) {
+    const button = this.createActionButton(containerEl, label, () => {
+      void (async () => {
+        button.disabled = true;
+        button.textContent = this.plugin.t("loading");
+        try {
+          await onClick();
+        } finally {
+          this.display();
+        }
+      })();
+    }, disabled);
+    return button;
+  }
+  getPrimaryCompanionAction(id) {
+    switch (id) {
+      case "obsidian-zotero-desktop-connector":
+        return {
+          label: this.plugin.t("settingsWorkbenchRunZotero"),
+          handler: () => {
+            void this.plugin.importZoteroNotes();
+          }
+        };
+      case "smart-connections":
+        return {
+          label: this.plugin.t("settingsWorkbenchRunSmart"),
+          handler: () => {
+            void this.plugin.openSmartConnectionsView();
+          }
+        };
+      case "semantic-bridge":
+        return {
+          label: this.plugin.t("settingsWorkbenchRunSemantic"),
+          handler: () => this.plugin.openSemanticSearch()
+        };
+      case "pdf-plus":
+        return {
+          label: this.plugin.t("settingsWorkbenchRunPdf"),
+          handler: () => {
+            void this.plugin.openPdfPlusSettings();
+          }
+        };
+      default:
+        return null;
+    }
+  }
+  getStatusTone(companion) {
+    if (!companion.installed && !companion.optional) {
+      return "missing";
+    }
+    if (companion.ready) {
+      return companion.optional ? "optional" : "ready";
+    }
+    return "alert";
+  }
+  getStatusLabel(companion) {
+    const tone = this.getStatusTone(companion);
+    if (tone === "ready") {
+      return this.plugin.t("settingsWorkbenchStatusReady");
+    }
+    if (tone === "missing") {
+      return this.plugin.t("settingsWorkbenchStatusMissing");
+    }
+    if (tone === "optional") {
+      return this.plugin.t("settingsWorkbenchStatusOptional");
+    }
+    return this.plugin.t("settingsWorkbenchStatusAttention");
+  }
+  getMismatchLabel(code) {
+    const map = {
+      "zotero-folder": this.plugin.t("settingsWorkbenchMismatchZoteroFolder"),
+      "zotero-template": this.plugin.t("settingsWorkbenchMismatchZoteroTemplate"),
+      "zotero-attachments": this.plugin.t("settingsWorkbenchMismatchZoteroAttachments"),
+      "zotero-open-note": this.plugin.t("settingsWorkbenchMismatchZoteroOpen"),
+      "zotero-output-template": this.plugin.t("settingsWorkbenchMismatchZoteroOutput"),
+      "zotero-cite-template": this.plugin.t("settingsWorkbenchMismatchZoteroCite"),
+      "pdf-display-formats": this.plugin.t("settingsWorkbenchMismatchPdfDisplayFormats"),
+      "pdf-default-display": this.plugin.t("settingsWorkbenchMismatchPdfDisplayDefault"),
+      "pdf-copy-commands": this.plugin.t("settingsWorkbenchMismatchPdfCopy"),
+      "pdf-hover-preview": this.plugin.t("settingsWorkbenchMismatchPdfHover"),
+      "pdf-highlight-backlinks": this.plugin.t("settingsWorkbenchMismatchPdfBacklinks"),
+      "pdf-selection-menu": this.plugin.t("settingsWorkbenchMismatchPdfSelectionMenu"),
+      "pdf-annotation-menu": this.plugin.t("settingsWorkbenchMismatchPdfAnnotationMenu"),
+      "smart-language": this.plugin.t("settingsWorkbenchMismatchSmartLanguage"),
+      "smart-folder-exclusions": this.plugin.t("settingsWorkbenchMismatchSmartFolders"),
+      "smart-heading-exclusions": this.plugin.t("settingsWorkbenchMismatchSmartHeadings"),
+      "smart-results-limit": this.plugin.t("settingsWorkbenchMismatchSmartResults"),
+      "smart-render-markdown": this.plugin.t("settingsWorkbenchMismatchSmartRender"),
+      "semantic-command": this.plugin.t("settingsWorkbenchMismatchSemanticCommand")
+    };
+    return map[code] ?? code;
+  }
+  compactPathLabel(value) {
+    const normalized = value.trim().replace(/\\/g, "/");
+    if (!normalized) {
+      return this.plugin.t("notConfigured");
+    }
+    const segments = normalized.split("/").filter(Boolean);
+    return segments.at(-1) ?? normalized;
+  }
+  countAliasEntries(text) {
+    try {
+      const parsed = JSON.parse(text);
+      return Object.keys(parsed).length;
+    } catch {
+      return 0;
+    }
+  }
+  formatLanguageLabel(setting) {
+    if (setting === "system") {
+      return this.plugin.currentLanguage() === "zh" ? "\u7CFB\u7EDF" : "System";
+    }
+    return setting === "zh" ? "\u4E2D\u6587" : "English";
+  }
+  valueOrFallback(value) {
+    if (typeof value === "number") {
+      return String(value);
+    }
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+    return this.plugin.t("notConfigured");
+  }
+  joinList(value) {
+    return Array.isArray(value) && value.length > 0 ? value.map(String).join(", ") : this.plugin.t("notConfigured");
+  }
+  booleanText(value) {
+    return value === true ? this.plugin.t("settingsWorkbenchOn") : this.plugin.t("settingsWorkbenchOff");
   }
 };
 
@@ -4025,6 +5674,67 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     this.settings.recentLinkTargets = this.settings.recentLinkTargets.slice(0, memory);
     await this.saveData(this.settings);
   }
+  async getResearchWorkbenchState() {
+    return readResearchWorkbenchState(
+      this.app,
+      buildResearchWorkbenchProfile(this.settings, this.currentLanguage())
+    );
+  }
+  async applyResearchPreset() {
+    const state = await this.getResearchWorkbenchState();
+    for (const companionId of ["obsidian-zotero-desktop-connector", "pdf-plus", "smart-connections"]) {
+      const status = state.companions.find((item) => item.id === companionId);
+      if (!status?.installed) {
+        continue;
+      }
+      await applyCompanionPresetToVault(this.app, companionId, state.profile);
+    }
+    this.refreshAllViews();
+    new import_obsidian10.Notice(this.t("settingsWorkbenchPresetApplied"));
+  }
+  async applyCompanionPreset(id) {
+    if (id === "semantic-bridge") {
+      await this.saveSettings();
+      this.refreshAllViews();
+      new import_obsidian10.Notice(this.t("settingsWorkbenchCompanionApplied", { name: "Semantic bridge" }));
+      return true;
+    }
+    const state = await this.getResearchWorkbenchState();
+    const status = state.companions.find((item) => item.id === id);
+    if (!status?.installed) {
+      new import_obsidian10.Notice(this.t("settingsWorkbenchPluginMissing"));
+      return false;
+    }
+    await applyCompanionPresetToVault(this.app, id, state.profile);
+    this.refreshAllViews();
+    new import_obsidian10.Notice(this.t("settingsWorkbenchCompanionApplied", { name: this.getCompanionDisplayName(id) }));
+    return true;
+  }
+  openCompanionSettings(id) {
+    const settingApi = this.app.setting;
+    if (!settingApi?.open || !settingApi.openTabById) {
+      new import_obsidian10.Notice(this.t("settingsWorkbenchSettingsUnavailable"));
+      return false;
+    }
+    settingApi.open();
+    settingApi.openTabById(id === "semantic-bridge" ? this.manifest.id : id);
+    return true;
+  }
+  async importZoteroNotes() {
+    return this.executeCommandByCandidates([
+      "obsidian-zotero-desktop-connector:zdc-import-notes",
+      "zdc-import-notes"
+    ]);
+  }
+  async openSmartConnectionsView() {
+    return this.executeCommandByCandidates([
+      "smart-connections:smart-connections-view",
+      "smart-connections-view"
+    ]);
+  }
+  async openPdfPlusSettings() {
+    return this.openCompanionSettings("pdf-plus");
+  }
   currentLanguage() {
     return resolveLanguage(this.settings.language);
   }
@@ -4512,5 +6222,33 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
       return this.formatRangeLabel(options.startLine, options.endLine);
     }
     return void 0;
+  }
+  getCompanionDisplayName(id) {
+    switch (id) {
+      case "obsidian-zotero-desktop-connector":
+        return "Zotero Integration";
+      case "pdf-plus":
+        return "PDF++";
+      case "smart-connections":
+        return "Smart Connections";
+      case "semantic-bridge":
+        return "Semantic bridge";
+    }
+  }
+  async executeCommandByCandidates(candidates) {
+    const commands = this.app.commands;
+    const commandRegistry = commands?.commands;
+    const commandIds = commandRegistry ? Object.keys(commandRegistry) : [];
+    const resolved = candidates.find((candidate) => commandIds.includes(candidate)) ?? candidates.map((candidate) => commandIds.find((commandId) => commandId.endsWith(`:${candidate}`) || commandId.includes(candidate))).find(Boolean);
+    if (!resolved || typeof commands?.executeCommandById !== "function") {
+      new import_obsidian10.Notice(this.t("settingsWorkbenchCommandUnavailable"));
+      return false;
+    }
+    const result = await commands.executeCommandById(resolved);
+    if (result === false) {
+      new import_obsidian10.Notice(this.t("settingsWorkbenchCommandUnavailable"));
+      return false;
+    }
+    return true;
   }
 };
