@@ -31,7 +31,7 @@ Main actions:
 
 This plugin works best as the linking and synthesis layer in a research vault:
 
-1. Capture bibliographic data and annotations with a companion plugin such as Zotero Integration or PDF++.
+1. Keep Zotero desktop running with Better BibTeX for Zotero installed, then capture bibliographic data and annotations with Zotero Integration or PDF++.
 2. Use exact references, typed relations, and controlled tags to connect source notes, evidence, and draft notes.
 3. Use the sidebar to inspect backlinks, exact references, relation neighborhoods, and faceted tags while drafting.
 4. Use the semantic bridge only when you want citation-aware retrieval from your own external toolchain.
@@ -57,6 +57,8 @@ tags:
 
 - `Zotero Integration`
   Use it for citekeys, literature-note metadata, and importing annotations from Zotero.
+- `Better BibTeX for Zotero`
+  Install it inside Zotero desktop so citekeys stay stable and the Obsidian-side Zotero import bridge can connect reliably.
 - `PDF++`
   Use it for page-aware PDF reading, highlights, and annotation-heavy source review.
 - `Smart Connections`
@@ -76,6 +78,8 @@ Recommended companion plugin preset:
 
 - `Zotero Integration`
   Import notes into `Knowledge/Research/Literature`, use `Knowledge/Research/Templates/zotero-literature-note.md` as the export template, and export annotation images into `Knowledge/Research/Attachments`.
+- `Better BibTeX for Zotero`
+  Keep it installed and enabled inside Zotero desktop before running any Obsidian import workflow.
 - `PDF++`
   Keep page-aware quote and cite-callout copy commands available so PDF evidence can move directly into literature notes and draft notes.
 - `Smart Connections`
@@ -85,11 +89,12 @@ Recommended companion plugin preset:
 
 Recommended click path inside Obsidian:
 
-1. Run `Zotero Integration: Import notes`.
-2. Open the imported literature note in `Knowledge/Research/Literature`.
-3. Open the source PDF and use a `PDF++` copy format for quote or cite-callout snippets.
-4. Open the `Link & Tag Intelligence` sidebar to add typed relations and review bilingual tag recommendations.
-5. Open `Smart Connections` when drafting and let local semantic recall surface related notes.
+1. Start Zotero desktop and confirm `Better BibTeX for Zotero` is installed and enabled.
+2. Run `Zotero Integration: Import notes`.
+3. Open the imported literature note in `Knowledge/Research/Literature`.
+4. Open the source PDF and use a `PDF++` copy format for quote or cite-callout snippets.
+5. Open the `Link & Tag Intelligence` sidebar to add typed relations and review bilingual tag recommendations.
+6. Open `Smart Connections` when drafting and let local semantic recall surface related notes.
 
 Research workbench inside this plugin:
 

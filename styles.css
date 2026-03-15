@@ -3274,6 +3274,80 @@
   column-gap: 0.8rem;
 }
 
+.lti-settings-root .lti-workbench-intro-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: 0.72rem;
+  align-items: start;
+}
+
+.lti-settings-root .lti-workbench-intro-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.68rem;
+  min-width: 0;
+  padding: 0.96rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 88%, transparent);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--background-primary) 68%, transparent), transparent 100%),
+    var(--lti-settings-surface-raised);
+}
+
+.lti-settings-root .lti-workbench-intro-locale {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 0.22rem 0.58rem;
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 22%, var(--background-modifier-border));
+  border-radius: 999px;
+  color: var(--text-accent);
+  font-size: 0.72rem;
+  font-weight: 760;
+  line-height: 1.35;
+}
+
+.lti-settings-root .lti-workbench-intro-lead {
+  line-height: 1.68;
+}
+
+.lti-settings-root .lti-workbench-intro-block,
+.lti-settings-root .lti-workbench-intro-note {
+  display: grid;
+  gap: 0.38rem;
+  min-width: 0;
+  padding: 0.72rem 0.78rem;
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 88%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--background-primary) 78%, var(--background-secondary));
+}
+
+.lti-settings-root .lti-workbench-intro-note {
+  border-color: color-mix(in srgb, var(--interactive-accent) 18%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--interactive-accent) 4%, var(--background-primary));
+}
+
+.lti-settings-root .lti-workbench-intro-block-title {
+  color: var(--text-normal);
+  font-size: 0.78rem;
+  font-weight: 760;
+  line-height: 1.42;
+}
+
+.lti-settings-root .lti-workbench-intro-list {
+  display: grid;
+  gap: 0.36rem;
+  margin: 0;
+  padding-left: 1.15rem;
+  color: var(--text-muted);
+}
+
+.lti-settings-root .lti-workbench-intro-list li,
+.lti-settings-root .lti-workbench-intro-note-copy {
+  line-height: 1.62;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 @container (max-width: 70rem) {
   .lti-settings-root .lti-workbench-action-group-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -3286,6 +3360,10 @@
   }
 
   .lti-settings-root .lti-workbench-settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lti-settings-root .lti-workbench-intro-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 

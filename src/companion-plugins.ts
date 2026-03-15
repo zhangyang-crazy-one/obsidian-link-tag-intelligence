@@ -67,8 +67,6 @@ const PDF_PLUS_ID = "pdf-plus";
 const SMART_CONNECTIONS_ID = "smart-connections";
 const SEMANTIC_BRIDGE_ID = "semantic-bridge";
 
-const ZOTERO_CONFIG_PATH = `.obsidian/plugins/${ZOTERO_ID}/data.json`;
-const PDF_PLUS_CONFIG_PATH = `.obsidian/plugins/${PDF_PLUS_ID}/data.json`;
 const SMART_CONNECTIONS_CONFIG_PATH = `.smart-env/smart_env.json`;
 
 const ZOTERO_EXPORT_FORMAT_NAME = "Research literature note";
@@ -112,6 +110,18 @@ function normalizeVaultPath(path: string): string {
     .replace(/^\.\//, "")
     .replace(/\/$/, "")
     .trim();
+}
+
+function configPath(app: App, ...segments: string[]): string {
+  return normalizeVaultPath([app.vault.configDir, ...segments].join("/"));
+}
+
+function pluginDataPath(app: App, pluginId: string): string {
+  return configPath(app, "plugins", pluginId, "data.json");
+}
+
+function pluginManifestPath(app: App, pluginId: string): string {
+  return configPath(app, "plugins", pluginId, "manifest.json");
 }
 
 function ensureString(value: unknown, fallback = ""): string {
@@ -477,7 +487,10 @@ export async function readResearchWorkbenchState(
   app: App,
   profile: ResearchWorkbenchProfile
 ): Promise<ResearchWorkbenchState> {
-  const enabledPluginRaw = await app.vault.adapter.read(".obsidian/community-plugins.json").catch(() => "[]");
+  const enabledPluginRaw = await app.vault.adapter.read(configPath(app, "community-plugins.json")).catch(() => "[]");
+  const zoteroConfigPath = pluginDataPath(app, ZOTERO_ID);
+  const pdfConfigPath = pluginDataPath(app, PDF_PLUS_ID);
+  const smartConfigPath = SMART_CONNECTIONS_CONFIG_PATH;
   let enabledPluginIds: string[] = [];
   try {
     const parsed = JSON.parse(enabledPluginRaw);
@@ -486,41 +499,41 @@ export async function readResearchWorkbenchState(
     enabledPluginIds = [];
   }
 
-  const zoteroInstalled = await pathExists(app, `.obsidian/plugins/${ZOTERO_ID}/manifest.json`);
-  const zoteroConfig = await readJson(app, ZOTERO_CONFIG_PATH);
+  const zoteroInstalled = await pathExists(app, pluginManifestPath(app, ZOTERO_ID));
+  const zoteroConfig = await readJson(app, zoteroConfigPath);
   const zoteroStatus: CompanionPluginStatus = {
     id: ZOTERO_ID,
     installed: zoteroInstalled,
     enabled: enabledPluginIds.includes(ZOTERO_ID),
     ready: zoteroInstalled && enabledPluginIds.includes(ZOTERO_ID) && diffZoteroConfig(zoteroConfig, profile).length === 0,
     optional: false,
-    configPath: ZOTERO_CONFIG_PATH,
+    configPath: zoteroConfigPath,
     mismatches: diffZoteroConfig(zoteroConfig, profile),
     actual: extractZoteroActual(zoteroConfig)
   };
 
-  const pdfInstalled = await pathExists(app, `.obsidian/plugins/${PDF_PLUS_ID}/manifest.json`);
-  const pdfConfig = await readJson(app, PDF_PLUS_CONFIG_PATH);
+  const pdfInstalled = await pathExists(app, pluginManifestPath(app, PDF_PLUS_ID));
+  const pdfConfig = await readJson(app, pdfConfigPath);
   const pdfStatus: CompanionPluginStatus = {
     id: PDF_PLUS_ID,
     installed: pdfInstalled,
     enabled: enabledPluginIds.includes(PDF_PLUS_ID),
     ready: pdfInstalled && enabledPluginIds.includes(PDF_PLUS_ID) && diffPdfConfig(pdfConfig).length === 0,
     optional: false,
-    configPath: PDF_PLUS_CONFIG_PATH,
+    configPath: pdfConfigPath,
     mismatches: diffPdfConfig(pdfConfig),
     actual: extractPdfActual(pdfConfig)
   };
 
-  const smartInstalled = await pathExists(app, `.obsidian/plugins/${SMART_CONNECTIONS_ID}/manifest.json`);
-  const smartConfig = await readJson(app, SMART_CONNECTIONS_CONFIG_PATH);
+  const smartInstalled = await pathExists(app, pluginManifestPath(app, SMART_CONNECTIONS_ID));
+  const smartConfig = await readJson(app, smartConfigPath);
   const smartStatus: CompanionPluginStatus = {
     id: SMART_CONNECTIONS_ID,
     installed: smartInstalled,
     enabled: enabledPluginIds.includes(SMART_CONNECTIONS_ID),
     ready: smartInstalled && enabledPluginIds.includes(SMART_CONNECTIONS_ID) && diffSmartConnectionsConfig(smartConfig, profile).length === 0,
     optional: false,
-    configPath: SMART_CONNECTIONS_CONFIG_PATH,
+    configPath: smartConfigPath,
     mismatches: diffSmartConnectionsConfig(smartConfig, profile),
     actual: extractSmartActual(smartConfig)
   };
@@ -543,7 +556,8 @@ export async function applyCompanionPresetToVault(
   profile: ResearchWorkbenchProfile
 ): Promise<void> {
   if (id === ZOTERO_ID) {
-    const current = await readJson(app, ZOTERO_CONFIG_PATH);
+    const zoteroConfigPath = pluginDataPath(app, ZOTERO_ID);
+    const current = await readJson(app, zoteroConfigPath);
     const recommended = buildRecommendedZoteroConfig(profile);
     const exportFormats = upsertNamedEntries(
       ensureArray<ZoteroFormat>(current.exportFormats).map((item) => ({ ...item, name: ensureString(item.name) })),
@@ -562,12 +576,13 @@ export async function applyCompanionPresetToVault(
       exportFormats,
       citeFormats
     };
-    await writeJson(app, ZOTERO_CONFIG_PATH, next);
+    await writeJson(app, zoteroConfigPath, next);
     return;
   }
 
   if (id === PDF_PLUS_ID) {
-    const current = await readJson(app, PDF_PLUS_CONFIG_PATH);
+    const pdfConfigPath = pluginDataPath(app, PDF_PLUS_ID);
+    const current = await readJson(app, pdfConfigPath);
     const recommended = buildRecommendedPdfConfig();
     const next = {
       ...current,
@@ -592,7 +607,7 @@ export async function applyCompanionPresetToVault(
         ensureArray<string>(recommended.annotationProductMenuConfig).map(String)
       )
     };
-    await writeJson(app, PDF_PLUS_CONFIG_PATH, next);
+    await writeJson(app, pdfConfigPath, next);
     return;
   }
 

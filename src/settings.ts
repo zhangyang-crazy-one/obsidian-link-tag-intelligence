@@ -6,7 +6,7 @@ import {
   normalizeDelimitedList,
   type ResearchWorkbenchState
 } from "./companion-plugins";
-import type { LanguageSetting } from "./i18n";
+import type { LanguageSetting, UILanguage } from "./i18n";
 import type LinkTagIntelligencePlugin from "./main";
 
 export type WorkflowMode = "general" | "researcher";
@@ -28,8 +28,7 @@ export const RESEARCH_RELATION_KEYS = [
 const RESEARCH_LITERATURE_PATH = "Knowledge/Research/Literature";
 const RESEARCH_TEMPLATE_PATH = "Knowledge/Research/Templates/zotero-literature-note.md";
 const RESEARCH_ATTACHMENTS_PATH = "Knowledge/Research/Attachments";
-const SMART_CONNECTIONS_EXCLUSIONS = [
-  ".obsidian",
+const STATIC_SMART_CONNECTIONS_EXCLUSIONS = [
   ".smart-env",
   "Archive/Imports",
   "Excalidraw",
@@ -43,6 +42,21 @@ const SMART_CONNECTIONS_HEADINGS = [
   "Acknowledgements"
 ];
 const DEFAULT_SMART_RESULTS_LIMIT = 20;
+
+function normalizeConfigDir(configDir: string): string {
+  return configDir
+    .replace(/\\/g, "/")
+    .replace(/\/{2,}/g, "/")
+    .replace(/\/$/, "")
+    .trim();
+}
+
+function buildSmartConnectionsExclusions(configDir: string): string[] {
+  const normalizedConfigDir = normalizeConfigDir(configDir);
+  return normalizedConfigDir
+    ? [normalizedConfigDir, ...STATIC_SMART_CONNECTIONS_EXCLUSIONS]
+    : [...STATIC_SMART_CONNECTIONS_EXCLUSIONS];
+}
 
 export const DEFAULT_TAG_FACET_MAP_TEXT = JSON.stringify(
   {
@@ -112,37 +126,41 @@ export interface LinkTagIntelligenceSettings {
   smartConnectionsResultsLimit: number;
 }
 
-export const DEFAULT_SETTINGS: LinkTagIntelligenceSettings = {
-  language: "system",
-  workflowMode: "researcher",
-  relationKeys: [...RESEARCH_RELATION_KEYS],
-  tagAliasMapText: JSON.stringify(
-    {
-      "文献笔记": ["literature-note", "paper-note", "source-note"],
-      "研究问题": ["research-question", "rq"],
-      "大语言模型": ["llm", "large-language-model"],
-      "手冲咖啡": ["pour-over", "coffee-brewing"],
-      "文献综述": ["literature-review", "lit review"],
-      "研究空白": ["research gap"],
-      "方法论": ["methodology", "framework"]
-    },
-    null,
-    2
-  ),
-  tagFacetMapText: DEFAULT_TAG_FACET_MAP_TEXT,
-  semanticBridgeEnabled: false,
-  semanticCommand: "",
-  semanticTimeoutMs: 30000,
-  recentLinkMemorySize: 24,
-  recentLinkTargets: [],
-  researchLiteratureFolder: RESEARCH_LITERATURE_PATH,
-  researchTemplatePath: RESEARCH_TEMPLATE_PATH,
-  researchAttachmentsFolder: RESEARCH_ATTACHMENTS_PATH,
-  researchOpenNoteAfterImport: true,
-  smartConnectionsFolderExclusions: SMART_CONNECTIONS_EXCLUSIONS.join(", "),
-  smartConnectionsHeadingExclusions: SMART_CONNECTIONS_HEADINGS.join(", "),
-  smartConnectionsResultsLimit: DEFAULT_SMART_RESULTS_LIMIT
-};
+export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSettings {
+  return {
+    language: "system",
+    workflowMode: "researcher",
+    relationKeys: [...RESEARCH_RELATION_KEYS],
+    tagAliasMapText: JSON.stringify(
+      {
+        "文献笔记": ["literature-note", "paper-note", "source-note"],
+        "研究问题": ["research-question", "rq"],
+        "大语言模型": ["llm", "large-language-model"],
+        "手冲咖啡": ["pour-over", "coffee-brewing"],
+        "文献综述": ["literature-review", "lit review"],
+        "研究空白": ["research gap"],
+        "方法论": ["methodology", "framework"]
+      },
+      null,
+      2
+    ),
+    tagFacetMapText: DEFAULT_TAG_FACET_MAP_TEXT,
+    semanticBridgeEnabled: false,
+    semanticCommand: "",
+    semanticTimeoutMs: 30000,
+    recentLinkMemorySize: 24,
+    recentLinkTargets: [],
+    researchLiteratureFolder: RESEARCH_LITERATURE_PATH,
+    researchTemplatePath: RESEARCH_TEMPLATE_PATH,
+    researchAttachmentsFolder: RESEARCH_ATTACHMENTS_PATH,
+    researchOpenNoteAfterImport: true,
+    smartConnectionsFolderExclusions: buildSmartConnectionsExclusions(configDir).join(", "),
+    smartConnectionsHeadingExclusions: SMART_CONNECTIONS_HEADINGS.join(", "),
+    smartConnectionsResultsLimit: DEFAULT_SMART_RESULTS_LIMIT
+  };
+}
+
+export const DEFAULT_SETTINGS: LinkTagIntelligenceSettings = buildDefaultSettings();
 
 const COMPANION_META = {
   "obsidian-zotero-desktop-connector": {
@@ -163,6 +181,82 @@ const COMPANION_META = {
   }
 } satisfies Record<CompanionPluginId, { name: string; descriptionKey: Parameters<LinkTagIntelligencePlugin["t"]>[0] }>;
 
+interface WorkbenchGuideCopy {
+  localeLabel: string;
+  overviewTitle: string;
+  overviewDescription: string;
+  lead: string;
+  bridgeLabel: string;
+  bridgeValue: string;
+  stackTitle: string;
+  stackItems: string[];
+  flowTitle: string;
+  flowItems: string[];
+  troubleshootTitle: string;
+  troubleshootBody: string;
+  workflowTitle: string;
+  workflowDescription: string;
+}
+
+const WORKBENCH_GUIDE: Record<UILanguage, WorkbenchGuideCopy> = {
+  zh: {
+    localeLabel: "中文",
+    overviewTitle: "研究工作台总览",
+    overviewDescription: "首页同时给出中英文研究栈说明，便于核对 Zotero 桌面桥接、证据提取和语义召回的职责边界。",
+    lead: "这个首页是研究型 Obsidian 库的操作总览。Link & Tag Intelligence 负责连接来源、证据、论点、关系键和中英文受控标签，不替代 Zotero 桌面端、Better BibTeX、PDF 阅读器或外部语义检索。",
+    bridgeLabel: "Zotero 桌面桥接前置条件",
+    bridgeValue: "保持 Zotero 桌面端正在运行，并在 Zotero 中安装并启用 Better BibTeX for Zotero，保证 citekey 稳定且 Obsidian 导入链路可连接。",
+    stackTitle: "推荐研究栈",
+    stackItems: [
+      "Zotero 桌面端 + Better BibTeX：保持 Zotero 正在运行，并在 Zotero 中安装 Better BibTeX，保证 citekey 稳定、Obsidian 导入链路可连接。",
+      "Zotero Integration：把文献条目、元数据和批注导入到库内文献笔记。",
+      "PDF++：把带页码的原文证据复制到文献笔记或写作草稿里。",
+      "Link & Tag Intelligence：连接来源、证据、论点、关系键和中英文受控标签。",
+      "Smart Connections / 外部语义桥接：在写作或综述时补充召回，但不替代精确引用。"
+    ],
+    flowTitle: "建议工作流",
+    flowItems: [
+      "先启动 Zotero 桌面端，并确认 Better BibTeX 已安装且能正常生成 citekey。",
+      "在 Obsidian 中运行 Zotero 导入，把文献笔记写入研究目录。",
+      "打开 PDF，用 PDF++ 复制带页码的证据片段。",
+      "回到本插件侧栏，补关系键、引用定位和中英文标签。",
+      "写作或综述时，再打开 Smart Connections 或外部语义检索补充召回。"
+    ],
+    troubleshootTitle: "常见报错排查",
+    troubleshootBody: "出现“Cannot connect to Zotero”这类报错时，通常不是 Obsidian 页面布局问题，而是桌面桥接前置条件未满足：先确认 Zotero 正在运行，再确认 Zotero 中已经安装并启用了 Better BibTeX。两项都满足后，再回到工作流里执行导入。",
+    workflowTitle: "工作流执行顺序",
+    workflowDescription: "先满足 Zotero 桌面桥接前置条件，再执行导入、摘录证据、补关系与标签，最后才进入语义召回。"
+  },
+  en: {
+    localeLabel: "English",
+    overviewTitle: "Research Workbench Overview",
+    overviewDescription: "The home page now explains the stack in both Chinese and English so the Zotero desktop bridge, evidence capture, and semantic recall roles stay explicit.",
+    lead: "This home page is the operating overview for a research-oriented Obsidian vault. Link & Tag Intelligence connects sources, evidence, claims, typed relations, and bilingual controlled tags. It does not replace Zotero desktop, Better BibTeX, a PDF reader, or your external semantic retrieval stack.",
+    bridgeLabel: "Zotero desktop bridge prerequisite",
+    bridgeValue: "Keep Zotero desktop running and install Better BibTeX for Zotero inside Zotero so citekeys stay stable and the Obsidian import bridge can connect.",
+    stackTitle: "Recommended research stack",
+    stackItems: [
+      "Zotero desktop + Better BibTeX: keep Zotero running and install Better BibTeX inside Zotero so citekeys stay stable and the Obsidian import bridge can connect.",
+      "Zotero Integration: import literature items, metadata, and annotations into vault literature notes.",
+      "PDF++: copy page-aware evidence into literature notes and draft notes.",
+      "Link & Tag Intelligence: connect sources, evidence, claims, typed relations, and bilingual controlled tags.",
+      "Smart Connections / external semantic bridge: add broader recall while drafting or synthesizing, without replacing exact references."
+    ],
+    flowTitle: "Suggested flow",
+    flowItems: [
+      "Start Zotero desktop first and confirm that Better BibTeX is installed and generating stable citekeys.",
+      "Run Zotero import inside Obsidian so literature notes land in the research folder.",
+      "Open the source PDF and use PDF++ to copy page-aware evidence.",
+      "Return to this plugin to add typed relations, reference context, and bilingual tags.",
+      "Only then use Smart Connections or the external semantic bridge for broader recall while drafting."
+    ],
+    troubleshootTitle: "Troubleshooting",
+    troubleshootBody: "When you see errors such as “Cannot connect to Zotero”, this is usually not a layout issue inside Obsidian. It normally means the desktop bridge prerequisites are missing: first make sure Zotero is running, then make sure Better BibTeX is installed and enabled in Zotero. After both are in place, retry the import step.",
+    workflowTitle: "Workflow execution order",
+    workflowDescription: "Satisfy the Zotero desktop bridge prerequisites first, then import, capture evidence, add relations and tags, and only after that rely on semantic recall."
+  }
+};
+
 function arraysEqual(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
@@ -175,10 +269,11 @@ function normalizeDelimitedSetting(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value : fallback;
 }
 
-export function normalizeLoadedSettings(data: unknown): LinkTagIntelligenceSettings {
+export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagIntelligenceSettings {
+  const defaults = buildDefaultSettings(configDir);
   const raw = data && typeof data === "object" ? (data as Partial<LinkTagIntelligenceSettings>) : {};
   const normalized = {
-    ...DEFAULT_SETTINGS,
+    ...defaults,
     ...raw
   };
 
@@ -193,15 +288,15 @@ export function normalizeLoadedSettings(data: unknown): LinkTagIntelligenceSetti
   }
 
   normalized.workflowMode = normalized.workflowMode === "general" ? "general" : "researcher";
-  normalized.tagAliasMapText = normalizeJsonText(normalized.tagAliasMapText, DEFAULT_SETTINGS.tagAliasMapText);
+  normalized.tagAliasMapText = normalizeJsonText(normalized.tagAliasMapText, defaults.tagAliasMapText);
   normalized.tagFacetMapText = normalizeJsonText(normalized.tagFacetMapText, DEFAULT_TAG_FACET_MAP_TEXT);
   normalized.semanticCommand = typeof normalized.semanticCommand === "string" ? normalized.semanticCommand : "";
   normalized.semanticTimeoutMs = Number.isFinite(normalized.semanticTimeoutMs) && normalized.semanticTimeoutMs > 0
     ? normalized.semanticTimeoutMs
-    : DEFAULT_SETTINGS.semanticTimeoutMs;
+    : defaults.semanticTimeoutMs;
   normalized.recentLinkMemorySize = Number.isFinite(normalized.recentLinkMemorySize) && normalized.recentLinkMemorySize > 0
     ? normalized.recentLinkMemorySize
-    : DEFAULT_SETTINGS.recentLinkMemorySize;
+    : defaults.recentLinkMemorySize;
   normalized.recentLinkTargets = Array.isArray(normalized.recentLinkTargets)
     ? normalized.recentLinkTargets.map(String).filter(Boolean)
     : [];
@@ -210,18 +305,18 @@ export function normalizeLoadedSettings(data: unknown): LinkTagIntelligenceSetti
   normalized.researchAttachmentsFolder = normalizeDelimitedSetting(normalized.researchAttachmentsFolder, RESEARCH_ATTACHMENTS_PATH);
   normalized.researchOpenNoteAfterImport = typeof normalized.researchOpenNoteAfterImport === "boolean"
     ? normalized.researchOpenNoteAfterImport
-    : DEFAULT_SETTINGS.researchOpenNoteAfterImport;
+    : defaults.researchOpenNoteAfterImport;
   normalized.smartConnectionsFolderExclusions = normalizeDelimitedSetting(
     normalized.smartConnectionsFolderExclusions,
-    DEFAULT_SETTINGS.smartConnectionsFolderExclusions
+    defaults.smartConnectionsFolderExclusions
   );
   normalized.smartConnectionsHeadingExclusions = normalizeDelimitedSetting(
     normalized.smartConnectionsHeadingExclusions,
-    DEFAULT_SETTINGS.smartConnectionsHeadingExclusions
+    defaults.smartConnectionsHeadingExclusions
   );
   normalized.smartConnectionsResultsLimit = Number.isFinite(normalized.smartConnectionsResultsLimit) && normalized.smartConnectionsResultsLimit > 0
     ? normalized.smartConnectionsResultsLimit
-    : DEFAULT_SETTINGS.smartConnectionsResultsLimit;
+    : defaults.smartConnectionsResultsLimit;
 
   return normalized;
 }
@@ -309,11 +404,13 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
 
   private renderOverviewPage(containerEl: HTMLElement, state: ResearchWorkbenchState): void {
     this.renderHero(containerEl, state);
+    this.renderOverviewGuideSection(containerEl);
     this.renderModuleSection(containerEl);
     this.renderCompanionSummarySection(containerEl, state);
   }
 
   private renderWorkflowPage(containerEl: HTMLElement, state: ResearchWorkbenchState): void {
+    this.renderWorkflowGuideSection(containerEl);
     this.renderActionsSection(containerEl);
 
     const grid = containerEl.createDiv({ cls: "lti-workbench-settings-grid" });
@@ -426,6 +523,63 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
       this.plugin.t("settingsWorkbenchStatSemantic"),
       state.profile.semanticEnabled ? this.plugin.t("settingsWorkbenchOn") : this.plugin.t("settingsWorkbenchOff")
     );
+  }
+
+  private currentWorkbenchGuide(): WorkbenchGuideCopy {
+    return WORKBENCH_GUIDE[this.plugin.currentLanguage()];
+  }
+
+  private renderOverviewGuideSection(containerEl: HTMLElement): void {
+    const guide = this.currentWorkbenchGuide();
+    const section = this.createSectionCard(containerEl, guide.overviewTitle, guide.overviewDescription);
+    const grid = section.createDiv({ cls: "lti-workbench-intro-grid" });
+    this.renderGuideLocaleCard(grid, "zh");
+    this.renderGuideLocaleCard(grid, "en");
+  }
+
+  private renderWorkflowGuideSection(containerEl: HTMLElement): void {
+    const guide = this.currentWorkbenchGuide();
+    const section = this.createSectionCard(containerEl, guide.workflowTitle, guide.workflowDescription);
+    section.createDiv({
+      text: guide.lead,
+      cls: "setting-item-description lti-workbench-intro-lead"
+    });
+    this.renderGuideNoteBlock(section, guide.bridgeLabel, guide.bridgeValue);
+    this.renderGuideListBlock(section, guide.stackTitle, guide.stackItems);
+    this.renderGuideListBlock(section, guide.flowTitle, guide.flowItems, true);
+    this.renderGuideNoteBlock(section, guide.troubleshootTitle, guide.troubleshootBody);
+  }
+
+  private renderGuideLocaleCard(containerEl: HTMLElement, language: UILanguage): void {
+    const guide = WORKBENCH_GUIDE[language];
+    const card = containerEl.createDiv({ cls: "lti-workbench-intro-card" });
+    card.createDiv({ text: guide.localeLabel, cls: "lti-workbench-intro-locale" });
+    card.createDiv({
+      text: guide.lead,
+      cls: "setting-item-description lti-workbench-intro-lead"
+    });
+    this.renderGuideNoteBlock(card, guide.bridgeLabel, guide.bridgeValue);
+    this.renderGuideListBlock(card, guide.stackTitle, guide.stackItems);
+    this.renderGuideListBlock(card, guide.flowTitle, guide.flowItems, true);
+    this.renderGuideNoteBlock(card, guide.troubleshootTitle, guide.troubleshootBody);
+  }
+
+  private renderGuideListBlock(containerEl: HTMLElement, title: string, items: string[], ordered = false): void {
+    const block = containerEl.createDiv({ cls: "lti-workbench-intro-block" });
+    block.createDiv({ text: title, cls: "lti-workbench-intro-block-title" });
+    const list = block.createEl(ordered ? "ol" : "ul", { cls: "lti-workbench-intro-list" });
+    for (const item of items) {
+      list.createEl("li", { text: item });
+    }
+  }
+
+  private renderGuideNoteBlock(containerEl: HTMLElement, title: string, body: string): void {
+    const note = containerEl.createDiv({ cls: "lti-workbench-intro-note" });
+    note.createDiv({ text: title, cls: "lti-workbench-intro-block-title" });
+    note.createDiv({
+      text: body,
+      cls: "setting-item-description lti-workbench-intro-note-copy"
+    });
   }
 
   private renderActionsSection(containerEl: HTMLElement): void {
@@ -947,12 +1101,15 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
 
   private renderCompanionFacts(containerEl: HTMLElement, companion: CompanionPluginStatus, state: ResearchWorkbenchState): void {
     switch (companion.id) {
-      case "obsidian-zotero-desktop-connector":
+      case "obsidian-zotero-desktop-connector": {
+        const guide = this.currentWorkbenchGuide();
+        this.renderFactRow(containerEl, guide.bridgeLabel, guide.bridgeValue);
         this.renderFactRow(containerEl, this.plugin.t("settingsResearchPathLiterature"), this.valueOrFallback(companion.actual.literatureFolder), state.profile.literatureFolder, !companion.mismatches.includes("zotero-folder"));
         this.renderFactRow(containerEl, this.plugin.t("settingsResearchPathTemplates"), this.valueOrFallback(companion.actual.templatePath), state.profile.templatePath, !companion.mismatches.includes("zotero-template"));
         this.renderFactRow(containerEl, this.plugin.t("settingsResearchPathAttachments"), this.valueOrFallback(companion.actual.attachmentsFolder), state.profile.attachmentsFolder, !companion.mismatches.includes("zotero-attachments"));
         this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchOpenImportedTitle"), this.booleanText(companion.actual.openNoteAfterImport), this.booleanText(state.profile.openNoteAfterImport), !companion.mismatches.includes("zotero-open-note"));
         return;
+      }
       case "pdf-plus":
         this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchDefaultDisplayTitle"), this.valueOrFallback(companion.actual.defaultDisplayFormat), "Title & page", !companion.mismatches.includes("pdf-default-display"));
         this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchCopyCommandsTitle"), this.joinList(companion.actual.copyCommandNames), "Literature quote, Evidence callout, Source link", !companion.mismatches.includes("pdf-copy-commands"));

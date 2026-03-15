@@ -191,7 +191,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    this.settings = normalizeLoadedSettings(await this.loadData());
+    this.settings = normalizeLoadedSettings(await this.loadData(), this.app.vault.configDir);
   }
 
   async saveSettings(): Promise<void> {
@@ -266,7 +266,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     ]);
   }
 
-  async openPdfPlusSettings(): Promise<boolean> {
+  openPdfPlusSettings(): boolean {
     return this.openCompanionSettings("pdf-plus");
   }
 

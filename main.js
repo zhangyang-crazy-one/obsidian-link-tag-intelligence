@@ -3180,8 +3180,6 @@ var ZOTERO_ID = "obsidian-zotero-desktop-connector";
 var PDF_PLUS_ID = "pdf-plus";
 var SMART_CONNECTIONS_ID = "smart-connections";
 var SEMANTIC_BRIDGE_ID = "semantic-bridge";
-var ZOTERO_CONFIG_PATH = `.obsidian/plugins/${ZOTERO_ID}/data.json`;
-var PDF_PLUS_CONFIG_PATH = `.obsidian/plugins/${PDF_PLUS_ID}/data.json`;
 var SMART_CONNECTIONS_CONFIG_PATH = `.smart-env/smart_env.json`;
 var ZOTERO_EXPORT_FORMAT_NAME = "Research literature note";
 var ZOTERO_CITE_FORMAT_NAME = "Insert literature note link";
@@ -3216,6 +3214,15 @@ var REQUIRED_PDF_COPY_COMMANDS = [
 ];
 function normalizeVaultPath(path) {
   return path.replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/^\.\//, "").replace(/\/$/, "").trim();
+}
+function configPath(app, ...segments) {
+  return normalizeVaultPath([app.vault.configDir, ...segments].join("/"));
+}
+function pluginDataPath(app, pluginId) {
+  return configPath(app, "plugins", pluginId, "data.json");
+}
+function pluginManifestPath(app, pluginId) {
+  return configPath(app, "plugins", pluginId, "manifest.json");
 }
 function ensureString(value, fallback = "") {
   return typeof value === "string" ? value : fallback;
@@ -3516,7 +3523,10 @@ function buildSemanticStatus(profile) {
   };
 }
 async function readResearchWorkbenchState(app, profile) {
-  const enabledPluginRaw = await app.vault.adapter.read(".obsidian/community-plugins.json").catch(() => "[]");
+  const enabledPluginRaw = await app.vault.adapter.read(configPath(app, "community-plugins.json")).catch(() => "[]");
+  const zoteroConfigPath = pluginDataPath(app, ZOTERO_ID);
+  const pdfConfigPath = pluginDataPath(app, PDF_PLUS_ID);
+  const smartConfigPath = SMART_CONNECTIONS_CONFIG_PATH;
   let enabledPluginIds = [];
   try {
     const parsed = JSON.parse(enabledPluginRaw);
@@ -3524,39 +3534,39 @@ async function readResearchWorkbenchState(app, profile) {
   } catch {
     enabledPluginIds = [];
   }
-  const zoteroInstalled = await pathExists(app, `.obsidian/plugins/${ZOTERO_ID}/manifest.json`);
-  const zoteroConfig = await readJson(app, ZOTERO_CONFIG_PATH);
+  const zoteroInstalled = await pathExists(app, pluginManifestPath(app, ZOTERO_ID));
+  const zoteroConfig = await readJson(app, zoteroConfigPath);
   const zoteroStatus = {
     id: ZOTERO_ID,
     installed: zoteroInstalled,
     enabled: enabledPluginIds.includes(ZOTERO_ID),
     ready: zoteroInstalled && enabledPluginIds.includes(ZOTERO_ID) && diffZoteroConfig(zoteroConfig, profile).length === 0,
     optional: false,
-    configPath: ZOTERO_CONFIG_PATH,
+    configPath: zoteroConfigPath,
     mismatches: diffZoteroConfig(zoteroConfig, profile),
     actual: extractZoteroActual(zoteroConfig)
   };
-  const pdfInstalled = await pathExists(app, `.obsidian/plugins/${PDF_PLUS_ID}/manifest.json`);
-  const pdfConfig = await readJson(app, PDF_PLUS_CONFIG_PATH);
+  const pdfInstalled = await pathExists(app, pluginManifestPath(app, PDF_PLUS_ID));
+  const pdfConfig = await readJson(app, pdfConfigPath);
   const pdfStatus = {
     id: PDF_PLUS_ID,
     installed: pdfInstalled,
     enabled: enabledPluginIds.includes(PDF_PLUS_ID),
     ready: pdfInstalled && enabledPluginIds.includes(PDF_PLUS_ID) && diffPdfConfig(pdfConfig).length === 0,
     optional: false,
-    configPath: PDF_PLUS_CONFIG_PATH,
+    configPath: pdfConfigPath,
     mismatches: diffPdfConfig(pdfConfig),
     actual: extractPdfActual(pdfConfig)
   };
-  const smartInstalled = await pathExists(app, `.obsidian/plugins/${SMART_CONNECTIONS_ID}/manifest.json`);
-  const smartConfig = await readJson(app, SMART_CONNECTIONS_CONFIG_PATH);
+  const smartInstalled = await pathExists(app, pluginManifestPath(app, SMART_CONNECTIONS_ID));
+  const smartConfig = await readJson(app, smartConfigPath);
   const smartStatus = {
     id: SMART_CONNECTIONS_ID,
     installed: smartInstalled,
     enabled: enabledPluginIds.includes(SMART_CONNECTIONS_ID),
     ready: smartInstalled && enabledPluginIds.includes(SMART_CONNECTIONS_ID) && diffSmartConnectionsConfig(smartConfig, profile).length === 0,
     optional: false,
-    configPath: SMART_CONNECTIONS_CONFIG_PATH,
+    configPath: smartConfigPath,
     mismatches: diffSmartConnectionsConfig(smartConfig, profile),
     actual: extractSmartActual(smartConfig)
   };
@@ -3573,7 +3583,8 @@ async function readResearchWorkbenchState(app, profile) {
 }
 async function applyCompanionPresetToVault(app, id, profile) {
   if (id === ZOTERO_ID) {
-    const current2 = await readJson(app, ZOTERO_CONFIG_PATH);
+    const zoteroConfigPath = pluginDataPath(app, ZOTERO_ID);
+    const current2 = await readJson(app, zoteroConfigPath);
     const recommended = buildRecommendedZoteroConfig(profile);
     const exportFormats = upsertNamedEntries(
       ensureArray(current2.exportFormats).map((item) => ({ ...item, name: ensureString(item.name) })),
@@ -3592,11 +3603,12 @@ async function applyCompanionPresetToVault(app, id, profile) {
       exportFormats,
       citeFormats
     };
-    await writeJson(app, ZOTERO_CONFIG_PATH, next2);
+    await writeJson(app, zoteroConfigPath, next2);
     return;
   }
   if (id === PDF_PLUS_ID) {
-    const current2 = await readJson(app, PDF_PLUS_CONFIG_PATH);
+    const pdfConfigPath = pluginDataPath(app, PDF_PLUS_ID);
+    const current2 = await readJson(app, pdfConfigPath);
     const recommended = buildRecommendedPdfConfig();
     const next2 = {
       ...current2,
@@ -3621,7 +3633,7 @@ async function applyCompanionPresetToVault(app, id, profile) {
         ensureArray(recommended.annotationProductMenuConfig).map(String)
       )
     };
-    await writeJson(app, PDF_PLUS_CONFIG_PATH, next2);
+    await writeJson(app, pdfConfigPath, next2);
     return;
   }
   const current = await readJson(app, SMART_CONNECTIONS_CONFIG_PATH);
@@ -4046,8 +4058,7 @@ var RESEARCH_RELATION_KEYS = [
 var RESEARCH_LITERATURE_PATH = "Knowledge/Research/Literature";
 var RESEARCH_TEMPLATE_PATH = "Knowledge/Research/Templates/zotero-literature-note.md";
 var RESEARCH_ATTACHMENTS_PATH = "Knowledge/Research/Attachments";
-var SMART_CONNECTIONS_EXCLUSIONS = [
-  ".obsidian",
+var STATIC_SMART_CONNECTIONS_EXCLUSIONS = [
   ".smart-env",
   "Archive/Imports",
   "Excalidraw",
@@ -4061,6 +4072,13 @@ var SMART_CONNECTIONS_HEADINGS = [
   "Acknowledgements"
 ];
 var DEFAULT_SMART_RESULTS_LIMIT = 20;
+function normalizeConfigDir(configDir) {
+  return configDir.replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/\/$/, "").trim();
+}
+function buildSmartConnectionsExclusions(configDir) {
+  const normalizedConfigDir = normalizeConfigDir(configDir);
+  return normalizedConfigDir ? [normalizedConfigDir, ...STATIC_SMART_CONNECTIONS_EXCLUSIONS] : [...STATIC_SMART_CONNECTIONS_EXCLUSIONS];
+}
 var DEFAULT_TAG_FACET_MAP_TEXT = JSON.stringify(
   {
     topic: {
@@ -4108,37 +4126,40 @@ var DEFAULT_TAG_FACET_MAP_TEXT = JSON.stringify(
   null,
   2
 );
-var DEFAULT_SETTINGS = {
-  language: "system",
-  workflowMode: "researcher",
-  relationKeys: [...RESEARCH_RELATION_KEYS],
-  tagAliasMapText: JSON.stringify(
-    {
-      "\u6587\u732E\u7B14\u8BB0": ["literature-note", "paper-note", "source-note"],
-      "\u7814\u7A76\u95EE\u9898": ["research-question", "rq"],
-      "\u5927\u8BED\u8A00\u6A21\u578B": ["llm", "large-language-model"],
-      "\u624B\u51B2\u5496\u5561": ["pour-over", "coffee-brewing"],
-      "\u6587\u732E\u7EFC\u8FF0": ["literature-review", "lit review"],
-      "\u7814\u7A76\u7A7A\u767D": ["research gap"],
-      "\u65B9\u6CD5\u8BBA": ["methodology", "framework"]
-    },
-    null,
-    2
-  ),
-  tagFacetMapText: DEFAULT_TAG_FACET_MAP_TEXT,
-  semanticBridgeEnabled: false,
-  semanticCommand: "",
-  semanticTimeoutMs: 3e4,
-  recentLinkMemorySize: 24,
-  recentLinkTargets: [],
-  researchLiteratureFolder: RESEARCH_LITERATURE_PATH,
-  researchTemplatePath: RESEARCH_TEMPLATE_PATH,
-  researchAttachmentsFolder: RESEARCH_ATTACHMENTS_PATH,
-  researchOpenNoteAfterImport: true,
-  smartConnectionsFolderExclusions: SMART_CONNECTIONS_EXCLUSIONS.join(", "),
-  smartConnectionsHeadingExclusions: SMART_CONNECTIONS_HEADINGS.join(", "),
-  smartConnectionsResultsLimit: DEFAULT_SMART_RESULTS_LIMIT
-};
+function buildDefaultSettings(configDir = "") {
+  return {
+    language: "system",
+    workflowMode: "researcher",
+    relationKeys: [...RESEARCH_RELATION_KEYS],
+    tagAliasMapText: JSON.stringify(
+      {
+        "\u6587\u732E\u7B14\u8BB0": ["literature-note", "paper-note", "source-note"],
+        "\u7814\u7A76\u95EE\u9898": ["research-question", "rq"],
+        "\u5927\u8BED\u8A00\u6A21\u578B": ["llm", "large-language-model"],
+        "\u624B\u51B2\u5496\u5561": ["pour-over", "coffee-brewing"],
+        "\u6587\u732E\u7EFC\u8FF0": ["literature-review", "lit review"],
+        "\u7814\u7A76\u7A7A\u767D": ["research gap"],
+        "\u65B9\u6CD5\u8BBA": ["methodology", "framework"]
+      },
+      null,
+      2
+    ),
+    tagFacetMapText: DEFAULT_TAG_FACET_MAP_TEXT,
+    semanticBridgeEnabled: false,
+    semanticCommand: "",
+    semanticTimeoutMs: 3e4,
+    recentLinkMemorySize: 24,
+    recentLinkTargets: [],
+    researchLiteratureFolder: RESEARCH_LITERATURE_PATH,
+    researchTemplatePath: RESEARCH_TEMPLATE_PATH,
+    researchAttachmentsFolder: RESEARCH_ATTACHMENTS_PATH,
+    researchOpenNoteAfterImport: true,
+    smartConnectionsFolderExclusions: buildSmartConnectionsExclusions(configDir).join(", "),
+    smartConnectionsHeadingExclusions: SMART_CONNECTIONS_HEADINGS.join(", "),
+    smartConnectionsResultsLimit: DEFAULT_SMART_RESULTS_LIMIT
+  };
+}
+var DEFAULT_SETTINGS = buildDefaultSettings();
 var COMPANION_META = {
   "obsidian-zotero-desktop-connector": {
     name: "Zotero Integration",
@@ -4157,6 +4178,64 @@ var COMPANION_META = {
     descriptionKey: "settingsCompanionSemanticDesc"
   }
 };
+var WORKBENCH_GUIDE = {
+  zh: {
+    localeLabel: "\u4E2D\u6587",
+    overviewTitle: "\u7814\u7A76\u5DE5\u4F5C\u53F0\u603B\u89C8",
+    overviewDescription: "\u9996\u9875\u540C\u65F6\u7ED9\u51FA\u4E2D\u82F1\u6587\u7814\u7A76\u6808\u8BF4\u660E\uFF0C\u4FBF\u4E8E\u6838\u5BF9 Zotero \u684C\u9762\u6865\u63A5\u3001\u8BC1\u636E\u63D0\u53D6\u548C\u8BED\u4E49\u53EC\u56DE\u7684\u804C\u8D23\u8FB9\u754C\u3002",
+    lead: "\u8FD9\u4E2A\u9996\u9875\u662F\u7814\u7A76\u578B Obsidian \u5E93\u7684\u64CD\u4F5C\u603B\u89C8\u3002Link & Tag Intelligence \u8D1F\u8D23\u8FDE\u63A5\u6765\u6E90\u3001\u8BC1\u636E\u3001\u8BBA\u70B9\u3001\u5173\u7CFB\u952E\u548C\u4E2D\u82F1\u6587\u53D7\u63A7\u6807\u7B7E\uFF0C\u4E0D\u66FF\u4EE3 Zotero \u684C\u9762\u7AEF\u3001Better BibTeX\u3001PDF \u9605\u8BFB\u5668\u6216\u5916\u90E8\u8BED\u4E49\u68C0\u7D22\u3002",
+    bridgeLabel: "Zotero \u684C\u9762\u6865\u63A5\u524D\u7F6E\u6761\u4EF6",
+    bridgeValue: "\u4FDD\u6301 Zotero \u684C\u9762\u7AEF\u6B63\u5728\u8FD0\u884C\uFF0C\u5E76\u5728 Zotero \u4E2D\u5B89\u88C5\u5E76\u542F\u7528 Better BibTeX for Zotero\uFF0C\u4FDD\u8BC1 citekey \u7A33\u5B9A\u4E14 Obsidian \u5BFC\u5165\u94FE\u8DEF\u53EF\u8FDE\u63A5\u3002",
+    stackTitle: "\u63A8\u8350\u7814\u7A76\u6808",
+    stackItems: [
+      "Zotero \u684C\u9762\u7AEF + Better BibTeX\uFF1A\u4FDD\u6301 Zotero \u6B63\u5728\u8FD0\u884C\uFF0C\u5E76\u5728 Zotero \u4E2D\u5B89\u88C5 Better BibTeX\uFF0C\u4FDD\u8BC1 citekey \u7A33\u5B9A\u3001Obsidian \u5BFC\u5165\u94FE\u8DEF\u53EF\u8FDE\u63A5\u3002",
+      "Zotero Integration\uFF1A\u628A\u6587\u732E\u6761\u76EE\u3001\u5143\u6570\u636E\u548C\u6279\u6CE8\u5BFC\u5165\u5230\u5E93\u5185\u6587\u732E\u7B14\u8BB0\u3002",
+      "PDF++\uFF1A\u628A\u5E26\u9875\u7801\u7684\u539F\u6587\u8BC1\u636E\u590D\u5236\u5230\u6587\u732E\u7B14\u8BB0\u6216\u5199\u4F5C\u8349\u7A3F\u91CC\u3002",
+      "Link & Tag Intelligence\uFF1A\u8FDE\u63A5\u6765\u6E90\u3001\u8BC1\u636E\u3001\u8BBA\u70B9\u3001\u5173\u7CFB\u952E\u548C\u4E2D\u82F1\u6587\u53D7\u63A7\u6807\u7B7E\u3002",
+      "Smart Connections / \u5916\u90E8\u8BED\u4E49\u6865\u63A5\uFF1A\u5728\u5199\u4F5C\u6216\u7EFC\u8FF0\u65F6\u8865\u5145\u53EC\u56DE\uFF0C\u4F46\u4E0D\u66FF\u4EE3\u7CBE\u786E\u5F15\u7528\u3002"
+    ],
+    flowTitle: "\u5EFA\u8BAE\u5DE5\u4F5C\u6D41",
+    flowItems: [
+      "\u5148\u542F\u52A8 Zotero \u684C\u9762\u7AEF\uFF0C\u5E76\u786E\u8BA4 Better BibTeX \u5DF2\u5B89\u88C5\u4E14\u80FD\u6B63\u5E38\u751F\u6210 citekey\u3002",
+      "\u5728 Obsidian \u4E2D\u8FD0\u884C Zotero \u5BFC\u5165\uFF0C\u628A\u6587\u732E\u7B14\u8BB0\u5199\u5165\u7814\u7A76\u76EE\u5F55\u3002",
+      "\u6253\u5F00 PDF\uFF0C\u7528 PDF++ \u590D\u5236\u5E26\u9875\u7801\u7684\u8BC1\u636E\u7247\u6BB5\u3002",
+      "\u56DE\u5230\u672C\u63D2\u4EF6\u4FA7\u680F\uFF0C\u8865\u5173\u7CFB\u952E\u3001\u5F15\u7528\u5B9A\u4F4D\u548C\u4E2D\u82F1\u6587\u6807\u7B7E\u3002",
+      "\u5199\u4F5C\u6216\u7EFC\u8FF0\u65F6\uFF0C\u518D\u6253\u5F00 Smart Connections \u6216\u5916\u90E8\u8BED\u4E49\u68C0\u7D22\u8865\u5145\u53EC\u56DE\u3002"
+    ],
+    troubleshootTitle: "\u5E38\u89C1\u62A5\u9519\u6392\u67E5",
+    troubleshootBody: "\u51FA\u73B0\u201CCannot connect to Zotero\u201D\u8FD9\u7C7B\u62A5\u9519\u65F6\uFF0C\u901A\u5E38\u4E0D\u662F Obsidian \u9875\u9762\u5E03\u5C40\u95EE\u9898\uFF0C\u800C\u662F\u684C\u9762\u6865\u63A5\u524D\u7F6E\u6761\u4EF6\u672A\u6EE1\u8DB3\uFF1A\u5148\u786E\u8BA4 Zotero \u6B63\u5728\u8FD0\u884C\uFF0C\u518D\u786E\u8BA4 Zotero \u4E2D\u5DF2\u7ECF\u5B89\u88C5\u5E76\u542F\u7528\u4E86 Better BibTeX\u3002\u4E24\u9879\u90FD\u6EE1\u8DB3\u540E\uFF0C\u518D\u56DE\u5230\u5DE5\u4F5C\u6D41\u91CC\u6267\u884C\u5BFC\u5165\u3002",
+    workflowTitle: "\u5DE5\u4F5C\u6D41\u6267\u884C\u987A\u5E8F",
+    workflowDescription: "\u5148\u6EE1\u8DB3 Zotero \u684C\u9762\u6865\u63A5\u524D\u7F6E\u6761\u4EF6\uFF0C\u518D\u6267\u884C\u5BFC\u5165\u3001\u6458\u5F55\u8BC1\u636E\u3001\u8865\u5173\u7CFB\u4E0E\u6807\u7B7E\uFF0C\u6700\u540E\u624D\u8FDB\u5165\u8BED\u4E49\u53EC\u56DE\u3002"
+  },
+  en: {
+    localeLabel: "English",
+    overviewTitle: "Research Workbench Overview",
+    overviewDescription: "The home page now explains the stack in both Chinese and English so the Zotero desktop bridge, evidence capture, and semantic recall roles stay explicit.",
+    lead: "This home page is the operating overview for a research-oriented Obsidian vault. Link & Tag Intelligence connects sources, evidence, claims, typed relations, and bilingual controlled tags. It does not replace Zotero desktop, Better BibTeX, a PDF reader, or your external semantic retrieval stack.",
+    bridgeLabel: "Zotero desktop bridge prerequisite",
+    bridgeValue: "Keep Zotero desktop running and install Better BibTeX for Zotero inside Zotero so citekeys stay stable and the Obsidian import bridge can connect.",
+    stackTitle: "Recommended research stack",
+    stackItems: [
+      "Zotero desktop + Better BibTeX: keep Zotero running and install Better BibTeX inside Zotero so citekeys stay stable and the Obsidian import bridge can connect.",
+      "Zotero Integration: import literature items, metadata, and annotations into vault literature notes.",
+      "PDF++: copy page-aware evidence into literature notes and draft notes.",
+      "Link & Tag Intelligence: connect sources, evidence, claims, typed relations, and bilingual controlled tags.",
+      "Smart Connections / external semantic bridge: add broader recall while drafting or synthesizing, without replacing exact references."
+    ],
+    flowTitle: "Suggested flow",
+    flowItems: [
+      "Start Zotero desktop first and confirm that Better BibTeX is installed and generating stable citekeys.",
+      "Run Zotero import inside Obsidian so literature notes land in the research folder.",
+      "Open the source PDF and use PDF++ to copy page-aware evidence.",
+      "Return to this plugin to add typed relations, reference context, and bilingual tags.",
+      "Only then use Smart Connections or the external semantic bridge for broader recall while drafting."
+    ],
+    troubleshootTitle: "Troubleshooting",
+    troubleshootBody: "When you see errors such as \u201CCannot connect to Zotero\u201D, this is usually not a layout issue inside Obsidian. It normally means the desktop bridge prerequisites are missing: first make sure Zotero is running, then make sure Better BibTeX is installed and enabled in Zotero. After both are in place, retry the import step.",
+    workflowTitle: "Workflow execution order",
+    workflowDescription: "Satisfy the Zotero desktop bridge prerequisites first, then import, capture evidence, add relations and tags, and only after that rely on semantic recall."
+  }
+};
 function arraysEqual(left, right) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
@@ -4166,10 +4245,11 @@ function normalizeJsonText(value, fallback) {
 function normalizeDelimitedSetting(value, fallback) {
   return typeof value === "string" && value.trim() ? value : fallback;
 }
-function normalizeLoadedSettings(data) {
+function normalizeLoadedSettings(data, configDir = "") {
+  const defaults = buildDefaultSettings(configDir);
   const raw = data && typeof data === "object" ? data : {};
   const normalized = {
-    ...DEFAULT_SETTINGS,
+    ...defaults,
     ...raw
   };
   if (Array.isArray(raw.relationKeys) && arraysEqual(raw.relationKeys.map(String), LEGACY_RELATION_KEYS)) {
@@ -4181,25 +4261,25 @@ function normalizeLoadedSettings(data) {
     normalized.relationKeys = normalized.relationKeys.map(String).map((item) => item.trim()).filter(Boolean);
   }
   normalized.workflowMode = normalized.workflowMode === "general" ? "general" : "researcher";
-  normalized.tagAliasMapText = normalizeJsonText(normalized.tagAliasMapText, DEFAULT_SETTINGS.tagAliasMapText);
+  normalized.tagAliasMapText = normalizeJsonText(normalized.tagAliasMapText, defaults.tagAliasMapText);
   normalized.tagFacetMapText = normalizeJsonText(normalized.tagFacetMapText, DEFAULT_TAG_FACET_MAP_TEXT);
   normalized.semanticCommand = typeof normalized.semanticCommand === "string" ? normalized.semanticCommand : "";
-  normalized.semanticTimeoutMs = Number.isFinite(normalized.semanticTimeoutMs) && normalized.semanticTimeoutMs > 0 ? normalized.semanticTimeoutMs : DEFAULT_SETTINGS.semanticTimeoutMs;
-  normalized.recentLinkMemorySize = Number.isFinite(normalized.recentLinkMemorySize) && normalized.recentLinkMemorySize > 0 ? normalized.recentLinkMemorySize : DEFAULT_SETTINGS.recentLinkMemorySize;
+  normalized.semanticTimeoutMs = Number.isFinite(normalized.semanticTimeoutMs) && normalized.semanticTimeoutMs > 0 ? normalized.semanticTimeoutMs : defaults.semanticTimeoutMs;
+  normalized.recentLinkMemorySize = Number.isFinite(normalized.recentLinkMemorySize) && normalized.recentLinkMemorySize > 0 ? normalized.recentLinkMemorySize : defaults.recentLinkMemorySize;
   normalized.recentLinkTargets = Array.isArray(normalized.recentLinkTargets) ? normalized.recentLinkTargets.map(String).filter(Boolean) : [];
   normalized.researchLiteratureFolder = normalizeDelimitedSetting(normalized.researchLiteratureFolder, RESEARCH_LITERATURE_PATH);
   normalized.researchTemplatePath = normalizeDelimitedSetting(normalized.researchTemplatePath, RESEARCH_TEMPLATE_PATH);
   normalized.researchAttachmentsFolder = normalizeDelimitedSetting(normalized.researchAttachmentsFolder, RESEARCH_ATTACHMENTS_PATH);
-  normalized.researchOpenNoteAfterImport = typeof normalized.researchOpenNoteAfterImport === "boolean" ? normalized.researchOpenNoteAfterImport : DEFAULT_SETTINGS.researchOpenNoteAfterImport;
+  normalized.researchOpenNoteAfterImport = typeof normalized.researchOpenNoteAfterImport === "boolean" ? normalized.researchOpenNoteAfterImport : defaults.researchOpenNoteAfterImport;
   normalized.smartConnectionsFolderExclusions = normalizeDelimitedSetting(
     normalized.smartConnectionsFolderExclusions,
-    DEFAULT_SETTINGS.smartConnectionsFolderExclusions
+    defaults.smartConnectionsFolderExclusions
   );
   normalized.smartConnectionsHeadingExclusions = normalizeDelimitedSetting(
     normalized.smartConnectionsHeadingExclusions,
-    DEFAULT_SETTINGS.smartConnectionsHeadingExclusions
+    defaults.smartConnectionsHeadingExclusions
   );
-  normalized.smartConnectionsResultsLimit = Number.isFinite(normalized.smartConnectionsResultsLimit) && normalized.smartConnectionsResultsLimit > 0 ? normalized.smartConnectionsResultsLimit : DEFAULT_SETTINGS.smartConnectionsResultsLimit;
+  normalized.smartConnectionsResultsLimit = Number.isFinite(normalized.smartConnectionsResultsLimit) && normalized.smartConnectionsResultsLimit > 0 ? normalized.smartConnectionsResultsLimit : defaults.smartConnectionsResultsLimit;
   return normalized;
 }
 var LinkTagIntelligenceSettingTab = class extends import_obsidian8.PluginSettingTab {
@@ -4272,10 +4352,12 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian8.PluginSetting
   }
   renderOverviewPage(containerEl, state) {
     this.renderHero(containerEl, state);
+    this.renderOverviewGuideSection(containerEl);
     this.renderModuleSection(containerEl);
     this.renderCompanionSummarySection(containerEl, state);
   }
   renderWorkflowPage(containerEl, state) {
+    this.renderWorkflowGuideSection(containerEl);
     this.renderActionsSection(containerEl);
     const grid = containerEl.createDiv({ cls: "lti-workbench-settings-grid" });
     const preferences = this.createSectionCard(
@@ -4376,6 +4458,57 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian8.PluginSetting
       this.plugin.t("settingsWorkbenchStatSemantic"),
       state.profile.semanticEnabled ? this.plugin.t("settingsWorkbenchOn") : this.plugin.t("settingsWorkbenchOff")
     );
+  }
+  currentWorkbenchGuide() {
+    return WORKBENCH_GUIDE[this.plugin.currentLanguage()];
+  }
+  renderOverviewGuideSection(containerEl) {
+    const guide = this.currentWorkbenchGuide();
+    const section = this.createSectionCard(containerEl, guide.overviewTitle, guide.overviewDescription);
+    const grid = section.createDiv({ cls: "lti-workbench-intro-grid" });
+    this.renderGuideLocaleCard(grid, "zh");
+    this.renderGuideLocaleCard(grid, "en");
+  }
+  renderWorkflowGuideSection(containerEl) {
+    const guide = this.currentWorkbenchGuide();
+    const section = this.createSectionCard(containerEl, guide.workflowTitle, guide.workflowDescription);
+    section.createDiv({
+      text: guide.lead,
+      cls: "setting-item-description lti-workbench-intro-lead"
+    });
+    this.renderGuideNoteBlock(section, guide.bridgeLabel, guide.bridgeValue);
+    this.renderGuideListBlock(section, guide.stackTitle, guide.stackItems);
+    this.renderGuideListBlock(section, guide.flowTitle, guide.flowItems, true);
+    this.renderGuideNoteBlock(section, guide.troubleshootTitle, guide.troubleshootBody);
+  }
+  renderGuideLocaleCard(containerEl, language) {
+    const guide = WORKBENCH_GUIDE[language];
+    const card = containerEl.createDiv({ cls: "lti-workbench-intro-card" });
+    card.createDiv({ text: guide.localeLabel, cls: "lti-workbench-intro-locale" });
+    card.createDiv({
+      text: guide.lead,
+      cls: "setting-item-description lti-workbench-intro-lead"
+    });
+    this.renderGuideNoteBlock(card, guide.bridgeLabel, guide.bridgeValue);
+    this.renderGuideListBlock(card, guide.stackTitle, guide.stackItems);
+    this.renderGuideListBlock(card, guide.flowTitle, guide.flowItems, true);
+    this.renderGuideNoteBlock(card, guide.troubleshootTitle, guide.troubleshootBody);
+  }
+  renderGuideListBlock(containerEl, title, items, ordered = false) {
+    const block = containerEl.createDiv({ cls: "lti-workbench-intro-block" });
+    block.createDiv({ text: title, cls: "lti-workbench-intro-block-title" });
+    const list = block.createEl(ordered ? "ol" : "ul", { cls: "lti-workbench-intro-list" });
+    for (const item of items) {
+      list.createEl("li", { text: item });
+    }
+  }
+  renderGuideNoteBlock(containerEl, title, body) {
+    const note = containerEl.createDiv({ cls: "lti-workbench-intro-note" });
+    note.createDiv({ text: title, cls: "lti-workbench-intro-block-title" });
+    note.createDiv({
+      text: body,
+      cls: "setting-item-description lti-workbench-intro-note-copy"
+    });
   }
   renderActionsSection(containerEl) {
     const section = this.createSectionCard(
@@ -4865,12 +4998,15 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian8.PluginSetting
   }
   renderCompanionFacts(containerEl, companion, state) {
     switch (companion.id) {
-      case "obsidian-zotero-desktop-connector":
+      case "obsidian-zotero-desktop-connector": {
+        const guide = this.currentWorkbenchGuide();
+        this.renderFactRow(containerEl, guide.bridgeLabel, guide.bridgeValue);
         this.renderFactRow(containerEl, this.plugin.t("settingsResearchPathLiterature"), this.valueOrFallback(companion.actual.literatureFolder), state.profile.literatureFolder, !companion.mismatches.includes("zotero-folder"));
         this.renderFactRow(containerEl, this.plugin.t("settingsResearchPathTemplates"), this.valueOrFallback(companion.actual.templatePath), state.profile.templatePath, !companion.mismatches.includes("zotero-template"));
         this.renderFactRow(containerEl, this.plugin.t("settingsResearchPathAttachments"), this.valueOrFallback(companion.actual.attachmentsFolder), state.profile.attachmentsFolder, !companion.mismatches.includes("zotero-attachments"));
         this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchOpenImportedTitle"), this.booleanText(companion.actual.openNoteAfterImport), this.booleanText(state.profile.openNoteAfterImport), !companion.mismatches.includes("zotero-open-note"));
         return;
+      }
       case "pdf-plus":
         this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchDefaultDisplayTitle"), this.valueOrFallback(companion.actual.defaultDisplayFormat), "Title & page", !companion.mismatches.includes("pdf-default-display"));
         this.renderFactRow(containerEl, this.plugin.t("settingsWorkbenchCopyCommandsTitle"), this.joinList(companion.actual.copyCommandNames), "Literature quote, Evidence callout, Source link", !companion.mismatches.includes("pdf-copy-commands"));
@@ -5667,7 +5803,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     this.referencePreview.destroy();
   }
   async loadSettings() {
-    this.settings = normalizeLoadedSettings(await this.loadData());
+    this.settings = normalizeLoadedSettings(await this.loadData(), this.app.vault.configDir);
   }
   async saveSettings() {
     const memory = Math.max(1, this.settings.recentLinkMemorySize);
@@ -5732,7 +5868,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
       "smart-connections-view"
     ]);
   }
-  async openPdfPlusSettings() {
+  openPdfPlusSettings() {
     return this.openCompanionSettings("pdf-plus");
   }
   currentLanguage() {
