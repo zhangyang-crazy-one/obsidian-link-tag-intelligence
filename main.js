@@ -23,7 +23,7 @@ __export(main_exports, {
   default: () => LinkTagIntelligencePlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian10 = require("obsidian");
+var import_obsidian11 = require("obsidian");
 
 // src/editor-extension.ts
 var import_state = require("@codemirror/state");
@@ -620,6 +620,196 @@ function debugLog(app, scope, details = {}) {
   });
 }
 
+// src/ingestion.ts
+var import_obsidian3 = require("obsidian");
+
+// src/shared.ts
+function normalizeStringArray(value) {
+  return Array.isArray(value) ? value.map((item) => String(item).trim()).filter(Boolean) : [String(value).trim()].filter(Boolean);
+}
+function parseTagAliasMap(text) {
+  if (!text.trim()) {
+    return /* @__PURE__ */ new Map();
+  }
+  const parsed = JSON.parse(text);
+  const aliasMap = /* @__PURE__ */ new Map();
+  for (const [canonical, value] of Object.entries(parsed)) {
+    if (!canonical.trim()) {
+      continue;
+    }
+    const aliases = Array.isArray(value) ? value.map((item) => String(item).trim()).filter(Boolean) : [String(value).trim()].filter(Boolean);
+    aliasMap.set(canonical.trim(), aliases);
+  }
+  return aliasMap;
+}
+function parseTagFacetMap(text) {
+  if (!text.trim()) {
+    return /* @__PURE__ */ new Map();
+  }
+  const parsed = JSON.parse(text);
+  const facetMap = /* @__PURE__ */ new Map();
+  for (const [facet, rawValue] of Object.entries(parsed)) {
+    const normalizedFacet = facet.trim();
+    if (!normalizedFacet) {
+      continue;
+    }
+    const entries = /* @__PURE__ */ new Map();
+    if (Array.isArray(rawValue)) {
+      for (const item of rawValue) {
+        const canonical = String(item).trim();
+        if (canonical) {
+          entries.set(canonical, []);
+        }
+      }
+    } else if (rawValue && typeof rawValue === "object") {
+      for (const [canonical, aliasesValue] of Object.entries(rawValue)) {
+        const normalizedCanonical = canonical.trim();
+        if (!normalizedCanonical) {
+          continue;
+        }
+        entries.set(normalizedCanonical, normalizeStringArray(aliasesValue));
+      }
+    } else {
+      for (const canonical of normalizeStringArray(rawValue)) {
+        entries.set(canonical, []);
+      }
+    }
+    if (entries.size > 0) {
+      facetMap.set(normalizedFacet, entries);
+    }
+  }
+  return facetMap;
+}
+function formatFacetName(facet) {
+  return facet.trim().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+}
+function shellEscape(value) {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+function buildShellCommand(template, replacements) {
+  let command = template;
+  for (const [key, value] of Object.entries(replacements)) {
+    command = command.replaceAll(`{{${key}}}`, shellEscape(value));
+  }
+  return command;
+}
+function buildSemanticCommand(template, context) {
+  return buildShellCommand(template, {
+    query: context.query,
+    vault: context.vaultPath,
+    file: context.filePath,
+    selection: context.selection
+  });
+}
+function buildIngestionCommand(template, context) {
+  return buildShellCommand(template, {
+    source_type: context.sourceType,
+    source: context.source,
+    vault: context.vaultPath,
+    file: context.filePath,
+    selection: context.selection,
+    literature: context.literatureFolder,
+    attachments: context.attachmentsFolder,
+    template: context.templatePath,
+    metadata_doi: context.metadataDoi,
+    metadata_arxiv: context.metadataArxiv,
+    title: context.title,
+    authors: context.authors,
+    year: context.year,
+    download_pdf: context.downloadPdf,
+    open_after_import: context.openAfterImport
+  });
+}
+
+// src/ingestion.ts
+function isIngestionConfigured(settings) {
+  return Boolean(settings.ingestionCommand.trim());
+}
+function getVaultBasePath(app) {
+  const adapter = app.vault.adapter;
+  return adapter instanceof import_obsidian3.FileSystemAdapter ? adapter.getBasePath() : "";
+}
+function getDesktopRequire() {
+  const desktopRequire = globalThis.require;
+  return typeof desktopRequire === "function" ? desktopRequire : null;
+}
+function getExecFunction() {
+  const desktopRequire = getDesktopRequire();
+  if (!desktopRequire) {
+    throw new Error("desktop-shell-unavailable");
+  }
+  const childProcess = desktopRequire("child_process");
+  if (typeof childProcess?.exec !== "function") {
+    throw new Error("desktop-shell-unavailable");
+  }
+  return childProcess.exec;
+}
+function readOptionalString(value) {
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return void 0;
+}
+function normalizeResult(result) {
+  const notePath = readOptionalString(result.note_path ?? result.notePath);
+  if (!notePath) {
+    throw new Error("invalid-cli-response");
+  }
+  return {
+    status: readOptionalString(result.status) ?? "created",
+    sourceType: readOptionalString(result.source_type ?? result.sourceType) ?? "",
+    sourceId: readOptionalString(result.source_id ?? result.sourceId),
+    title: readOptionalString(result.title) ?? notePath.split("/").pop()?.replace(/\.md$/i, "") ?? notePath,
+    notePath,
+    attachmentPaths: Array.isArray(result.attachment_paths) ? result.attachment_paths.map(String).filter(Boolean) : [],
+    warnings: Array.isArray(result.warnings) ? result.warnings.map(String).filter(Boolean) : [],
+    metadata: result.metadata && typeof result.metadata === "object" ? result.metadata : {}
+  };
+}
+async function runIngestionCommand(app, settings, request, activeFile, selection) {
+  if (!import_obsidian3.Platform.isDesktopApp) {
+    throw new Error("desktop-only");
+  }
+  if (!isIngestionConfigured(settings)) {
+    throw new Error("missing-command");
+  }
+  const command = buildIngestionCommand(settings.ingestionCommand, {
+    sourceType: request.sourceType,
+    source: request.source,
+    vaultPath: getVaultBasePath(app),
+    filePath: activeFile?.path ?? "",
+    selection,
+    literatureFolder: settings.researchLiteratureFolder,
+    attachmentsFolder: settings.researchAttachmentsFolder,
+    templatePath: settings.researchTemplatePath,
+    metadataDoi: request.metadataDoi ?? "",
+    metadataArxiv: request.metadataArxiv ?? "",
+    title: request.title ?? "",
+    authors: request.authors ?? "",
+    year: request.year ?? "",
+    downloadPdf: String(request.downloadPdf !== false),
+    openAfterImport: String(settings.researchOpenNoteAfterImport)
+  });
+  const exec = getExecFunction();
+  const stdout = await new Promise((resolve, reject) => {
+    exec(command, { timeout: settings.ingestionTimeoutMs, cwd: getVaultBasePath(app) || void 0 }, (error, resultStdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr?.trim() || error.message));
+        return;
+      }
+      resolve(resultStdout);
+    });
+  });
+  const parsed = JSON.parse(stdout.trim());
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("invalid-cli-response");
+  }
+  return normalizeResult(parsed);
+}
+
 // src/i18n.ts
 var TRANSLATIONS = {
   en: {
@@ -633,6 +823,7 @@ var TRANSLATIONS = {
     addRelation: "Add relation to current note",
     manageTags: "Manage vault tags",
     suggestTags: "Suggest tags for current note",
+    ingestionCapture: "Ingest research source",
     semanticSearch: "Semantic search via external command",
     currentNote: "Current note",
     outgoingLinks: "Outgoing links",
@@ -645,7 +836,8 @@ var TRANSLATIONS = {
     semanticBridge: "Semantic bridge",
     notConfigured: "Not configured",
     configured: "Configured",
-    noActiveNote: "Open a markdown note to use this view.",
+    noActiveNote: "Open a Markdown or Excalidraw note to use this view.",
+    noActiveEditor: "Open a Markdown note, or the markdown source of an Excalidraw note, to insert links or references.",
     emptyList: "Nothing to show.",
     path: "Path",
     aliases: "Aliases",
@@ -665,6 +857,19 @@ var TRANSLATIONS = {
     createdFrontmatterTag: "Added tags to frontmatter.",
     tagsUpdated: "Tags updated.",
     tagSuggestionsReady: "Suggested tags are ready.",
+    ingestionDesktopOnly: "Research ingestion is desktop-only.",
+    ingestionMissingCommand: "Ingestion command is not configured.",
+    ingestionMissingSource: "Provide a DOI, arXiv ID, or PDF path/URL.",
+    ingestionInvalidDoi: "The DOI input is invalid.",
+    ingestionInvalidArxiv: "The arXiv input is invalid.",
+    ingestionInvalidPdf: "The PDF path or URL is invalid.",
+    ingestionSourceNotFound: "The requested source could not be resolved.",
+    ingestionInvalidResponse: "The ingestion CLI returned an invalid response.",
+    ingestionLookupFailed: "{target} lookup failed ({status}).",
+    ingestionPdfDownloadFailed: "PDF download failed ({status}).",
+    ingestionFailed: "Research ingestion failed: {message}",
+    ingestionCreated: "Created literature note for {title}.",
+    ingestionCreatedWithWarnings: "Created literature note for {title} with {count} warning(s).",
     semanticDesktopOnly: "Semantic bridge is desktop-only.",
     semanticMissingCommand: "Semantic command is not configured.",
     semanticFailed: "Semantic search failed: {message}",
@@ -677,6 +882,7 @@ var TRANSLATIONS = {
     promptRelationKey: "Select relation key",
     savedRelation: "Saved relation {relation}.",
     insertedLink: "Inserted link to {title}.",
+    appendedToFile: "Appended to {title} (text added to markdown section).",
     invalidAliasMap: "Tag alias map is invalid JSON. Falling back to empty map.",
     invalidFacetMap: "Tag facet map is invalid JSON. Falling back to empty map.",
     settingsWorkflowMode: "Workflow mode",
@@ -691,8 +897,14 @@ var TRANSLATIONS = {
     settingsTagAliasMapDescription: "JSON object from canonical tag to aliases. Used for bilingual matching, not automatic rewrites.",
     settingsTagFacetMap: "Research tag facet map JSON",
     settingsTagFacetMapDescription: "JSON object from facet name to canonical tags and aliases. Used to boost topic / method / dataset / writing-stage tags.",
+    settingsWorkbenchIngestionTitle: "External ingestion CLI",
+    settingsWorkbenchIngestionDescription: "Configure the command that creates literature notes from DOI, arXiv, or PDF input.",
+    settingsWorkbenchIngestionCommandTitle: "Ingestion command",
+    settingsWorkbenchIngestionCommandDescription: "Desktop-only shell command. Supported placeholders: {{source_type}} {{source}} {{vault}} {{file}} {{selection}} {{literature}} {{attachments}} {{template}} {{metadata_doi}} {{metadata_arxiv}} {{title}} {{authors}} {{year}} {{download_pdf}} {{open_after_import}}.",
+    settingsWorkbenchIngestionTimeoutTitle: "Ingestion timeout (ms)",
+    settingsWorkbenchIngestionHint: "Recommended CLI contract: stdout JSON with note_path, attachment_paths, warnings, and metadata. This is the primary capture path for Codex or Claude Code shell workflows.",
     settingsSemanticEnabled: "Enable semantic bridge",
-    settingsSemanticEnabledDescription: "Keep disabled if you only use native links and companion plugins. Enable when you have an external research search CLI.",
+    settingsSemanticEnabledDescription: "Keep disabled unless you have an external retrieval CLI. Capture and import are handled separately by the ingestion CLI.",
     settingsSemanticCommand: "Semantic command",
     settingsSemanticCommandDescription: "Desktop-only shell command. Supported placeholders: {{query}} {{vault}} {{file}} {{selection}}. Prefer returning citekey / author / year / page / source_type / evidence_kind.",
     settingsSemanticTimeout: "Semantic timeout (ms)",
@@ -701,28 +913,28 @@ var TRANSLATIONS = {
     settingsResearchGuideTitle: "Research workflow guide",
     settingsResearchGuideDescription: "This mode is designed for literature notes, evidence gathering, synthesis, and drafting. Keep exact references, typed relations, and controlled tags aligned.",
     settingsResearchLayoutTitle: "Vault layout",
-    settingsResearchLayoutDescription: "Keep the workflow within a shallow 3-level structure so Zotero imports, templates, and attachments stay predictable across plugins and CLI tools.",
+    settingsResearchLayoutDescription: "Keep the workflow within a shallow 3-level structure so CLI-created literature notes, optional Zotero exports, and attachments stay predictable across tools.",
     settingsResearchPathLiterature: "Literature notes",
     settingsResearchPathTemplates: "Template",
     settingsResearchPathAttachments: "Annotation assets",
     settingsResearchWorkflowTitle: "Working sequence",
     settingsResearchWorkflowDescription: "A practical loop for capture, page-aware reading, argument linking, and drafting.",
     settingsResearchWorkflowStep1Title: "Import source notes",
-    settingsResearchWorkflowStep1Body: "Use Zotero Integration to create one structured literature note per citekey.",
+    settingsResearchWorkflowStep1Body: "Use the ingestion CLI to create one structured literature note per DOI, arXiv ID, or PDF.",
     settingsResearchWorkflowStep2Title: "Quote with page context",
     settingsResearchWorkflowStep2Body: "Use PDF++ copy actions to move exact page evidence into literature notes or draft notes.",
     settingsResearchWorkflowStep3Title: "Link claims and tags",
     settingsResearchWorkflowStep3Body: "Use typed relations and controlled bilingual tags to connect source notes, evidence, and arguments.",
     settingsResearchWorkflowStep4Title: "Retrieve while drafting",
     settingsResearchWorkflowStep4Body: "Use Smart Connections for local semantic recall, and enable the external semantic bridge only when you have a research CLI ready.",
-    settingsResearchGuideStep1: "Use Zotero Integration or PDF++ to capture source material and page-level annotations.",
+    settingsResearchGuideStep1: "Use the ingestion CLI or PDF++ to capture source metadata, PDFs, and page-level annotations.",
     settingsResearchGuideStep2: "Use typed relations like supports / contradicts / extends to connect notes and claims.",
     settingsResearchGuideStep3: "Maintain controlled topic, method, dataset, status, and writing-stage tags to keep recommendation quality high.",
     settingsCompanionPluginsTitle: "Recommended companion plugins",
     settingsCompanionActionLabel: "What to click",
-    settingsCompanionZoteroDesc: "Bring in citekeys, literature-note metadata, and source annotations.",
-    settingsCompanionZoteroSetup: "Configured to write notes into {literaturePath}, use template {templatePath}, and save exported images under {attachmentsPath}.",
-    settingsCompanionZoteroAction: "Command palette -> Zotero Integration: Import notes",
+    settingsCompanionZoteroDesc: "Optional adapter for importing an existing Zotero library, citekeys, and annotations.",
+    settingsCompanionZoteroSetup: "Optional. If you keep Zotero in the stack, align it with {literaturePath}, {templatePath}, and {attachmentsPath}.",
+    settingsCompanionZoteroAction: "Optional: Command palette -> Zotero Integration: Import notes",
     settingsCompanionPdfDesc: "Work with PDF highlights, page jumps, and annotation-heavy reading workflows.",
     settingsCompanionPdfSetup: "Configured for page-aware quote and cite-callout copy commands, with bibliography hover kept active for citation-heavy reading.",
     settingsCompanionPdfAction: "Open a PDF -> select text -> choose a PDF++ copy format",
@@ -735,7 +947,7 @@ var TRANSLATIONS = {
     settingsSemanticResearchHint: "Recommended semantic result fields: citekey, author, year, page, source_type, evidence_kind, suggested_tags, suggested_relations.",
     settingsWorkbenchEyebrow: "Research workbench",
     settingsWorkbenchTitle: "Research workflow control center",
-    settingsWorkbenchDescription: "Inspect companion plugins, sync critical research settings, and launch the next reading or writing step from one place.",
+    settingsWorkbenchDescription: "Inspect companion tools, configure CLI-first capture, sync research-critical settings, and launch the next reading or writing step from one place.",
     settingsWorkbenchPreferencesTitle: "Workbench preferences",
     settingsWorkbenchPreferencesDescription: "Keep language and default mode in the detail drawer, not on the dashboard.",
     settingsWorkbenchStatReady: "Ready companions",
@@ -757,13 +969,15 @@ var TRANSLATIONS = {
     settingsWorkbenchQuickActionsTitle: "Workflow entry points",
     settingsWorkbenchQuickActionsDescription: "Group high-frequency actions by capture, recall, and organization so the workbench stays readable.",
     settingsWorkbenchActionGroupCaptureTitle: "Capture & import",
-    settingsWorkbenchActionGroupCaptureDescription: "Keep literature import and PDF reading tools together.",
+    settingsWorkbenchActionGroupCaptureDescription: "Keep the CLI capture flow, optional Zotero import, and PDF reading tools together.",
     settingsWorkbenchActionGroupRecallTitle: "Recall & retrieval",
     settingsWorkbenchActionGroupRecallDescription: "Open semantic views and current-note intelligence without leaving the workbench.",
     settingsWorkbenchActionGroupOrganizeTitle: "Tags & structure",
     settingsWorkbenchActionGroupOrganizeDescription: "Clean native tags and keep controlled suggestions aligned while drafting.",
-    settingsWorkbenchActionZoteroTitle: "Import Zotero notes",
-    settingsWorkbenchActionZoteroDescription: "Run the import command directly.",
+    settingsWorkbenchActionIngestionTitle: "Ingest DOI / arXiv / PDF",
+    settingsWorkbenchActionIngestionDescription: "Launch the CLI-first capture modal.",
+    settingsWorkbenchActionZoteroTitle: "Import from Zotero (optional)",
+    settingsWorkbenchActionZoteroDescription: "Use the Zotero adapter when you are importing from an existing Zotero library.",
     settingsWorkbenchActionSmartTitle: "Open Smart Connections",
     settingsWorkbenchActionSmartDescription: "Jump into local semantic recall.",
     settingsWorkbenchActionPanelTitle: "Open intelligence panel",
@@ -787,11 +1001,11 @@ var TRANSLATIONS = {
     settingsWorkbenchApplyCompanion: "Apply preset",
     settingsWorkbenchOpenSettings: "Open settings",
     settingsWorkbenchConfigTitle: "Workflow configuration",
-    settingsWorkbenchConfigDescription: "Edit the research-critical defaults that control imports, local indexing, and the optional semantic bridge.",
+    settingsWorkbenchConfigDescription: "Edit the research-critical defaults that control CLI capture, optional adapters, local indexing, and the semantic bridge.",
     settingsWorkbenchPathsTitle: "Workspace paths",
-    settingsWorkbenchPathsDescription: "Keep note, template, and attachment paths stable so imports and citations remain predictable.",
+    settingsWorkbenchPathsDescription: "Keep note, template, and attachment paths stable so CLI imports, optional Zotero exports, and citations remain predictable.",
     settingsWorkbenchOpenImportedTitle: "Open imported note",
-    settingsWorkbenchOpenImportedDescription: "When enabled, Zotero imports should open the latest created note immediately.",
+    settingsWorkbenchOpenImportedDescription: "When enabled, newly created literature notes should open immediately after CLI capture or Zotero import.",
     settingsWorkbenchRecallTitle: "Semantic recall scope",
     settingsWorkbenchRecallDescription: "Define what Smart Connections should skip and how many results it should return.",
     settingsWorkbenchFolderExclusionsTitle: "Folder exclusions",
@@ -801,7 +1015,7 @@ var TRANSLATIONS = {
     settingsWorkbenchResultsLimitTitle: "Semantic results limit",
     settingsWorkbenchSemanticTitle: "External semantic bridge",
     settingsWorkbenchSemanticDescription: "Keep this optional and enable it only when your research CLI returns structured citation fields.",
-    settingsWorkbenchConfigHint: "Edit here, then sync the preset or apply the matching companion preset.",
+    settingsWorkbenchConfigHint: "Edit here, then run the CLI capture flow or sync the matching companion preset.",
     settingsWorkbenchCurrentExclusions: "Current normalized exclusions: {value}",
     settingsWorkbenchAdvancedTitle: "Advanced taxonomy",
     settingsWorkbenchAdvancedDescription: "Keep the dashboard clean and expand these panels only when relation keys or JSON vocabularies need tuning.",
@@ -819,6 +1033,7 @@ var TRANSLATIONS = {
     settingsWorkbenchBacklinksTitle: "Backlink highlighting",
     settingsWorkbenchLanguageTitle: "Index language",
     settingsWorkbenchExpectedPrefix: "Expected",
+    settingsWorkbenchRunIngestion: "Open capture modal",
     settingsWorkbenchRunZotero: "Run import",
     settingsWorkbenchRunSmart: "Open view",
     settingsWorkbenchRunSemantic: "Run search",
@@ -846,7 +1061,7 @@ var TRANSLATIONS = {
     settingsWorkbenchMismatchSmartResults: "Smart Connections results limit is not aligned.",
     settingsWorkbenchMismatchSmartRender: "Smart Connections should keep markdown rendering enabled in results.",
     settingsWorkbenchMismatchSemanticCommand: "Semantic bridge is enabled but the command is empty.",
-    settingsWorkbenchPresetApplied: "Research preset synced to installed companion plugins.",
+    settingsWorkbenchPresetApplied: "Research preset synced to the installed default companions.",
     settingsWorkbenchCompanionApplied: "Applied the recommended configuration for {name}.",
     settingsWorkbenchPluginMissing: "That companion plugin is not installed in the current vault.",
     settingsWorkbenchSettingsUnavailable: "Obsidian settings could not be opened programmatically.",
@@ -857,7 +1072,31 @@ var TRANSLATIONS = {
     modalTagSuggestionsDescription: "Suggestions are ranked from aliases, research facets, existing vault tags, source paths, and recurring keywords.",
     modalRelationDescription: "Choose a typed relation to write into frontmatter.",
     modalManageTagsDescription: "Rename, merge, or delete native tags across the vault.",
+    modalIngestionDescription: "Send DOI, arXiv, or PDF input to your external ingestion CLI and create a literature note.",
     modalSemanticDescription: "Run your external semantic command against the current note context.",
+    ingestionSourceType: "Source type",
+    ingestionTypeDoi: "DOI",
+    ingestionTypeArxiv: "arXiv",
+    ingestionTypePdf: "PDF",
+    ingestionSourceValue: "Source",
+    ingestionMetadataHeading: "PDF metadata enrichment",
+    ingestionMetadataDoiPlaceholder: "Optional DOI for PDF enrichment",
+    ingestionMetadataArxivPlaceholder: "Optional arXiv ID for PDF enrichment",
+    ingestionDownloadPdf: "Copy PDF into attachments",
+    ingestionOverrideHeading: "Metadata overrides",
+    ingestionTitlePlaceholder: "Optional title override",
+    ingestionAuthorsPlaceholder: "Optional authors override",
+    ingestionYearPlaceholder: "Optional year override",
+    ingestionContextNote: "Current note context: {path}",
+    ingestionResultSummary: "Source type: {sourceType} \xB7 Attachments: {attachments}",
+    ingestionWarningsTitle: "Warnings",
+    ingestionOpen: "Open note",
+    ingestionInsert: "Insert link",
+    ingestionRun: "Run ingestion",
+    ingestionArxivPlaceholder: "2403.01234 or https://arxiv.org/abs/...",
+    ingestionPdfPlaceholder: "/path/to/file.pdf or https://example.com/file.pdf",
+    ingestionDoiPlaceholder: "10.1145/...",
+    ingestionStatusHint: "Use the CLI-first capture flow for DOI, arXiv, and PDF imports. Zotero remains optional.",
     tagSuggestionAlias: "Alias match",
     tagSuggestionFacet: "Research facet",
     tagSuggestionKnown: "Existing vault tag",
@@ -905,6 +1144,7 @@ var TRANSLATIONS = {
     addRelation: "\u4E3A\u5F53\u524D\u7B14\u8BB0\u6DFB\u52A0\u5173\u7CFB",
     manageTags: "\u7BA1\u7406\u6574\u4E2A\u5E93\u7684\u6807\u7B7E",
     suggestTags: "\u4E3A\u5F53\u524D\u7B14\u8BB0\u63A8\u8350\u6807\u7B7E",
+    ingestionCapture: "\u5BFC\u5165\u7814\u7A76\u6765\u6E90",
     semanticSearch: "\u901A\u8FC7\u5916\u90E8\u547D\u4EE4\u8FDB\u884C\u8BED\u4E49\u68C0\u7D22",
     currentNote: "\u5F53\u524D\u7B14\u8BB0",
     outgoingLinks: "\u51FA\u94FE",
@@ -917,7 +1157,8 @@ var TRANSLATIONS = {
     semanticBridge: "\u8BED\u4E49\u6865\u63A5",
     notConfigured: "\u672A\u914D\u7F6E",
     configured: "\u5DF2\u914D\u7F6E",
-    noActiveNote: "\u8BF7\u5148\u6253\u5F00\u4E00\u4E2A Markdown \u7B14\u8BB0\u3002",
+    noActiveNote: "\u8BF7\u5148\u6253\u5F00\u4E00\u4E2A Markdown \u6216 Excalidraw \u7B14\u8BB0\u3002",
+    noActiveEditor: "\u8BF7\u5148\u6253\u5F00\u53EF\u7F16\u8F91\u7684 Markdown \u7B14\u8BB0\uFF0C\u6216 Excalidraw \u7B14\u8BB0\u7684 Markdown \u6E90\u6587\u4EF6\uFF0C\u518D\u63D2\u5165\u94FE\u63A5\u6216\u5F15\u7528\u3002",
     emptyList: "\u6CA1\u6709\u5185\u5BB9\u3002",
     path: "\u8DEF\u5F84",
     aliases: "\u522B\u540D",
@@ -937,6 +1178,19 @@ var TRANSLATIONS = {
     createdFrontmatterTag: "\u5DF2\u628A\u6807\u7B7E\u5199\u5165 frontmatter\u3002",
     tagsUpdated: "\u6807\u7B7E\u5DF2\u66F4\u65B0\u3002",
     tagSuggestionsReady: "\u6807\u7B7E\u5EFA\u8BAE\u5DF2\u751F\u6210\u3002",
+    ingestionDesktopOnly: "\u7814\u7A76\u6765\u6E90\u5BFC\u5165\u4EC5\u652F\u6301\u684C\u9762\u7AEF\u3002",
+    ingestionMissingCommand: "\u5C1A\u672A\u914D\u7F6E\u5BFC\u5165\u547D\u4EE4\u3002",
+    ingestionMissingSource: "\u8BF7\u63D0\u4F9B DOI\u3001arXiv \u7F16\u53F7\u6216 PDF \u8DEF\u5F84/URL\u3002",
+    ingestionInvalidDoi: "DOI \u8F93\u5165\u65E0\u6548\u3002",
+    ingestionInvalidArxiv: "arXiv \u8F93\u5165\u65E0\u6548\u3002",
+    ingestionInvalidPdf: "PDF \u8DEF\u5F84\u6216 URL \u65E0\u6548\u3002",
+    ingestionSourceNotFound: "\u672A\u80FD\u89E3\u6790\u8FD9\u4E2A\u6765\u6E90\u3002",
+    ingestionInvalidResponse: "\u5BFC\u5165 CLI \u8FD4\u56DE\u4E86\u65E0\u6548\u54CD\u5E94\u3002",
+    ingestionLookupFailed: "{target} \u67E5\u8BE2\u5931\u8D25\uFF08{status}\uFF09\u3002",
+    ingestionPdfDownloadFailed: "PDF \u4E0B\u8F7D\u5931\u8D25\uFF08{status}\uFF09\u3002",
+    ingestionFailed: "\u7814\u7A76\u6765\u6E90\u5BFC\u5165\u5931\u8D25\uFF1A{message}",
+    ingestionCreated: "\u5DF2\u4E3A {title} \u521B\u5EFA\u6587\u732E\u7B14\u8BB0\u3002",
+    ingestionCreatedWithWarnings: "\u5DF2\u4E3A {title} \u521B\u5EFA\u6587\u732E\u7B14\u8BB0\uFF0C\u4F46\u6709 {count} \u6761\u8B66\u544A\u3002",
     semanticDesktopOnly: "\u8BED\u4E49\u6865\u63A5\u4EC5\u652F\u6301\u684C\u9762\u7AEF\u3002",
     semanticMissingCommand: "\u5C1A\u672A\u914D\u7F6E\u8BED\u4E49\u547D\u4EE4\u3002",
     semanticFailed: "\u8BED\u4E49\u68C0\u7D22\u5931\u8D25\uFF1A{message}",
@@ -949,6 +1203,7 @@ var TRANSLATIONS = {
     promptRelationKey: "\u9009\u62E9\u5173\u7CFB\u952E",
     savedRelation: "\u5DF2\u4FDD\u5B58\u5173\u7CFB {relation}\u3002",
     insertedLink: "\u5DF2\u63D2\u5165\u6307\u5411 {title} \u7684\u94FE\u63A5\u3002",
+    appendedToFile: "\u5DF2\u8FFD\u52A0\u5230 {title}\uFF08\u6587\u672C\u5DF2\u6DFB\u52A0\u5230 Markdown \u533A\u57DF\uFF09\u3002",
     invalidAliasMap: "\u6807\u7B7E\u522B\u540D\u6620\u5C04\u4E0D\u662F\u5408\u6CD5 JSON\uFF0C\u5DF2\u56DE\u9000\u4E3A\u7A7A\u6620\u5C04\u3002",
     invalidFacetMap: "\u6807\u7B7E\u5206\u9762\u6620\u5C04\u4E0D\u662F\u5408\u6CD5 JSON\uFF0C\u5DF2\u56DE\u9000\u4E3A\u7A7A\u6620\u5C04\u3002",
     settingsWorkflowMode: "\u5DE5\u4F5C\u6D41\u6A21\u5F0F",
@@ -963,8 +1218,14 @@ var TRANSLATIONS = {
     settingsTagAliasMapDescription: "\u4ECE\u89C4\u8303\u6807\u7B7E\u5230\u522B\u540D\u7684 JSON \u5BF9\u8C61\uFF0C\u7528\u4E8E\u4E2D\u82F1\u6587\u5339\u914D\uFF0C\u4E0D\u4F1A\u81EA\u52A8\u6539\u5199\u5DF2\u6709\u6807\u7B7E\u3002",
     settingsTagFacetMap: "\u7814\u7A76\u6807\u7B7E\u5206\u9762\u6620\u5C04 JSON",
     settingsTagFacetMapDescription: "\u4ECE\u5206\u9762\u540D\u5230\u89C4\u8303\u6807\u7B7E\u53CA\u522B\u540D\u7684 JSON \u5BF9\u8C61\uFF0C\u7528\u4E8E\u4F18\u5148\u8BC6\u522B topic / method / dataset / writing-stage \u7B49\u7814\u7A76\u6807\u7B7E\u3002",
+    settingsWorkbenchIngestionTitle: "\u5916\u90E8\u5BFC\u5165 CLI",
+    settingsWorkbenchIngestionDescription: "\u914D\u7F6E\u628A DOI\u3001arXiv \u6216 PDF \u8F93\u5165\u8F6C\u6210\u6587\u732E\u7B14\u8BB0\u7684\u547D\u4EE4\u3002",
+    settingsWorkbenchIngestionCommandTitle: "\u5BFC\u5165\u547D\u4EE4",
+    settingsWorkbenchIngestionCommandDescription: "\u4EC5\u684C\u9762\u7AEF shell \u547D\u4EE4\u3002\u652F\u6301\u5360\u4F4D\u7B26\uFF1A{{source_type}} {{source}} {{vault}} {{file}} {{selection}} {{literature}} {{attachments}} {{template}} {{metadata_doi}} {{metadata_arxiv}} {{title}} {{authors}} {{year}} {{download_pdf}} {{open_after_import}}\u3002",
+    settingsWorkbenchIngestionTimeoutTitle: "\u5BFC\u5165\u8D85\u65F6\uFF08\u6BEB\u79D2\uFF09",
+    settingsWorkbenchIngestionHint: "\u63A8\u8350 CLI \u534F\u8BAE\uFF1Astdout \u8FD4\u56DE\u5305\u542B note_path\u3001attachment_paths\u3001warnings\u3001metadata \u7684 JSON\u3002\u8FD9\u662F Codex \u6216 Claude Code shell \u5DE5\u4F5C\u6D41\u7684\u4E3B\u91C7\u96C6\u8DEF\u5F84\u3002",
     settingsSemanticEnabled: "\u542F\u7528\u8BED\u4E49\u6865\u63A5",
-    settingsSemanticEnabledDescription: "\u5982\u679C\u4F60\u53EA\u4F7F\u7528\u539F\u751F\u94FE\u63A5\u548C\u642D\u914D\u63D2\u4EF6\uFF0C\u53EF\u4EE5\u5173\u95ED\u3002\u82E5\u6709\u5916\u90E8\u7814\u7A76\u68C0\u7D22 CLI\uFF0C\u518D\u5F00\u542F\u3002",
+    settingsSemanticEnabledDescription: "\u53EA\u6709\u5728\u4F60\u6709\u5916\u90E8\u68C0\u7D22 CLI \u65F6\u518D\u5F00\u542F\u3002\u91C7\u96C6\u4E0E\u5BFC\u5165\u7531\u72EC\u7ACB\u7684 ingestion CLI \u8D1F\u8D23\u3002",
     settingsSemanticCommand: "\u8BED\u4E49\u547D\u4EE4",
     settingsSemanticCommandDescription: "\u4EC5\u684C\u9762\u7AEF\u7684 shell \u547D\u4EE4\u3002\u652F\u6301\u5360\u4F4D\u7B26\uFF1A{{query}} {{vault}} {{file}} {{selection}}\u3002\u5EFA\u8BAE\u8FD4\u56DE citekey / author / year / page / source_type / evidence_kind\u3002",
     settingsSemanticTimeout: "\u8BED\u4E49\u8D85\u65F6\uFF08\u6BEB\u79D2\uFF09",
@@ -973,28 +1234,28 @@ var TRANSLATIONS = {
     settingsResearchGuideTitle: "\u7814\u7A76\u5DE5\u4F5C\u6D41\u6307\u5357",
     settingsResearchGuideDescription: "\u8BE5\u6A21\u5F0F\u9762\u5411\u6587\u732E\u7B14\u8BB0\u3001\u8BC1\u636E\u91C7\u96C6\u3001\u7EFC\u5408\u6574\u7406\u4E0E\u8BBA\u6587\u5199\u4F5C\u3002\u5C3D\u91CF\u8BA9\u7CBE\u786E\u5F15\u7528\u3001\u5173\u7CFB\u7C7B\u578B\u4E0E\u53D7\u63A7\u6807\u7B7E\u4FDD\u6301\u4E00\u81F4\u3002",
     settingsResearchLayoutTitle: "\u76EE\u5F55\u5E03\u5C40",
-    settingsResearchLayoutDescription: "\u4FDD\u6301 3 \u5C42\u4EE5\u5185\u7684\u6D45\u5C42\u7ED3\u6784\uFF0C\u8BA9 Zotero \u5BFC\u5165\u3001\u6A21\u677F\u548C\u6279\u6CE8\u9644\u4EF6\u8DEF\u5F84\u5728\u63D2\u4EF6\u4E0E CLI \u4E4B\u95F4\u957F\u671F\u7A33\u5B9A\u3002",
+    settingsResearchLayoutDescription: "\u4FDD\u6301 3 \u5C42\u4EE5\u5185\u7684\u6D45\u5C42\u7ED3\u6784\uFF0C\u8BA9 CLI \u521B\u5EFA\u7684\u6587\u732E\u7B14\u8BB0\u3001\u53EF\u9009\u7684 Zotero \u5BFC\u51FA\u548C\u9644\u4EF6\u8DEF\u5F84\u957F\u671F\u7A33\u5B9A\u3002",
     settingsResearchPathLiterature: "\u6587\u732E\u7B14\u8BB0",
     settingsResearchPathTemplates: "\u6A21\u677F",
     settingsResearchPathAttachments: "\u6279\u6CE8\u9644\u4EF6",
     settingsResearchWorkflowTitle: "\u5DE5\u4F5C\u987A\u5E8F",
     settingsResearchWorkflowDescription: "\u56F4\u7ED5\u91C7\u96C6\u3001\u5E26\u9875\u7801\u9605\u8BFB\u3001\u8BBA\u8BC1\u8FDE\u63A5\u548C\u5199\u4F5C\u68C0\u7D22\u7684\u4E00\u6761\u5B9E\u7528\u95ED\u73AF\u3002",
     settingsResearchWorkflowStep1Title: "\u5BFC\u5165\u6765\u6E90\u7B14\u8BB0",
-    settingsResearchWorkflowStep1Body: "\u7528 Zotero Integration \u4EE5 citekey \u4E3A\u5355\u4F4D\u751F\u6210\u7ED3\u6784\u5316\u6587\u732E\u7B14\u8BB0\u3002",
+    settingsResearchWorkflowStep1Body: "\u7528 ingestion CLI \u6309 DOI\u3001arXiv \u7F16\u53F7\u6216 PDF \u751F\u6210\u7ED3\u6784\u5316\u6587\u732E\u7B14\u8BB0\u3002",
     settingsResearchWorkflowStep2Title: "\u590D\u5236\u5E26\u9875\u7801\u8BC1\u636E",
     settingsResearchWorkflowStep2Body: "\u7528 PDF++ \u7684\u590D\u5236\u52A8\u4F5C\u628A\u7CBE\u786E\u9875\u7801\u8BC1\u636E\u5E26\u5165\u6587\u732E\u7B14\u8BB0\u6216\u8349\u7A3F\u7B14\u8BB0\u3002",
     settingsResearchWorkflowStep3Title: "\u8865\u5173\u7CFB\u4E0E\u6807\u7B7E",
     settingsResearchWorkflowStep3Body: "\u7528\u5173\u7CFB\u952E\u548C\u4E2D\u82F1\u6587\u53D7\u63A7\u6807\u7B7E\u8FDE\u63A5\u6765\u6E90\u3001\u8BC1\u636E\u4E0E\u8BBA\u70B9\u3002",
     settingsResearchWorkflowStep4Title: "\u5199\u4F5C\u65F6\u518D\u68C0\u7D22",
     settingsResearchWorkflowStep4Body: "\u7528 Smart Connections \u505A\u672C\u5730\u8BED\u4E49\u53EC\u56DE\uFF1B\u53EA\u6709\u5728\u7814\u7A76 CLI \u51C6\u5907\u597D\u540E\u518D\u542F\u7528\u5916\u90E8\u8BED\u4E49\u6865\u63A5\u3002",
-    settingsResearchGuideStep1: "\u7528 Zotero Integration \u6216 PDF++ \u91C7\u96C6\u6587\u732E\u5143\u6570\u636E\u3001\u9875\u7801\u5B9A\u4F4D\u548C\u6279\u6CE8\u5185\u5BB9\u3002",
+    settingsResearchGuideStep1: "\u7528 ingestion CLI \u6216 PDF++ \u91C7\u96C6\u6765\u6E90\u5143\u6570\u636E\u3001PDF \u548C\u9875\u7801\u5B9A\u4F4D\u5185\u5BB9\u3002",
     settingsResearchGuideStep2: "\u7528 supports / contradicts / extends \u7B49\u5173\u7CFB\u8FDE\u63A5\u6587\u732E\u3001\u89C2\u70B9\u548C\u8BC1\u636E\u3002",
     settingsResearchGuideStep3: "\u7EF4\u62A4 topic\u3001method\u3001dataset\u3001status\u3001writing-stage \u7B49\u53D7\u63A7\u6807\u7B7E\uFF0C\u80FD\u663E\u8457\u63D0\u5347\u63A8\u8350\u8D28\u91CF\u3002",
     settingsCompanionPluginsTitle: "\u63A8\u8350\u642D\u914D\u63D2\u4EF6",
     settingsCompanionActionLabel: "\u5728 Obsidian \u91CC\u70B9\u51FB",
-    settingsCompanionZoteroDesc: "\u5BFC\u5165 citekey\u3001\u6587\u732E\u7B14\u8BB0\u5143\u6570\u636E\u548C\u6765\u6E90\u6279\u6CE8\u3002",
-    settingsCompanionZoteroSetup: "\u5DF2\u914D\u7F6E\u4E3A\u628A\u7B14\u8BB0\u5199\u5165 {literaturePath}\uFF0C\u4F7F\u7528\u6A21\u677F {templatePath}\uFF0C\u5E76\u628A\u5BFC\u51FA\u7684\u6279\u6CE8\u56FE\u7247\u5B58\u5230 {attachmentsPath}\u3002",
-    settingsCompanionZoteroAction: "\u547D\u4EE4\u9762\u677F -> Zotero Integration: Import notes",
+    settingsCompanionZoteroDesc: "\u53EF\u9009\u9002\u914D\u5668\uFF0C\u7528\u4E8E\u5BFC\u5165\u73B0\u6709 Zotero \u6587\u5E93\u3001citekey \u548C\u6279\u6CE8\u3002",
+    settingsCompanionZoteroSetup: "\u8FD9\u662F\u53EF\u9009\u9879\u3002\u5982\u679C\u4F60\u7EE7\u7EED\u4FDD\u7559 Zotero\uFF0C\u8BF7\u8BA9\u5B83\u4E0E {literaturePath}\u3001{templatePath} \u548C {attachmentsPath} \u5BF9\u9F50\u3002",
+    settingsCompanionZoteroAction: "\u53EF\u9009\uFF1A\u547D\u4EE4\u9762\u677F -> Zotero Integration: Import notes",
     settingsCompanionPdfDesc: "\u5904\u7406 PDF \u9AD8\u4EAE\u3001\u9875\u7801\u8DF3\u8F6C\u548C\u91CD\u6807\u6CE8\u9605\u8BFB\u6D41\u7A0B\u3002",
     settingsCompanionPdfSetup: "\u5DF2\u914D\u7F6E\u4E3A\u9002\u5408\u7814\u7A76\u6458\u5F55\u7684\u9875\u7801\u5F15\u7528\u4E0E cite callout \u590D\u5236\u52A8\u4F5C\uFF0C\u5E76\u4FDD\u7559\u5F15\u6587\u60AC\u505C\u9884\u89C8\u3002",
     settingsCompanionPdfAction: "\u6253\u5F00 PDF -> \u9009\u4E2D\u6587\u672C -> \u9009\u62E9 PDF++ \u590D\u5236\u683C\u5F0F",
@@ -1007,7 +1268,7 @@ var TRANSLATIONS = {
     settingsSemanticResearchHint: "\u63A8\u8350\u8BED\u4E49\u7ED3\u679C\u5B57\u6BB5\uFF1Acitekey\u3001author\u3001year\u3001page\u3001source_type\u3001evidence_kind\u3001suggested_tags\u3001suggested_relations\u3002",
     settingsWorkbenchEyebrow: "\u7814\u7A76\u5DE5\u4F5C\u53F0",
     settingsWorkbenchTitle: "\u7814\u7A76\u5DE5\u4F5C\u6D41\u63A7\u5236\u4E2D\u5FC3",
-    settingsWorkbenchDescription: "\u5728\u4E00\u4E2A\u9875\u9762\u5185\u67E5\u770B companion \u72B6\u6001\u3001\u540C\u6B65\u5173\u952E\u7814\u7A76\u914D\u7F6E\uFF0C\u5E76\u76F4\u63A5\u5F00\u59CB\u4E0B\u4E00\u6B65\u5BFC\u5165\u3001\u68C0\u7D22\u6216\u6574\u7406\u3002",
+    settingsWorkbenchDescription: "\u5728\u4E00\u4E2A\u9875\u9762\u5185\u67E5\u770B companion \u72B6\u6001\u3001\u914D\u7F6E CLI-first \u91C7\u96C6\u3001\u540C\u6B65\u5173\u952E\u7814\u7A76\u8BBE\u7F6E\uFF0C\u5E76\u76F4\u63A5\u5F00\u59CB\u4E0B\u4E00\u6B65\u5BFC\u5165\u3001\u68C0\u7D22\u6216\u6574\u7406\u3002",
     settingsWorkbenchPreferencesTitle: "\u5DE5\u4F5C\u53F0\u504F\u597D",
     settingsWorkbenchPreferencesDescription: "\u628A\u8BED\u8A00\u548C\u9ED8\u8BA4\u6A21\u5F0F\u6536\u8FDB\u53F3\u4FA7\u8BE6\u60C5\u533A\uFF0C\u4E0D\u518D\u5360\u9996\u9875\u7A7A\u95F4\u3002",
     settingsWorkbenchStatReady: "\u5DF2\u5C31\u7EEA\u63D2\u4EF6",
@@ -1029,13 +1290,15 @@ var TRANSLATIONS = {
     settingsWorkbenchQuickActionsTitle: "\u5DE5\u4F5C\u6D41\u5165\u53E3",
     settingsWorkbenchQuickActionsDescription: "\u6309\u91C7\u96C6\u3001\u53EC\u56DE\u3001\u6574\u7406\u5206\u7EC4\u5C55\u793A\u9AD8\u9891\u52A8\u4F5C\uFF0C\u907F\u514D\u9996\u9875\u7EE7\u7EED\u88AB\u957F\u6309\u94AE\u6324\u6EE1\u3002",
     settingsWorkbenchActionGroupCaptureTitle: "\u91C7\u96C6\u4E0E\u5BFC\u5165",
-    settingsWorkbenchActionGroupCaptureDescription: "\u628A\u6587\u732E\u5BFC\u5165\u4E0E PDF \u9605\u8BFB\u5DE5\u5177\u653E\u5728\u4E00\u8D77\u3002",
+    settingsWorkbenchActionGroupCaptureDescription: "\u628A CLI \u91C7\u96C6\u6D41\u3001\u53EF\u9009\u7684 Zotero \u5BFC\u5165\u548C PDF \u9605\u8BFB\u5DE5\u5177\u653E\u5728\u4E00\u8D77\u3002",
     settingsWorkbenchActionGroupRecallTitle: "\u68C0\u7D22\u4E0E\u53EC\u56DE",
     settingsWorkbenchActionGroupRecallDescription: "\u96C6\u4E2D\u6253\u5F00\u8BED\u4E49\u68C0\u7D22\u3001\u4E0A\u4E0B\u6587\u4FA7\u680F\u548C\u53EC\u56DE\u89C6\u56FE\u3002",
     settingsWorkbenchActionGroupOrganizeTitle: "\u6807\u7B7E\u4E0E\u7ED3\u6784",
     settingsWorkbenchActionGroupOrganizeDescription: "\u5728\u6574\u7406\u7B14\u8BB0\u65F6\u540C\u6B65\u7EF4\u62A4\u539F\u751F\u6807\u7B7E\u548C\u53D7\u63A7\u6807\u7B7E\u5EFA\u8BAE\u3002",
-    settingsWorkbenchActionZoteroTitle: "\u5BFC\u5165 Zotero \u7B14\u8BB0",
-    settingsWorkbenchActionZoteroDescription: "\u76F4\u63A5\u6267\u884C\u5BFC\u5165\u547D\u4EE4\u3002",
+    settingsWorkbenchActionIngestionTitle: "\u5BFC\u5165 DOI / arXiv / PDF",
+    settingsWorkbenchActionIngestionDescription: "\u6253\u5F00 CLI-first \u91C7\u96C6\u6A21\u6001\u6846\u3002",
+    settingsWorkbenchActionZoteroTitle: "\u4ECE Zotero \u5BFC\u5165\uFF08\u53EF\u9009\uFF09",
+    settingsWorkbenchActionZoteroDescription: "\u53EA\u6709\u5728\u4F60\u8981\u5BFC\u5165\u73B0\u6709 Zotero \u6587\u5E93\u65F6\u624D\u4F7F\u7528\u8FD9\u4E2A\u9002\u914D\u5668\u3002",
     settingsWorkbenchActionSmartTitle: "\u6253\u5F00 Smart Connections",
     settingsWorkbenchActionSmartDescription: "\u76F4\u63A5\u8FDB\u5165\u672C\u5730\u8BED\u4E49\u53EC\u56DE\u89C6\u56FE\u3002",
     settingsWorkbenchActionPanelTitle: "\u6253\u5F00\u667A\u80FD\u4FA7\u680F",
@@ -1059,11 +1322,11 @@ var TRANSLATIONS = {
     settingsWorkbenchApplyCompanion: "\u5E94\u7528\u9884\u8BBE",
     settingsWorkbenchOpenSettings: "\u6253\u5F00\u8BBE\u7F6E",
     settingsWorkbenchConfigTitle: "\u5DE5\u4F5C\u6D41\u914D\u7F6E",
-    settingsWorkbenchConfigDescription: "\u8FD9\u91CC\u7EF4\u62A4\u5BFC\u5165\u3001\u7D22\u5F15\u548C\u5916\u90E8\u8BED\u4E49\u6865\u63A5\u6700\u5173\u952E\u7684\u7814\u7A76\u9ED8\u8BA4\u503C\u3002",
+    settingsWorkbenchConfigDescription: "\u8FD9\u91CC\u7EF4\u62A4 CLI \u91C7\u96C6\u3001\u53EF\u9009\u9002\u914D\u5668\u3001\u672C\u5730\u7D22\u5F15\u548C\u5916\u90E8\u8BED\u4E49\u6865\u63A5\u6700\u5173\u952E\u7684\u7814\u7A76\u9ED8\u8BA4\u503C\u3002",
     settingsWorkbenchPathsTitle: "\u7814\u7A76\u8DEF\u5F84",
-    settingsWorkbenchPathsDescription: "\u4FDD\u6301\u7B14\u8BB0\u3001\u6A21\u677F\u548C\u9644\u4EF6\u8DEF\u5F84\u7A33\u5B9A\uFF0C\u5BFC\u5165\u548C\u5F15\u7528\u624D\u4F1A\u957F\u671F\u53EF\u9884\u6D4B\u3002",
+    settingsWorkbenchPathsDescription: "\u4FDD\u6301\u7B14\u8BB0\u3001\u6A21\u677F\u548C\u9644\u4EF6\u8DEF\u5F84\u7A33\u5B9A\uFF0CCLI \u5BFC\u5165\u3001\u53EF\u9009 Zotero \u5BFC\u51FA\u548C\u5F15\u7528\u624D\u4F1A\u957F\u671F\u53EF\u9884\u6D4B\u3002",
     settingsWorkbenchOpenImportedTitle: "\u5BFC\u5165\u540E\u6253\u5F00\u7B14\u8BB0",
-    settingsWorkbenchOpenImportedDescription: "\u5F00\u542F\u540E\uFF0CZotero \u5BFC\u5165\u4F1A\u81EA\u52A8\u6253\u5F00\u6700\u65B0\u751F\u6210\u7684\u6587\u732E\u7B14\u8BB0\u3002",
+    settingsWorkbenchOpenImportedDescription: "\u5F00\u542F\u540E\uFF0CCLI \u5BFC\u5165\u6216 Zotero \u5BFC\u5165\u540E\u90FD\u4F1A\u81EA\u52A8\u6253\u5F00\u65B0\u751F\u6210\u7684\u6587\u732E\u7B14\u8BB0\u3002",
     settingsWorkbenchRecallTitle: "\u8BED\u4E49\u53EC\u56DE\u8303\u56F4",
     settingsWorkbenchRecallDescription: "\u63A7\u5236 Smart Connections \u8DF3\u8FC7\u54EA\u4E9B\u5185\u5BB9\uFF0C\u4EE5\u53CA\u5355\u6B21\u8FD4\u56DE\u591A\u5C11\u7ED3\u679C\u3002",
     settingsWorkbenchFolderExclusionsTitle: "\u6392\u9664\u6587\u4EF6\u5939",
@@ -1073,7 +1336,7 @@ var TRANSLATIONS = {
     settingsWorkbenchResultsLimitTitle: "\u8BED\u4E49\u7ED3\u679C\u4E0A\u9650",
     settingsWorkbenchSemanticTitle: "\u5916\u90E8\u8BED\u4E49\u6865\u63A5",
     settingsWorkbenchSemanticDescription: "\u8FD9\u662F\u53EF\u9009\u5C42\u3002\u53EA\u6709\u7814\u7A76 CLI \u80FD\u8FD4\u56DE\u7ED3\u6784\u5316\u5F15\u6587\u5B57\u6BB5\u65F6\u518D\u5F00\u542F\u3002",
-    settingsWorkbenchConfigHint: "\u5728\u8FD9\u91CC\u4FEE\u6539\u540E\uFF0C\u540C\u6B65\u603B\u9884\u8BBE\uFF0C\u6216\u5BF9\u5355\u4E2A companion \u5E94\u7528\u5BF9\u5E94\u9884\u8BBE\u3002",
+    settingsWorkbenchConfigHint: "\u5728\u8FD9\u91CC\u4FEE\u6539\u540E\uFF0C\u53EF\u4EE5\u76F4\u63A5\u8FD0\u884C CLI \u91C7\u96C6\u6D41\uFF0C\u6216\u5BF9\u5355\u4E2A companion \u5E94\u7528\u5BF9\u5E94\u9884\u8BBE\u3002",
     settingsWorkbenchCurrentExclusions: "\u5F53\u524D\u6807\u51C6\u5316\u6392\u9664\u9879\uFF1A{value}",
     settingsWorkbenchAdvancedTitle: "\u9AD8\u7EA7\u8BCD\u8868",
     settingsWorkbenchAdvancedDescription: "\u9ED8\u8BA4\u4FDD\u6301\u9996\u9875\u6E05\u723D\uFF1B\u53EA\u6709\u5728\u9700\u8981\u8C03\u6574\u5173\u7CFB\u952E\u6216\u5927\u6BB5 JSON \u8BCD\u8868\u65F6\uFF0C\u518D\u5C55\u5F00\u8FD9\u4E9B\u9762\u677F\u3002",
@@ -1091,6 +1354,7 @@ var TRANSLATIONS = {
     settingsWorkbenchBacklinksTitle: "\u53CD\u94FE\u9AD8\u4EAE",
     settingsWorkbenchLanguageTitle: "\u7D22\u5F15\u8BED\u8A00",
     settingsWorkbenchExpectedPrefix: "\u671F\u671B\u503C",
+    settingsWorkbenchRunIngestion: "\u6253\u5F00\u91C7\u96C6\u6846",
     settingsWorkbenchRunZotero: "\u6267\u884C\u5BFC\u5165",
     settingsWorkbenchRunSmart: "\u6253\u5F00\u89C6\u56FE",
     settingsWorkbenchRunSemantic: "\u6267\u884C\u68C0\u7D22",
@@ -1118,7 +1382,7 @@ var TRANSLATIONS = {
     settingsWorkbenchMismatchSmartResults: "Smart Connections \u7684\u7ED3\u679C\u4E0A\u9650\u672A\u5BF9\u9F50\u3002",
     settingsWorkbenchMismatchSmartRender: "Smart Connections \u5E94\u4FDD\u6301\u7ED3\u679C\u4E2D\u7684 Markdown \u6E32\u67D3\u5F00\u542F\u3002",
     settingsWorkbenchMismatchSemanticCommand: "\u8BED\u4E49\u6865\u63A5\u5DF2\u5F00\u542F\uFF0C\u4F46\u547D\u4EE4\u4ECD\u4E3A\u7A7A\u3002",
-    settingsWorkbenchPresetApplied: "\u5DF2\u5C06\u7814\u7A76\u9884\u8BBE\u540C\u6B65\u5230\u5DF2\u5B89\u88C5\u7684 companion \u63D2\u4EF6\u3002",
+    settingsWorkbenchPresetApplied: "\u5DF2\u5C06\u7814\u7A76\u9884\u8BBE\u540C\u6B65\u5230\u5DF2\u5B89\u88C5\u7684\u9ED8\u8BA4 companion\u3002",
     settingsWorkbenchCompanionApplied: "\u5DF2\u4E3A {name} \u5E94\u7528\u63A8\u8350\u914D\u7F6E\u3002",
     settingsWorkbenchPluginMissing: "\u5F53\u524D vault \u4E2D\u6CA1\u6709\u5B89\u88C5\u8FD9\u4E2A companion \u63D2\u4EF6\u3002",
     settingsWorkbenchSettingsUnavailable: "\u65E0\u6CD5\u901A\u8FC7\u7A0B\u5E8F\u65B9\u5F0F\u6253\u5F00 Obsidian \u8BBE\u7F6E\u9875\u3002",
@@ -1129,7 +1393,31 @@ var TRANSLATIONS = {
     modalTagSuggestionsDescription: "\u5EFA\u8BAE\u4F1A\u4F18\u5148\u53C2\u8003\u522B\u540D\u3001\u7814\u7A76\u5206\u9762\u3001\u73B0\u6709 vault \u6807\u7B7E\u3001\u6B63\u6587\u5173\u952E\u8BCD\u4E0E\u5F15\u7528\u8BED\u5883\uFF0C\u5C3D\u91CF\u907F\u514D\u76EE\u5F55\u8DEF\u5F84\u566A\u58F0\u3002",
     modalRelationDescription: "\u9009\u62E9\u8981\u5199\u5165 frontmatter \u7684\u5173\u7CFB\u7C7B\u578B\u3002",
     modalManageTagsDescription: "\u5BF9\u6574\u4E2A\u5E93\u7684\u539F\u751F\u6807\u7B7E\u8FDB\u884C\u91CD\u547D\u540D\u3001\u5408\u5E76\u6216\u5220\u9664\u3002",
+    modalIngestionDescription: "\u628A DOI\u3001arXiv \u6216 PDF \u8F93\u5165\u53D1\u9001\u5230\u5916\u90E8 ingestion CLI\uFF0C\u5E76\u521B\u5EFA\u6587\u732E\u7B14\u8BB0\u3002",
     modalSemanticDescription: "\u57FA\u4E8E\u5F53\u524D\u7B14\u8BB0\u4E0A\u4E0B\u6587\u6267\u884C\u4F60\u7684\u5916\u90E8\u8BED\u4E49\u547D\u4EE4\u3002",
+    ingestionSourceType: "\u6765\u6E90\u7C7B\u578B",
+    ingestionTypeDoi: "DOI",
+    ingestionTypeArxiv: "arXiv",
+    ingestionTypePdf: "PDF",
+    ingestionSourceValue: "\u6765\u6E90\u8F93\u5165",
+    ingestionMetadataHeading: "PDF \u5143\u6570\u636E\u8865\u5168",
+    ingestionMetadataDoiPlaceholder: "\u53EF\u9009\uFF1A\u7528\u4E8E\u8865\u5168 PDF \u7684 DOI",
+    ingestionMetadataArxivPlaceholder: "\u53EF\u9009\uFF1A\u7528\u4E8E\u8865\u5168 PDF \u7684 arXiv \u7F16\u53F7",
+    ingestionDownloadPdf: "\u590D\u5236 PDF \u5230\u9644\u4EF6\u76EE\u5F55",
+    ingestionOverrideHeading: "\u5143\u6570\u636E\u8986\u76D6",
+    ingestionTitlePlaceholder: "\u53EF\u9009\uFF1A\u8986\u76D6\u6807\u9898",
+    ingestionAuthorsPlaceholder: "\u53EF\u9009\uFF1A\u8986\u76D6\u4F5C\u8005\uFF0C\u9017\u53F7\u5206\u9694",
+    ingestionYearPlaceholder: "\u53EF\u9009\uFF1A\u8986\u76D6\u5E74\u4EFD",
+    ingestionContextNote: "\u5F53\u524D\u7B14\u8BB0\u4E0A\u4E0B\u6587\uFF1A{path}",
+    ingestionResultSummary: "\u6765\u6E90\u7C7B\u578B\uFF1A{sourceType} \xB7 \u9644\u4EF6\u6570\uFF1A{attachments}",
+    ingestionWarningsTitle: "\u8B66\u544A",
+    ingestionOpen: "\u6253\u5F00\u7B14\u8BB0",
+    ingestionInsert: "\u63D2\u5165\u94FE\u63A5",
+    ingestionRun: "\u6267\u884C\u5BFC\u5165",
+    ingestionArxivPlaceholder: "2403.01234 \u6216 https://arxiv.org/abs/...",
+    ingestionPdfPlaceholder: "/path/to/file.pdf \u6216 https://example.com/file.pdf",
+    ingestionDoiPlaceholder: "10.1145/...",
+    ingestionStatusHint: "\u4F18\u5148\u4F7F\u7528 CLI-first \u6D41\u7A0B\u5BFC\u5165 DOI\u3001arXiv \u548C PDF\u3002Zotero \u73B0\u5728\u662F\u53EF\u9009\u9002\u914D\u5668\u3002",
     tagSuggestionAlias: "\u522B\u540D\u547D\u4E2D",
     tagSuggestionFacet: "\u7814\u7A76\u5206\u9762",
     tagSuggestionKnown: "\u5DF2\u6709\u6807\u7B7E",
@@ -1251,10 +1539,10 @@ function relationKeyLabel(language, key) {
 }
 
 // src/modals.ts
-var import_obsidian6 = require("obsidian");
+var import_obsidian7 = require("obsidian");
 
 // src/notes.ts
-var import_obsidian3 = require("obsidian");
+var import_obsidian4 = require("obsidian");
 function getOffsetLineRange(content, start, end) {
   const normalizedStart = Math.max(0, start);
   const normalizedEnd = Math.max(normalizedStart, end);
@@ -1264,6 +1552,32 @@ function getOffsetLineRange(content, start, end) {
 }
 var FRONTMATTER_RE = /^\s*---\n[\s\S]*?\n---\n?/;
 var CJK_RE = /[\u3400-\u9fff]/;
+function isSupportedNotePath(path) {
+  const lower = path.trim().toLowerCase();
+  return lower.endsWith(".md") || lower.endsWith(".excalidraw");
+}
+function isSupportedNoteFile(file) {
+  return file instanceof import_obsidian4.TFile && isSupportedNotePath(file.path);
+}
+function isExcalidrawFile(file) {
+  const lower = file.path.toLowerCase();
+  return lower.endsWith(".excalidraw.md") || file.extension === "excalidraw";
+}
+function appendTextToMarkdownSection(content, text, isExcalidraw) {
+  if (isExcalidraw) {
+    const idx = content.indexOf("\n%%\n");
+    if (idx >= 0) {
+      const before = content.slice(0, idx);
+      const after = content.slice(idx);
+      const sep2 = before.endsWith("\n") ? "" : "\n";
+      return `${before}${sep2}${text}
+${after}`;
+    }
+  }
+  const sep = content.endsWith("\n") ? "" : "\n";
+  return `${content}${sep}${text}
+`;
+}
 function readStringArray(value) {
   if (Array.isArray(value)) {
     return value.map((item) => String(item).trim()).filter(Boolean);
@@ -1309,8 +1623,12 @@ function getNoteExcerpt(content) {
   const stripped = stripFrontmatter(content).split("\n").map((line) => line.trim()).filter((line) => Boolean(line) && !line.startsWith("#"));
   return stripped.join(" ").slice(0, 180);
 }
-function getAllMarkdownFiles(app) {
-  return app.vault.getMarkdownFiles();
+function getAllSupportedNoteFiles(app) {
+  const mdFiles = app.vault.getMarkdownFiles().filter((file) => isSupportedNoteFile(file));
+  const excalidrawFiles = app.vault.getFiles().filter(
+    (file) => file.extension === "excalidraw"
+  );
+  return [...mdFiles, ...excalidrawFiles];
 }
 function getAliasesFromCache(cache) {
   return uniq(readStringArray(cache?.frontmatter?.aliases ?? cache?.frontmatter?.alias));
@@ -1340,7 +1658,7 @@ function getResearchSourceMetadataFromFrontmatter(frontmatter) {
     citekey: readScalarString(frontmatter.citekey ?? frontmatter.citationKey ?? frontmatter.citation_key ?? frontmatter.cite_key),
     author,
     year: readScalarString(frontmatter.year ?? frontmatter.publication_year ?? frontmatter.date),
-    sourceType: readScalarString(frontmatter.source_type ?? frontmatter.sourceType ?? frontmatter.entry_type ?? frontmatter.itemType),
+    sourceType: readScalarString(frontmatter.entry_type ?? frontmatter.itemType ?? frontmatter.source_type ?? frontmatter.sourceType),
     locator: readScalarString(frontmatter.page ?? frontmatter.pages ?? frontmatter.locator),
     evidenceKind: readScalarString(frontmatter.evidence_kind ?? frontmatter.evidenceKind ?? frontmatter.note_kind)
   };
@@ -1371,7 +1689,7 @@ function resolveNoteTarget(app, target, sourcePath) {
     return firstMatch;
   }
   const lower = normalized.toLowerCase();
-  for (const file of getAllMarkdownFiles(app)) {
+  for (const file of getAllSupportedNoteFiles(app)) {
     if (file.path.toLowerCase() === lower || file.basename.toLowerCase() === lower || file.name.toLowerCase() === lower) {
       return file;
     }
@@ -1406,12 +1724,12 @@ function buildSearchFields(app, file, aliasMap) {
 }
 async function collectLinkCandidates(app, currentFile, query, settings, recentTargets, aliasMap) {
   const normalizedQuery = query.trim().toLowerCase();
-  const fuzzy = normalizedQuery ? (0, import_obsidian3.prepareFuzzySearch)(normalizedQuery) : null;
+  const fuzzy = normalizedQuery ? (0, import_obsidian4.prepareFuzzySearch)(normalizedQuery) : null;
   const currentTags = currentFile ? new Set(getAllTagsForFile(app, currentFile).map((tag) => tag.toLowerCase())) : /* @__PURE__ */ new Set();
   const currentRelations = currentFile ? getRelationMap(app, currentFile, settings) : {};
   const currentRelationTargets = new Set(Object.values(currentRelations).flat().map((value) => value.toLowerCase()));
   const candidates = await Promise.all(
-    getAllMarkdownFiles(app).filter((file) => !currentFile || file.path !== currentFile.path).map(async (file) => {
+    getAllSupportedNoteFiles(app).filter((file) => !currentFile || file.path !== currentFile.path).map(async (file) => {
       const cache = app.metadataCache.getFileCache(file);
       const aliases = getAliasesFromCache(cache);
       const tags = getAllTagsForFile(app, file);
@@ -1498,12 +1816,12 @@ async function getBacklinkFiles(app, file) {
       continue;
     }
     const sourceFile = app.vault.getAbstractFileByPath(sourcePath);
-    if (sourceFile instanceof import_obsidian3.TFile && !seen.has(sourceFile.path)) {
+    if (sourceFile instanceof import_obsidian4.TFile && !seen.has(sourceFile.path)) {
       seen.add(sourceFile.path);
       backlinks.push(sourceFile);
     }
   }
-  for (const otherFile of getAllMarkdownFiles(app)) {
+  for (const otherFile of getAllSupportedNoteFiles(app)) {
     if (otherFile.path === file.path || seen.has(otherFile.path)) {
       continue;
     }
@@ -1572,7 +1890,7 @@ async function getOutgoingExactReferences(app, file) {
 }
 async function getIncomingExactReferences(app, file) {
   const collected = [];
-  for (const otherFile of getAllMarkdownFiles(app)) {
+  for (const otherFile of getAllSupportedNoteFiles(app)) {
     if (otherFile.path === file.path) {
       continue;
     }
@@ -1651,7 +1969,7 @@ async function findUnlinkedMentions(app, file, settings, limit = 8) {
   }
   const results = [];
   const resolvedLinks = app.metadataCache.resolvedLinks;
-  for (const otherFile of getAllMarkdownFiles(app)) {
+  for (const otherFile of getAllSupportedNoteFiles(app)) {
     if (otherFile.path === file.path) {
       continue;
     }
@@ -1681,7 +1999,7 @@ function getResolvedRelations(app, file, settings) {
   const relationMap = getRelationMap(app, file, settings);
   const resolved = {};
   for (const [key, values] of Object.entries(relationMap)) {
-    const targets = values.map((value) => resolveNoteTarget(app, value, file.path)).filter((target) => target instanceof import_obsidian3.TFile);
+    const targets = values.map((value) => resolveNoteTarget(app, value, file.path)).filter((target) => target instanceof import_obsidian4.TFile);
     if (targets.length > 0) {
       resolved[key] = targets;
     }
@@ -1690,89 +2008,20 @@ function getResolvedRelations(app, file, settings) {
 }
 
 // src/semantic.ts
-var import_obsidian4 = require("obsidian");
-
-// src/shared.ts
-function normalizeStringArray(value) {
-  return Array.isArray(value) ? value.map((item) => String(item).trim()).filter(Boolean) : [String(value).trim()].filter(Boolean);
-}
-function parseTagAliasMap(text) {
-  if (!text.trim()) {
-    return /* @__PURE__ */ new Map();
-  }
-  const parsed = JSON.parse(text);
-  const aliasMap = /* @__PURE__ */ new Map();
-  for (const [canonical, value] of Object.entries(parsed)) {
-    if (!canonical.trim()) {
-      continue;
-    }
-    const aliases = Array.isArray(value) ? value.map((item) => String(item).trim()).filter(Boolean) : [String(value).trim()].filter(Boolean);
-    aliasMap.set(canonical.trim(), aliases);
-  }
-  return aliasMap;
-}
-function parseTagFacetMap(text) {
-  if (!text.trim()) {
-    return /* @__PURE__ */ new Map();
-  }
-  const parsed = JSON.parse(text);
-  const facetMap = /* @__PURE__ */ new Map();
-  for (const [facet, rawValue] of Object.entries(parsed)) {
-    const normalizedFacet = facet.trim();
-    if (!normalizedFacet) {
-      continue;
-    }
-    const entries = /* @__PURE__ */ new Map();
-    if (Array.isArray(rawValue)) {
-      for (const item of rawValue) {
-        const canonical = String(item).trim();
-        if (canonical) {
-          entries.set(canonical, []);
-        }
-      }
-    } else if (rawValue && typeof rawValue === "object") {
-      for (const [canonical, aliasesValue] of Object.entries(rawValue)) {
-        const normalizedCanonical = canonical.trim();
-        if (!normalizedCanonical) {
-          continue;
-        }
-        entries.set(normalizedCanonical, normalizeStringArray(aliasesValue));
-      }
-    } else {
-      for (const canonical of normalizeStringArray(rawValue)) {
-        entries.set(canonical, []);
-      }
-    }
-    if (entries.size > 0) {
-      facetMap.set(normalizedFacet, entries);
-    }
-  }
-  return facetMap;
-}
-function formatFacetName(facet) {
-  return facet.trim().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
-}
-function shellEscape(value) {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-function buildSemanticCommand(template, context) {
-  return template.replaceAll("{{query}}", shellEscape(context.query)).replaceAll("{{vault}}", shellEscape(context.vaultPath)).replaceAll("{{file}}", shellEscape(context.filePath)).replaceAll("{{selection}}", shellEscape(context.selection));
-}
-
-// src/semantic.ts
+var import_obsidian5 = require("obsidian");
 function isSemanticBridgeConfigured(settings) {
   return settings.semanticBridgeEnabled && Boolean(settings.semanticCommand.trim());
 }
-function getVaultBasePath(app) {
+function getVaultBasePath2(app) {
   const adapter = app.vault.adapter;
-  return adapter instanceof import_obsidian4.FileSystemAdapter ? adapter.getBasePath() : "";
+  return adapter instanceof import_obsidian5.FileSystemAdapter ? adapter.getBasePath() : "";
 }
-function getDesktopRequire() {
+function getDesktopRequire2() {
   const desktopRequire = globalThis.require;
   return typeof desktopRequire === "function" ? desktopRequire : null;
 }
-function getExecFunction() {
-  const desktopRequire = getDesktopRequire();
+function getExecFunction2() {
+  const desktopRequire = getDesktopRequire2();
   if (!desktopRequire) {
     throw new Error("desktop-shell-unavailable");
   }
@@ -1782,7 +2031,7 @@ function getExecFunction() {
   }
   return childProcess.exec;
 }
-function readOptionalString(value) {
+function readOptionalString2(value) {
   if (typeof value === "string" && value.trim()) {
     return value.trim();
   }
@@ -1791,7 +2040,7 @@ function readOptionalString(value) {
   }
   return void 0;
 }
-function normalizeResult(result) {
+function normalizeResult2(result) {
   if (typeof result.path !== "string" || !result.path.trim()) {
     return null;
   }
@@ -1801,12 +2050,12 @@ function normalizeResult(result) {
     score: typeof result.score === "number" ? result.score : 0,
     excerpt: typeof result.excerpt === "string" ? result.excerpt : "",
     reason: typeof result.reason === "string" ? result.reason : "",
-    citekey: readOptionalString(result.citekey ?? result.citation_key),
-    author: readOptionalString(result.author ?? result.authors),
-    year: readOptionalString(result.year),
-    page: readOptionalString(result.page ?? result.locator),
-    source_type: readOptionalString(result.source_type ?? result.sourceType),
-    evidence_kind: readOptionalString(result.evidence_kind ?? result.evidenceKind),
+    citekey: readOptionalString2(result.citekey ?? result.citation_key),
+    author: readOptionalString2(result.author ?? result.authors),
+    year: readOptionalString2(result.year),
+    page: readOptionalString2(result.page ?? result.locator),
+    source_type: readOptionalString2(result.source_type ?? result.sourceType),
+    evidence_kind: readOptionalString2(result.evidence_kind ?? result.evidenceKind),
     suggested_tags: Array.isArray(result.suggested_tags) ? result.suggested_tags.map(String) : [],
     suggested_relations: result.suggested_relations && typeof result.suggested_relations === "object" ? Object.fromEntries(
       Object.entries(result.suggested_relations).map(([key, value]) => [
@@ -1817,7 +2066,7 @@ function normalizeResult(result) {
   };
 }
 async function runSemanticSearch(app, settings, query, activeFile, selection) {
-  if (!import_obsidian4.Platform.isDesktopApp) {
+  if (!import_obsidian5.Platform.isDesktopApp) {
     throw new Error("desktop-only");
   }
   if (!isSemanticBridgeConfigured(settings)) {
@@ -1825,13 +2074,13 @@ async function runSemanticSearch(app, settings, query, activeFile, selection) {
   }
   const command = buildSemanticCommand(settings.semanticCommand, {
     query,
-    vaultPath: getVaultBasePath(app),
+    vaultPath: getVaultBasePath2(app),
     filePath: activeFile?.path ?? "",
     selection
   });
-  const exec = getExecFunction();
+  const exec = getExecFunction2();
   const stdout = await new Promise((resolve, reject) => {
-    exec(command, { timeout: settings.semanticTimeoutMs, cwd: getVaultBasePath(app) || void 0 }, (error, resultStdout, stderr) => {
+    exec(command, { timeout: settings.semanticTimeoutMs, cwd: getVaultBasePath2(app) || void 0 }, (error, resultStdout, stderr) => {
       if (error) {
         reject(new Error(stderr?.trim() || error.message));
         return;
@@ -1841,11 +2090,11 @@ async function runSemanticSearch(app, settings, query, activeFile, selection) {
   });
   const parsed = JSON.parse(stdout.trim());
   const items = Array.isArray(parsed) ? parsed : parsed && typeof parsed === "object" && Array.isArray(parsed.results) ? parsed.results : [];
-  return items.map(normalizeResult).filter((result) => result !== null);
+  return items.map(normalizeResult2).filter((result) => result !== null);
 }
 
 // src/tags.ts
-var import_obsidian5 = require("obsidian");
+var import_obsidian6 = require("obsidian");
 function uniq2(values) {
   const seen = /* @__PURE__ */ new Set();
   const result = [];
@@ -2231,9 +2480,9 @@ function collectReferencedContextTerms(app, file, content) {
   const linkTargets = [
     ...cache?.links ?? [],
     ...cache?.frontmatterLinks ?? []
-  ].map((link) => app.metadataCache.getFirstLinkpathDest(link.link, file.path)).filter((target) => target instanceof import_obsidian5.TFile);
-  const legacyTargets = extractLegacyLineReferences(content).map((reference) => resolveNoteTarget(app, reference.target, file.path)).filter((target) => target instanceof import_obsidian5.TFile);
-  const nativeBlockTargets = extractNativeBlockReferences(content).map((reference) => resolveNoteTarget(app, reference.target, file.path)).filter((target) => target instanceof import_obsidian5.TFile);
+  ].map((link) => app.metadataCache.getFirstLinkpathDest(link.link, file.path)).filter((target) => target instanceof import_obsidian6.TFile);
+  const legacyTargets = extractLegacyLineReferences(content).map((reference) => resolveNoteTarget(app, reference.target, file.path)).filter((target) => target instanceof import_obsidian6.TFile);
+  const nativeBlockTargets = extractNativeBlockReferences(content).map((reference) => resolveNoteTarget(app, reference.target, file.path)).filter((target) => target instanceof import_obsidian6.TFile);
   const uniqueTargets = [...new Map(
     [...linkTargets, ...legacyTargets, ...nativeBlockTargets].map((target) => [target.path, target])
   ).values()];
@@ -2288,7 +2537,7 @@ function getTagStats(app, aliasMapText) {
     }
   })();
   const stats = /* @__PURE__ */ new Map();
-  for (const file of getAllMarkdownFiles(app)) {
+  for (const file of getAllSupportedNoteFiles(app)) {
     const tags = getAllTagsForFile(app, file);
     for (const tag of tags) {
       const key = tag.toLowerCase();
@@ -2325,7 +2574,7 @@ async function updateTagInFile(app, file, oldTag, newTag) {
 }
 async function renameTagAcrossVault(app, oldTag, newTag) {
   let updated = 0;
-  for (const file of getAllMarkdownFiles(app)) {
+  for (const file of getAllSupportedNoteFiles(app)) {
     if (await updateTagInFile(app, file, oldTag, newTag)) {
       updated += 1;
     }
@@ -2334,7 +2583,7 @@ async function renameTagAcrossVault(app, oldTag, newTag) {
 }
 async function deleteTagAcrossVault(app, tag) {
   let updated = 0;
-  for (const file of getAllMarkdownFiles(app)) {
+  for (const file of getAllSupportedNoteFiles(app)) {
     if (await updateTagInFile(app, file, tag, null)) {
       updated += 1;
     }
@@ -2640,7 +2889,7 @@ function isPromiseLike(value) {
 function runModalTask(task) {
   const onError = (error) => {
     console.error("[lti-modal] action failed", error);
-    new import_obsidian6.Notice(error instanceof Error ? error.message : String(error));
+    new import_obsidian7.Notice(error instanceof Error ? error.message : String(error));
   };
   try {
     const result = task();
@@ -2651,7 +2900,17 @@ function runModalTask(task) {
     onError(error);
   }
 }
-var TextPromptModal = class extends import_obsidian6.Modal {
+function inferResearchSourceType(value) {
+  const normalized = value.trim();
+  if (/arxiv\.org\/(abs|pdf)\//i.test(normalized) || /^\d{4}\.\d{4,5}(v\d+)?$/i.test(normalized) || /^[a-z-]+\/\d{7}$/i.test(normalized)) {
+    return "arxiv";
+  }
+  if (/\.pdf($|\?)/i.test(normalized) || /^(\/|\.{1,2}\/)/.test(normalized)) {
+    return "pdf";
+  }
+  return "doi";
+}
+var TextPromptModal = class extends import_obsidian7.Modal {
   constructor(plugin, title, onSubmit, options) {
     super(plugin.app);
     this.title = title;
@@ -2670,8 +2929,8 @@ var TextPromptModal = class extends import_obsidian6.Modal {
       placeholder: this.placeholder
     });
     const actions = contentEl.createDiv({ cls: "lti-modal-actions" });
-    new import_obsidian6.ButtonComponent(actions).setButtonText("OK").setCta().onClick(() => this.submitValue(input));
-    new import_obsidian6.ButtonComponent(actions).setButtonText("Cancel").onClick(() => this.close());
+    new import_obsidian7.ButtonComponent(actions).setButtonText("OK").setCta().onClick(() => this.submitValue(input));
+    new import_obsidian7.ButtonComponent(actions).setButtonText("Cancel").onClick(() => this.close());
     input.focus();
     input.select();
     input.addEventListener("keydown", (event) => {
@@ -2692,7 +2951,7 @@ var TextPromptModal = class extends import_obsidian6.Modal {
     });
   }
 };
-var RelationKeyModal = class extends import_obsidian6.SuggestModal {
+var RelationKeyModal = class extends import_obsidian7.SuggestModal {
   constructor(plugin, onChoose) {
     super(plugin.app);
     this.plugin = plugin;
@@ -2719,12 +2978,12 @@ var RelationKeyModal = class extends import_obsidian6.SuggestModal {
     this.onChoose(value);
   }
 };
-var LinkInsertModal = class extends import_obsidian6.SuggestModal {
+var LinkInsertModal = class extends import_obsidian7.SuggestModal {
   constructor(plugin, mode, onChoose, options) {
     super(plugin.app);
     this.plugin = plugin;
     this.mode = mode;
-    this.currentFile = plugin.getContextMarkdownFile();
+    this.currentFile = plugin.getContextNoteFile();
     this.selectedText = plugin.getContextSelection();
     this.onChoose = onChoose ?? ((candidate) => this.plugin.insertLinkIntoEditor(candidate.file, this.mode === "quick_link" ? this.selectedText : ""));
     this.setPlaceholder(options?.placeholder ?? this.plugin.t("insertLinkPlaceholder"));
@@ -2774,7 +3033,7 @@ var LinkInsertModal = class extends import_obsidian6.SuggestModal {
     runModalTask(() => this.onChoose(candidate));
   }
 };
-var ReferenceInsertModal = class extends import_obsidian6.Modal {
+var ReferenceInsertModal = class extends import_obsidian7.Modal {
   constructor(plugin, file, mode) {
     super(plugin.app);
     this.lines = [];
@@ -2847,8 +3106,8 @@ var ReferenceInsertModal = class extends import_obsidian6.Modal {
       cls: "lti-ref-preview"
     });
     const actions = contentEl.createDiv({ cls: "lti-modal-actions" });
-    new import_obsidian6.ButtonComponent(actions).setButtonText(this.plugin.t(this.mode === "block_ref" ? "insertBlockRef" : "insertLineRef")).setCta().onClick(() => this.submitSelection());
-    new import_obsidian6.ButtonComponent(actions).setButtonText(this.plugin.t("cancel")).onClick(() => this.close());
+    new import_obsidian7.ButtonComponent(actions).setButtonText(this.plugin.t(this.mode === "block_ref" ? "insertBlockRef" : "insertLineRef")).setCta().onClick(() => this.submitSelection());
+    new import_obsidian7.ButtonComponent(actions).setButtonText(this.plugin.t("cancel")).onClick(() => this.close());
   }
   submitSelection() {
     if (this.mode === "block_ref") {
@@ -2859,7 +3118,7 @@ var ReferenceInsertModal = class extends import_obsidian6.Modal {
     this.close();
   }
 };
-var TagManagerModal = class extends import_obsidian6.Modal {
+var TagManagerModal = class extends import_obsidian7.Modal {
   constructor(plugin) {
     super(plugin.app);
     this.search = "";
@@ -2903,7 +3162,7 @@ var TagManagerModal = class extends import_obsidian6.Modal {
       renameButton.addEventListener("click", () => {
         new TextPromptModal(this.plugin, this.plugin.t("promptRenameTag"), async (value) => {
           const updated = await renameTagAcrossVault(this.plugin.app, stat.tag, value);
-          new import_obsidian6.Notice(`${this.plugin.t("tagsUpdated")} (${updated})`);
+          new import_obsidian7.Notice(`${this.plugin.t("tagsUpdated")} (${updated})`);
           this.render();
           this.plugin.refreshAllViews();
         }, { defaultValue: stat.tag }).open();
@@ -2912,7 +3171,7 @@ var TagManagerModal = class extends import_obsidian6.Modal {
       mergeButton.addEventListener("click", () => {
         new TextPromptModal(this.plugin, this.plugin.t("promptMergeInto"), async (value) => {
           const updated = await renameTagAcrossVault(this.plugin.app, stat.tag, value);
-          new import_obsidian6.Notice(`${this.plugin.t("tagsUpdated")} (${updated})`);
+          new import_obsidian7.Notice(`${this.plugin.t("tagsUpdated")} (${updated})`);
           this.render();
           this.plugin.refreshAllViews();
         }).open();
@@ -2921,7 +3180,7 @@ var TagManagerModal = class extends import_obsidian6.Modal {
       deleteButton.addEventListener("click", () => {
         runModalTask(async () => {
           const updated = await deleteTagAcrossVault(this.plugin.app, stat.tag);
-          new import_obsidian6.Notice(`${this.plugin.t("tagsUpdated")} (${updated})`);
+          new import_obsidian7.Notice(`${this.plugin.t("tagsUpdated")} (${updated})`);
           this.render();
           this.plugin.refreshAllViews();
         });
@@ -2929,7 +3188,7 @@ var TagManagerModal = class extends import_obsidian6.Modal {
     }
   }
 };
-var TagSuggestionModal = class extends import_obsidian6.Modal {
+var TagSuggestionModal = class extends import_obsidian7.Modal {
   constructor(plugin, file) {
     super(plugin.app);
     this.suggestions = [];
@@ -2980,15 +3239,15 @@ var TagSuggestionModal = class extends import_obsidian6.Modal {
       this.renderSuggestionGroup(contentEl, this.plugin.t("tagSuggestionSecondaryGroup"), secondary);
     }
     const actions = contentEl.createDiv({ cls: "lti-modal-actions" });
-    new import_obsidian6.ButtonComponent(actions).setButtonText(this.plugin.t("apply")).setCta().onClick(() => {
+    new import_obsidian7.ButtonComponent(actions).setButtonText(this.plugin.t("apply")).setCta().onClick(() => {
       runModalTask(async () => {
         await appendTagsToFrontmatter(this.plugin.app, this.file, [...this.selected]);
-        new import_obsidian6.Notice(this.plugin.t("createdFrontmatterTag"));
+        new import_obsidian7.Notice(this.plugin.t("createdFrontmatterTag"));
         this.plugin.refreshAllViews();
         this.close();
       });
     });
-    new import_obsidian6.ButtonComponent(actions).setButtonText(this.plugin.t("cancel")).onClick(() => this.close());
+    new import_obsidian7.ButtonComponent(actions).setButtonText(this.plugin.t("cancel")).onClick(() => this.close());
   }
   renderSuggestionGroup(parent, title, suggestions) {
     const section = parent.createDiv({ cls: "lti-tag-modal-group" });
@@ -3090,12 +3349,201 @@ var TagSuggestionModal = class extends import_obsidian6.Modal {
     }).join(" / ");
   }
 };
-var SemanticSearchModal = class extends import_obsidian6.Modal {
+var ResearchIngestionModal = class extends import_obsidian7.Modal {
+  constructor(plugin) {
+    super(plugin.app);
+    this.source = "";
+    this.metadataDoi = "";
+    this.metadataArxiv = "";
+    this.titleOverride = "";
+    this.authorsOverride = "";
+    this.yearOverride = "";
+    this.downloadPdf = true;
+    this.result = null;
+    this.inlineError = "";
+    this.plugin = plugin;
+    this.activeFile = plugin.getContextNoteFile();
+    this.source = plugin.getContextSelection().trim();
+    this.sourceType = inferResearchSourceType(this.source);
+  }
+  onOpen() {
+    this.render();
+  }
+  render() {
+    const { contentEl } = this;
+    contentEl.empty();
+    renderModalHeader(contentEl, this.plugin.t("ingestionCapture"), this.plugin.t("modalIngestionDescription"));
+    const form = contentEl.createDiv({ cls: "lti-form" });
+    const typeRow = form.createDiv({ cls: "lti-input-row" });
+    typeRow.createDiv({ text: this.plugin.t("ingestionSourceType"), cls: "suggestion-meta" });
+    const typeSelect = typeRow.createEl("select", { cls: "lti-workbench-select" });
+    for (const option of [
+      { value: "doi", label: this.plugin.t("ingestionTypeDoi") },
+      { value: "arxiv", label: this.plugin.t("ingestionTypeArxiv") },
+      { value: "pdf", label: this.plugin.t("ingestionTypePdf") }
+    ]) {
+      const el = typeSelect.createEl("option", { text: option.label });
+      el.value = option.value;
+      el.selected = option.value === this.sourceType;
+    }
+    typeSelect.addEventListener("change", () => {
+      this.sourceType = typeSelect.value;
+      this.result = null;
+      this.inlineError = "";
+      this.render();
+    });
+    const sourceRow = form.createDiv({ cls: "lti-form" });
+    sourceRow.createDiv({ text: this.plugin.t("ingestionSourceValue"), cls: "suggestion-meta" });
+    const sourceInput = sourceRow.createEl("input", {
+      type: "text",
+      value: this.source,
+      placeholder: this.sourcePlaceholder()
+    });
+    sourceInput.addEventListener("input", () => {
+      this.source = sourceInput.value;
+      this.result = null;
+      this.inlineError = "";
+    });
+    if (this.sourceType === "pdf") {
+      const metadataGrid = form.createDiv({ cls: "lti-form" });
+      metadataGrid.createDiv({ text: this.plugin.t("ingestionMetadataHeading"), cls: "suggestion-meta" });
+      const metadataDoiInput = metadataGrid.createEl("input", {
+        type: "text",
+        value: this.metadataDoi,
+        placeholder: this.plugin.t("ingestionMetadataDoiPlaceholder")
+      });
+      metadataDoiInput.addEventListener("input", () => {
+        this.metadataDoi = metadataDoiInput.value;
+        this.result = null;
+        this.inlineError = "";
+      });
+      const metadataArxivInput = metadataGrid.createEl("input", {
+        type: "text",
+        value: this.metadataArxiv,
+        placeholder: this.plugin.t("ingestionMetadataArxivPlaceholder")
+      });
+      metadataArxivInput.addEventListener("input", () => {
+        this.metadataArxiv = metadataArxivInput.value;
+        this.result = null;
+        this.inlineError = "";
+      });
+      const toggleRow = metadataGrid.createDiv({ cls: "lti-input-row" });
+      toggleRow.createDiv({ text: this.plugin.t("ingestionDownloadPdf"), cls: "suggestion-meta" });
+      const downloadToggle = toggleRow.createEl("input", { type: "checkbox" });
+      downloadToggle.checked = this.downloadPdf;
+      downloadToggle.addEventListener("change", () => {
+        this.downloadPdf = downloadToggle.checked;
+        this.result = null;
+        this.inlineError = "";
+      });
+    }
+    const overrides = form.createDiv({ cls: "lti-form" });
+    overrides.createDiv({ text: this.plugin.t("ingestionOverrideHeading"), cls: "suggestion-meta" });
+    const titleInput = overrides.createEl("input", {
+      type: "text",
+      value: this.titleOverride,
+      placeholder: this.plugin.t("ingestionTitlePlaceholder")
+    });
+    titleInput.addEventListener("input", () => {
+      this.titleOverride = titleInput.value;
+      this.result = null;
+      this.inlineError = "";
+    });
+    const authorsInput = overrides.createEl("input", {
+      type: "text",
+      value: this.authorsOverride,
+      placeholder: this.plugin.t("ingestionAuthorsPlaceholder")
+    });
+    authorsInput.addEventListener("input", () => {
+      this.authorsOverride = authorsInput.value;
+      this.result = null;
+      this.inlineError = "";
+    });
+    const yearInput = overrides.createEl("input", {
+      type: "text",
+      value: this.yearOverride,
+      placeholder: this.plugin.t("ingestionYearPlaceholder")
+    });
+    yearInput.addEventListener("input", () => {
+      this.yearOverride = yearInput.value;
+      this.result = null;
+      this.inlineError = "";
+    });
+    if (this.activeFile) {
+      contentEl.createDiv({
+        text: this.plugin.t("ingestionContextNote", { path: this.activeFile.path }),
+        cls: "suggestion-meta"
+      });
+    }
+    if (this.inlineError) {
+      contentEl.createDiv({ text: this.inlineError, cls: "lti-empty" });
+    }
+    if (this.result) {
+      const resultCard = contentEl.createDiv({ cls: "lti-result-card" });
+      resultCard.createDiv({ text: this.result.title, cls: "suggestion-title" });
+      resultCard.createDiv({ text: this.result.notePath, cls: "suggestion-meta" });
+      resultCard.createDiv({
+        text: this.plugin.t("ingestionResultSummary", {
+          sourceType: this.result.sourceType || this.sourceType,
+          attachments: this.result.attachmentPaths.length
+        }),
+        cls: "suggestion-meta"
+      });
+      if (this.result.warnings.length > 0) {
+        resultCard.createDiv({ text: this.plugin.t("ingestionWarningsTitle"), cls: "suggestion-meta" });
+        for (const warning of this.result.warnings) {
+          resultCard.createDiv({ text: warning, cls: "suggestion-preview" });
+        }
+      }
+      const resultActions = resultCard.createDiv({ cls: "tag-manager-actions" });
+      const openButton = resultActions.createEl("button", { text: this.plugin.t("ingestionOpen"), cls: "lti-inline-button" });
+      openButton.addEventListener("click", () => this.plugin.openResolvedPath(this.result?.notePath ?? ""));
+      const insertButton = resultActions.createEl("button", { text: this.plugin.t("ingestionInsert"), cls: "lti-inline-button" });
+      insertButton.addEventListener("click", () => this.plugin.insertLinkFromPath(this.result?.notePath ?? ""));
+    }
+    const actions = contentEl.createDiv({ cls: "lti-modal-actions" });
+    new import_obsidian7.ButtonComponent(actions).setButtonText(this.plugin.t("ingestionRun")).setCta().onClick(() => {
+      void this.submit();
+    });
+    new import_obsidian7.ButtonComponent(actions).setButtonText(this.plugin.t("cancel")).onClick(() => this.close());
+  }
+  sourcePlaceholder() {
+    if (this.sourceType === "arxiv") {
+      return this.plugin.t("ingestionArxivPlaceholder");
+    }
+    if (this.sourceType === "pdf") {
+      return this.plugin.t("ingestionPdfPlaceholder");
+    }
+    return this.plugin.t("ingestionDoiPlaceholder");
+  }
+  async submit() {
+    const request = {
+      sourceType: this.sourceType,
+      source: this.source.trim(),
+      metadataDoi: this.metadataDoi.trim(),
+      metadataArxiv: this.metadataArxiv.trim(),
+      title: this.titleOverride.trim(),
+      authors: this.authorsOverride.trim(),
+      year: this.yearOverride.trim(),
+      downloadPdf: this.downloadPdf
+    };
+    try {
+      this.result = await this.plugin.runResearchIngestion(request);
+      this.inlineError = "";
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.inlineError = this.plugin.ingestionErrorToMessage(message);
+      this.result = null;
+    }
+    this.render();
+  }
+};
+var SemanticSearchModal = class extends import_obsidian7.Modal {
   constructor(plugin) {
     super(plugin.app);
     this.results = [];
     this.plugin = plugin;
-    this.activeFile = plugin.getContextMarkdownFile();
+    this.activeFile = plugin.getContextNoteFile();
     this.initialQuery = plugin.getContextSelection();
   }
   onOpen() {
@@ -3541,7 +3989,7 @@ async function readResearchWorkbenchState(app, profile) {
     installed: zoteroInstalled,
     enabled: enabledPluginIds.includes(ZOTERO_ID),
     ready: zoteroInstalled && enabledPluginIds.includes(ZOTERO_ID) && diffZoteroConfig(zoteroConfig, profile).length === 0,
-    optional: false,
+    optional: true,
     configPath: zoteroConfigPath,
     mismatches: diffZoteroConfig(zoteroConfig, profile),
     actual: extractZoteroActual(zoteroConfig)
@@ -3835,7 +4283,7 @@ _ReferencePreviewPopover.ROOT_SELECTOR = ".lti-hover-preview";
 var ReferencePreviewPopover = _ReferencePreviewPopover;
 
 // src/reading-hover-controller.ts
-var import_obsidian7 = require("obsidian");
+var import_obsidian8 = require("obsidian");
 var controllerMap = /* @__PURE__ */ new WeakMap();
 function buildReadingHoverContent(doc, data) {
   const root = doc.createElement("div");
@@ -3867,14 +4315,14 @@ function resolveFallbackHost(containerEl) {
   return containerEl.closest(".markdown-preview-view") ?? containerEl.closest(".markdown-rendered") ?? containerEl.closest(".workspace-leaf-content") ?? containerEl;
 }
 function findMarkdownView(app, containerEl) {
-  const activeView = app.workspace.getActiveViewOfType(import_obsidian7.MarkdownView);
+  const activeView = app.workspace.getActiveViewOfType(import_obsidian8.MarkdownView);
   const views = [];
   if (activeView) {
     views.push(activeView);
   }
   for (const leaf of app.workspace.getLeavesOfType("markdown")) {
     const view = leaf.view;
-    if (view instanceof import_obsidian7.MarkdownView && !views.includes(view)) {
+    if (view instanceof import_obsidian8.MarkdownView && !views.includes(view)) {
       views.push(view);
     }
   }
@@ -3899,10 +4347,11 @@ function resolveHoverHost(app, containerEl) {
     hoverParent
   };
 }
-var LegacyReadingHoverController = class extends import_obsidian7.MarkdownRenderChild {
+var LegacyReadingHoverController = class extends import_obsidian8.MarkdownRenderChild {
   constructor(app, hostEl, sentinelEl, hoverParent, getPreviewData) {
     super(sentinelEl);
     this.popover = null;
+    this.fallbackEl = null;
     this.hideTimer = null;
     this.previewToken = 0;
     this.handlePopoverEnter = () => this.cancelHide();
@@ -3936,18 +4385,27 @@ var LegacyReadingHoverController = class extends import_obsidian7.MarkdownRender
       });
       return;
     }
-    const popover = this.ensurePopover(anchor);
-    const hoverEl = popover.hoverEl;
-    hoverEl.classList.add("lti-reading-hover-popover");
-    hoverEl.classList.toggle("is-missing", data.missing === true);
-    hoverEl.replaceChildren(buildReadingHoverContent(anchor.ownerDocument, data));
-    debugLog(this.app, "reading.hover.show-commit", {
-      token,
-      target: options.target,
-      hoverElClass: hoverEl.className,
-      parentHoverPopoverMatches: this.hoverParent ? this.hoverParent.hoverPopover === popover : false,
-      snippetPreview: data.snippet.slice(0, 120)
-    });
+    if (this.hoverParent) {
+      const popover = this.ensurePopover(anchor);
+      const hoverEl = popover.hoverEl;
+      hoverEl.classList.add("lti-reading-hover-popover");
+      hoverEl.classList.toggle("is-missing", data.missing === true);
+      hoverEl.replaceChildren(buildReadingHoverContent(anchor.ownerDocument, data));
+      debugLog(this.app, "reading.hover.show-commit", {
+        token,
+        target: options.target,
+        hoverElClass: hoverEl.className,
+        parentHoverPopoverMatches: this.hoverParent.hoverPopover === popover,
+        snippetPreview: data.snippet.slice(0, 120)
+      });
+    } else {
+      this.showFallbackPopover(anchor, data);
+      debugLog(this.app, "reading.hover.show-fallback", {
+        token,
+        target: options.target,
+        snippetPreview: data.snippet.slice(0, 120)
+      });
+    }
   }
   cancelHide() {
     if (this.hideTimer !== null) {
@@ -3974,30 +4432,58 @@ var LegacyReadingHoverController = class extends import_obsidian7.MarkdownRender
     this.containerEl.remove();
   }
   ensurePopover(anchor) {
-    if (!this.hoverParent) {
-      debugLog(this.app, "reading.hover.ensure-popover-error", {
-        reason: "missing-hover-parent"
-      });
-      throw new Error("Missing MarkdownView hover parent for reading hover preview");
-    }
     debugLog(this.app, "reading.hover.ensure-popover", {
       hadExistingPopover: Boolean(this.popover),
-      parentExistingPopover: Boolean(this.hoverParent.hoverPopover),
-      hoverParentType: this.hoverParent.constructor?.name ?? "unknown",
+      parentExistingPopover: Boolean(this.hoverParent?.hoverPopover),
+      hoverParentType: this.hoverParent?.constructor?.name ?? "unknown",
       targetClass: anchor.className
     });
     this.destroyPopover();
-    const popover = new import_obsidian7.HoverPopover(this.hoverParent, anchor, 0);
+    const popover = new import_obsidian8.HoverPopover(this.hoverParent, anchor, 0);
     popover.hoverEl.addEventListener("mouseenter", this.handlePopoverEnter);
     popover.hoverEl.addEventListener("mouseleave", this.handlePopoverLeave);
     this.popover = popover;
     return popover;
+  }
+  showFallbackPopover(anchor, data) {
+    this.destroyFallbackPopover();
+    const doc = anchor.ownerDocument;
+    const el = doc.createElement("div");
+    el.className = "lti-reading-hover-popover lti-fallback-popover";
+    el.classList.toggle("is-missing", data.missing === true);
+    el.replaceChildren(buildReadingHoverContent(doc, data));
+    el.addEventListener("mouseenter", this.handlePopoverEnter);
+    el.addEventListener("mouseleave", this.handlePopoverLeave);
+    doc.body.appendChild(el);
+    this.fallbackEl = el;
+    const gap = 8;
+    const margin = 12;
+    const rect = anchor.getBoundingClientRect();
+    el.style.position = "fixed";
+    el.style.zIndex = "var(--layer-popover, 300)";
+    const elRect = el.getBoundingClientRect();
+    const left = Math.min(rect.left, doc.documentElement.clientWidth - elRect.width - margin);
+    const spaceBelow = doc.documentElement.clientHeight - rect.bottom - margin;
+    const top = spaceBelow >= elRect.height + gap ? rect.bottom + gap : rect.top - elRect.height - gap;
+    el.style.left = `${Math.max(margin, left)}px`;
+    el.style.top = `${Math.max(margin, top)}px`;
+    el.style.maxWidth = `min(28rem, calc(100vw - ${margin * 2}px))`;
+  }
+  destroyFallbackPopover() {
+    if (!this.fallbackEl) {
+      return;
+    }
+    this.fallbackEl.removeEventListener("mouseenter", this.handlePopoverEnter);
+    this.fallbackEl.removeEventListener("mouseleave", this.handlePopoverLeave);
+    this.fallbackEl.remove();
+    this.fallbackEl = null;
   }
   hide() {
     debugLog(this.app, "reading.hover.hide", {
       token: this.previewToken
     });
     this.destroyPopover();
+    this.destroyFallbackPopover();
   }
   destroyPopover() {
     if (!this.popover) {
@@ -4041,7 +4527,7 @@ function getReadingReferenceHoverController(app, containerEl, ctx, getPreviewDat
 }
 
 // src/settings.ts
-var import_obsidian8 = require("obsidian");
+var import_obsidian9 = require("obsidian");
 var LEGACY_RELATION_KEYS = ["related", "see_also", "parent", "child", "same_as"];
 var RESEARCH_RELATION_KEYS = [
   "supports",
@@ -4145,6 +4631,8 @@ function buildDefaultSettings(configDir = "") {
       2
     ),
     tagFacetMapText: DEFAULT_TAG_FACET_MAP_TEXT,
+    ingestionCommand: "",
+    ingestionTimeoutMs: 6e4,
     semanticBridgeEnabled: false,
     semanticCommand: "",
     semanticTimeoutMs: 3e4,
@@ -4182,58 +4670,60 @@ var WORKBENCH_GUIDE = {
   zh: {
     localeLabel: "\u4E2D\u6587",
     overviewTitle: "\u7814\u7A76\u5DE5\u4F5C\u53F0\u603B\u89C8",
-    overviewDescription: "\u9996\u9875\u540C\u65F6\u7ED9\u51FA\u4E2D\u82F1\u6587\u7814\u7A76\u6808\u8BF4\u660E\uFF0C\u4FBF\u4E8E\u6838\u5BF9 Zotero \u684C\u9762\u6865\u63A5\u3001\u8BC1\u636E\u63D0\u53D6\u548C\u8BED\u4E49\u53EC\u56DE\u7684\u804C\u8D23\u8FB9\u754C\u3002",
-    lead: "\u8FD9\u4E2A\u9996\u9875\u662F\u7814\u7A76\u578B Obsidian \u5E93\u7684\u64CD\u4F5C\u603B\u89C8\u3002Link & Tag Intelligence \u8D1F\u8D23\u8FDE\u63A5\u6765\u6E90\u3001\u8BC1\u636E\u3001\u8BBA\u70B9\u3001\u5173\u7CFB\u952E\u548C\u4E2D\u82F1\u6587\u53D7\u63A7\u6807\u7B7E\uFF0C\u4E0D\u66FF\u4EE3 Zotero \u684C\u9762\u7AEF\u3001Better BibTeX\u3001PDF \u9605\u8BFB\u5668\u6216\u5916\u90E8\u8BED\u4E49\u68C0\u7D22\u3002",
-    bridgeLabel: "Zotero \u684C\u9762\u6865\u63A5\u524D\u7F6E\u6761\u4EF6",
-    bridgeValue: "\u4FDD\u6301 Zotero \u684C\u9762\u7AEF\u6B63\u5728\u8FD0\u884C\uFF0C\u5E76\u5728 Zotero \u4E2D\u5B89\u88C5\u5E76\u542F\u7528 Better BibTeX for Zotero\uFF0C\u4FDD\u8BC1 citekey \u7A33\u5B9A\u4E14 Obsidian \u5BFC\u5165\u94FE\u8DEF\u53EF\u8FDE\u63A5\u3002",
+    overviewDescription: "\u9996\u9875\u540C\u65F6\u7ED9\u51FA\u4E2D\u82F1\u6587\u7814\u7A76\u6808\u8BF4\u660E\uFF0C\u4FBF\u4E8E\u6838\u5BF9 CLI-first \u91C7\u96C6\u3001\u8BC1\u636E\u63D0\u53D6\u548C\u8BED\u4E49\u53EC\u56DE\u7684\u804C\u8D23\u8FB9\u754C\u3002",
+    lead: "\u8FD9\u4E2A\u9996\u9875\u662F\u7814\u7A76\u578B Obsidian \u5E93\u7684\u64CD\u4F5C\u603B\u89C8\u3002Link & Tag Intelligence \u8D1F\u8D23\u8FDE\u63A5\u6765\u6E90\u3001\u8BC1\u636E\u3001\u8BBA\u70B9\u3001\u5173\u7CFB\u952E\u548C\u4E2D\u82F1\u6587\u53D7\u63A7\u6807\u7B7E\uFF0C\u4E0D\u66FF\u4EE3 PDF \u9605\u8BFB\u5668\u3001\u53EF\u9009\u7684 Zotero \u9002\u914D\u5668\u6216\u5916\u90E8\u8BED\u4E49\u68C0\u7D22\u3002",
+    bridgeLabel: "CLI-first \u91C7\u96C6\u57FA\u7EBF",
+    bridgeValue: "\u4F18\u5148\u914D\u7F6E\u4E00\u4E2A shell JSON ingestion CLI\uFF0C\u7528 DOI\u3001arXiv \u6216 PDF \u76F4\u63A5\u751F\u6210\u6587\u732E\u7B14\u8BB0\uFF1BZotero \u53EA\u5728\u4F60\u5DF2\u6709\u6587\u5E93\u65F6\u4F5C\u4E3A\u53EF\u9009\u9002\u914D\u5668\u3002",
     stackTitle: "\u63A8\u8350\u7814\u7A76\u6808",
     stackItems: [
-      "Zotero \u684C\u9762\u7AEF + Better BibTeX\uFF1A\u4FDD\u6301 Zotero \u6B63\u5728\u8FD0\u884C\uFF0C\u5E76\u5728 Zotero \u4E2D\u5B89\u88C5 Better BibTeX\uFF0C\u4FDD\u8BC1 citekey \u7A33\u5B9A\u3001Obsidian \u5BFC\u5165\u94FE\u8DEF\u53EF\u8FDE\u63A5\u3002",
-      "Zotero Integration\uFF1A\u628A\u6587\u732E\u6761\u76EE\u3001\u5143\u6570\u636E\u548C\u6279\u6CE8\u5BFC\u5165\u5230\u5E93\u5185\u6587\u732E\u7B14\u8BB0\u3002",
+      "Research ingestion CLI\uFF1A\u7528 DOI\u3001arXiv \u6216 PDF \u8F93\u5165\u76F4\u63A5\u521B\u5EFA\u6587\u732E\u7B14\u8BB0\uFF0C\u5E76\u901A\u8FC7 stdout JSON \u56DE\u4F20\u7ED3\u679C\u3002",
       "PDF++\uFF1A\u628A\u5E26\u9875\u7801\u7684\u539F\u6587\u8BC1\u636E\u590D\u5236\u5230\u6587\u732E\u7B14\u8BB0\u6216\u5199\u4F5C\u8349\u7A3F\u91CC\u3002",
       "Link & Tag Intelligence\uFF1A\u8FDE\u63A5\u6765\u6E90\u3001\u8BC1\u636E\u3001\u8BBA\u70B9\u3001\u5173\u7CFB\u952E\u548C\u4E2D\u82F1\u6587\u53D7\u63A7\u6807\u7B7E\u3002",
-      "Smart Connections / \u5916\u90E8\u8BED\u4E49\u6865\u63A5\uFF1A\u5728\u5199\u4F5C\u6216\u7EFC\u8FF0\u65F6\u8865\u5145\u53EC\u56DE\uFF0C\u4F46\u4E0D\u66FF\u4EE3\u7CBE\u786E\u5F15\u7528\u3002"
+      "Smart Connections / \u5916\u90E8\u8BED\u4E49\u6865\u63A5\uFF1A\u5728\u5199\u4F5C\u6216\u7EFC\u8FF0\u65F6\u8865\u5145\u53EC\u56DE\uFF0C\u4F46\u4E0D\u66FF\u4EE3\u7CBE\u786E\u5F15\u7528\u3002",
+      "Zotero Integration + Better BibTeX\uFF1A\u53EA\u5728\u4F60\u9700\u8981\u5BFC\u5165\u73B0\u6709 Zotero \u6587\u5E93\u65F6\u4F7F\u7528\u3002"
     ],
     flowTitle: "\u5EFA\u8BAE\u5DE5\u4F5C\u6D41",
     flowItems: [
-      "\u5148\u542F\u52A8 Zotero \u684C\u9762\u7AEF\uFF0C\u5E76\u786E\u8BA4 Better BibTeX \u5DF2\u5B89\u88C5\u4E14\u80FD\u6B63\u5E38\u751F\u6210 citekey\u3002",
-      "\u5728 Obsidian \u4E2D\u8FD0\u884C Zotero \u5BFC\u5165\uFF0C\u628A\u6587\u732E\u7B14\u8BB0\u5199\u5165\u7814\u7A76\u76EE\u5F55\u3002",
+      "\u5148\u914D\u7F6E ingestion CLI\uFF0C\u5E76\u786E\u8BA4\u5B83\u80FD\u5904\u7406 DOI\u3001arXiv \u6216 PDF \u8F93\u5165\u3002",
+      "\u5728 Obsidian \u4E2D\u8FD0\u884C CLI-first \u5BFC\u5165\uFF0C\u628A\u6587\u732E\u7B14\u8BB0\u5199\u5165\u7814\u7A76\u76EE\u5F55\u3002",
       "\u6253\u5F00 PDF\uFF0C\u7528 PDF++ \u590D\u5236\u5E26\u9875\u7801\u7684\u8BC1\u636E\u7247\u6BB5\u3002",
       "\u56DE\u5230\u672C\u63D2\u4EF6\u4FA7\u680F\uFF0C\u8865\u5173\u7CFB\u952E\u3001\u5F15\u7528\u5B9A\u4F4D\u548C\u4E2D\u82F1\u6587\u6807\u7B7E\u3002",
-      "\u5199\u4F5C\u6216\u7EFC\u8FF0\u65F6\uFF0C\u518D\u6253\u5F00 Smart Connections \u6216\u5916\u90E8\u8BED\u4E49\u68C0\u7D22\u8865\u5145\u53EC\u56DE\u3002"
+      "\u5199\u4F5C\u6216\u7EFC\u8FF0\u65F6\uFF0C\u518D\u6253\u5F00 Smart Connections \u6216\u5916\u90E8\u8BED\u4E49\u68C0\u7D22\u8865\u5145\u53EC\u56DE\u3002",
+      "\u53EA\u6709\u5728\u9700\u8981\u5BFC\u5165\u65E7 Zotero \u6587\u5E93\u65F6\uFF0C\u518D\u4F7F\u7528 Zotero \u9002\u914D\u5668\u3002"
     ],
-    troubleshootTitle: "\u5E38\u89C1\u62A5\u9519\u6392\u67E5",
-    troubleshootBody: "\u51FA\u73B0\u201CCannot connect to Zotero\u201D\u8FD9\u7C7B\u62A5\u9519\u65F6\uFF0C\u901A\u5E38\u4E0D\u662F Obsidian \u9875\u9762\u5E03\u5C40\u95EE\u9898\uFF0C\u800C\u662F\u684C\u9762\u6865\u63A5\u524D\u7F6E\u6761\u4EF6\u672A\u6EE1\u8DB3\uFF1A\u5148\u786E\u8BA4 Zotero \u6B63\u5728\u8FD0\u884C\uFF0C\u518D\u786E\u8BA4 Zotero \u4E2D\u5DF2\u7ECF\u5B89\u88C5\u5E76\u542F\u7528\u4E86 Better BibTeX\u3002\u4E24\u9879\u90FD\u6EE1\u8DB3\u540E\uFF0C\u518D\u56DE\u5230\u5DE5\u4F5C\u6D41\u91CC\u6267\u884C\u5BFC\u5165\u3002",
+    troubleshootTitle: "\u5E38\u89C1\u95EE\u9898\u6392\u67E5",
+    troubleshootBody: "\u5982\u679C CLI \u5BFC\u5165\u5931\u8D25\uFF0C\u4F18\u5148\u68C0\u67E5\u5BFC\u5165\u547D\u4EE4\u3001\u5360\u4F4D\u7B26\u3001\u7F51\u7EDC\u8BBF\u95EE\u548C PDF \u8DEF\u5F84\u3002\u53EA\u6709\u5728\u4F60\u542F\u7528\u4E86 Zotero \u9002\u914D\u5668\u65F6\uFF0CZotero \u684C\u9762\u7AEF\u548C Better BibTeX \u624D\u662F\u5FC5\u67E5\u9879\u3002",
     workflowTitle: "\u5DE5\u4F5C\u6D41\u6267\u884C\u987A\u5E8F",
-    workflowDescription: "\u5148\u6EE1\u8DB3 Zotero \u684C\u9762\u6865\u63A5\u524D\u7F6E\u6761\u4EF6\uFF0C\u518D\u6267\u884C\u5BFC\u5165\u3001\u6458\u5F55\u8BC1\u636E\u3001\u8865\u5173\u7CFB\u4E0E\u6807\u7B7E\uFF0C\u6700\u540E\u624D\u8FDB\u5165\u8BED\u4E49\u53EC\u56DE\u3002"
+    workflowDescription: "\u5148\u6267\u884C CLI \u91C7\u96C6\uFF0C\u518D\u6458\u5F55\u8BC1\u636E\u3001\u8865\u5173\u7CFB\u4E0E\u6807\u7B7E\uFF0C\u6700\u540E\u624D\u8FDB\u5165\u8BED\u4E49\u53EC\u56DE\u3002"
   },
   en: {
     localeLabel: "English",
     overviewTitle: "Research Workbench Overview",
-    overviewDescription: "The home page now explains the stack in both Chinese and English so the Zotero desktop bridge, evidence capture, and semantic recall roles stay explicit.",
-    lead: "This home page is the operating overview for a research-oriented Obsidian vault. Link & Tag Intelligence connects sources, evidence, claims, typed relations, and bilingual controlled tags. It does not replace Zotero desktop, Better BibTeX, a PDF reader, or your external semantic retrieval stack.",
-    bridgeLabel: "Zotero desktop bridge prerequisite",
-    bridgeValue: "Keep Zotero desktop running and install Better BibTeX for Zotero inside Zotero so citekeys stay stable and the Obsidian import bridge can connect.",
+    overviewDescription: "The home page now explains the stack in both Chinese and English so the CLI-first capture, evidence extraction, and semantic recall roles stay explicit.",
+    lead: "This home page is the operating overview for a research-oriented Obsidian vault. Link & Tag Intelligence connects sources, evidence, claims, typed relations, and bilingual controlled tags. It does not replace a PDF reader, an optional Zotero adapter, or your external semantic retrieval stack.",
+    bridgeLabel: "CLI-first capture baseline",
+    bridgeValue: "Configure a shell JSON ingestion CLI first so DOI, arXiv, or PDF inputs can create literature notes directly. Zotero stays optional for existing libraries.",
     stackTitle: "Recommended research stack",
     stackItems: [
-      "Zotero desktop + Better BibTeX: keep Zotero running and install Better BibTeX inside Zotero so citekeys stay stable and the Obsidian import bridge can connect.",
-      "Zotero Integration: import literature items, metadata, and annotations into vault literature notes.",
+      "Research ingestion CLI: create literature notes directly from DOI, arXiv, or PDF input and return stdout JSON.",
       "PDF++: copy page-aware evidence into literature notes and draft notes.",
       "Link & Tag Intelligence: connect sources, evidence, claims, typed relations, and bilingual controlled tags.",
-      "Smart Connections / external semantic bridge: add broader recall while drafting or synthesizing, without replacing exact references."
+      "Smart Connections / external semantic bridge: add broader recall while drafting or synthesizing, without replacing exact references.",
+      "Zotero Integration + Better BibTeX: use only when you need to import an existing Zotero library."
     ],
     flowTitle: "Suggested flow",
     flowItems: [
-      "Start Zotero desktop first and confirm that Better BibTeX is installed and generating stable citekeys.",
-      "Run Zotero import inside Obsidian so literature notes land in the research folder.",
+      "Configure the ingestion CLI first and confirm that it can handle DOI, arXiv, or PDF inputs.",
+      "Run the CLI-first import inside Obsidian so literature notes land in the research folder.",
       "Open the source PDF and use PDF++ to copy page-aware evidence.",
       "Return to this plugin to add typed relations, reference context, and bilingual tags.",
-      "Only then use Smart Connections or the external semantic bridge for broader recall while drafting."
+      "Only then use Smart Connections or the external semantic bridge for broader recall while drafting.",
+      "Use the Zotero adapter only when you need to import an existing Zotero library."
     ],
     troubleshootTitle: "Troubleshooting",
-    troubleshootBody: "When you see errors such as \u201CCannot connect to Zotero\u201D, this is usually not a layout issue inside Obsidian. It normally means the desktop bridge prerequisites are missing: first make sure Zotero is running, then make sure Better BibTeX is installed and enabled in Zotero. After both are in place, retry the import step.",
+    troubleshootBody: "If CLI ingestion fails, check the command, placeholders, network access, and PDF paths first. Zotero desktop and Better BibTeX are only required when you intentionally enable the optional Zotero adapter.",
     workflowTitle: "Workflow execution order",
-    workflowDescription: "Satisfy the Zotero desktop bridge prerequisites first, then import, capture evidence, add relations and tags, and only after that rely on semantic recall."
+    workflowDescription: "Run CLI capture first, then capture evidence, add relations and tags, and only after that rely on semantic recall."
   }
 };
 function arraysEqual(left, right) {
@@ -4263,6 +4753,8 @@ function normalizeLoadedSettings(data, configDir = "") {
   normalized.workflowMode = normalized.workflowMode === "general" ? "general" : "researcher";
   normalized.tagAliasMapText = normalizeJsonText(normalized.tagAliasMapText, defaults.tagAliasMapText);
   normalized.tagFacetMapText = normalizeJsonText(normalized.tagFacetMapText, DEFAULT_TAG_FACET_MAP_TEXT);
+  normalized.ingestionCommand = typeof normalized.ingestionCommand === "string" ? normalized.ingestionCommand : "";
+  normalized.ingestionTimeoutMs = Number.isFinite(normalized.ingestionTimeoutMs) && normalized.ingestionTimeoutMs > 0 ? normalized.ingestionTimeoutMs : defaults.ingestionTimeoutMs;
   normalized.semanticCommand = typeof normalized.semanticCommand === "string" ? normalized.semanticCommand : "";
   normalized.semanticTimeoutMs = Number.isFinite(normalized.semanticTimeoutMs) && normalized.semanticTimeoutMs > 0 ? normalized.semanticTimeoutMs : defaults.semanticTimeoutMs;
   normalized.recentLinkMemorySize = Number.isFinite(normalized.recentLinkMemorySize) && normalized.recentLinkMemorySize > 0 ? normalized.recentLinkMemorySize : defaults.recentLinkMemorySize;
@@ -4282,7 +4774,7 @@ function normalizeLoadedSettings(data, configDir = "") {
   normalized.smartConnectionsResultsLimit = Number.isFinite(normalized.smartConnectionsResultsLimit) && normalized.smartConnectionsResultsLimit > 0 ? normalized.smartConnectionsResultsLimit : defaults.smartConnectionsResultsLimit;
   return normalized;
 }
-var LinkTagIntelligenceSettingTab = class extends import_obsidian8.PluginSettingTab {
+var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.renderToken = 0;
@@ -4374,6 +4866,13 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian8.PluginSetting
     );
     paths.addClass("is-form");
     this.renderPathsDrawer(paths);
+    const ingestion = this.createSectionCard(
+      grid,
+      this.plugin.t("settingsWorkbenchIngestionTitle"),
+      this.plugin.t("settingsWorkbenchIngestionDescription")
+    );
+    ingestion.addClass("is-form");
+    this.renderIngestionDrawer(ingestion);
     const smart = this.createSectionCard(
       grid,
       this.plugin.t("settingsWorkbenchRecallTitle"),
@@ -4524,6 +5023,11 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian8.PluginSetting
       this.plugin.t("settingsWorkbenchActionGroupCaptureDescription"),
       [
         {
+          title: this.plugin.t("settingsWorkbenchActionIngestionTitle"),
+          description: this.plugin.t("settingsWorkbenchActionIngestionDescription"),
+          onClick: () => this.plugin.openResearchIngestion()
+        },
+        {
           title: this.plugin.t("settingsWorkbenchActionZoteroTitle"),
           description: this.plugin.t("settingsWorkbenchActionZoteroDescription"),
           onClick: () => {
@@ -4611,6 +5115,14 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian8.PluginSetting
     this.renderMetricRow(paths, this.plugin.t("settingsResearchPathTemplates"), this.compactPathLabel(this.plugin.settings.researchTemplatePath));
     this.renderMetricRow(paths, this.plugin.t("settingsResearchPathAttachments"), this.compactPathLabel(this.plugin.settings.researchAttachmentsFolder));
     this.attachModuleAction(paths, () => this.openPage("workflow"));
+    const ingestion = this.createModuleCard(
+      grid,
+      this.plugin.t("settingsWorkbenchIngestionTitle"),
+      this.plugin.t("settingsWorkbenchIngestionDescription")
+    );
+    this.renderMetricRow(ingestion, this.plugin.t("settingsWorkbenchIngestionCommandTitle"), this.plugin.settings.ingestionCommand.trim() ? this.plugin.t("configured") : this.plugin.t("notConfigured"));
+    this.renderMetricRow(ingestion, this.plugin.t("settingsWorkbenchIngestionTimeoutTitle"), String(this.plugin.settings.ingestionTimeoutMs));
+    this.attachModuleAction(ingestion, () => this.openPage("workflow"));
     const smart = this.createModuleCard(
       grid,
       this.plugin.t("settingsWorkbenchRecallTitle"),
@@ -4749,11 +5261,49 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian8.PluginSetting
       }
     );
     const actions = containerEl.createDiv({ cls: "lti-workbench-drawer-actions" });
+    this.createActionButton(actions, this.plugin.t("settingsWorkbenchRunIngestion"), () => {
+      this.plugin.openResearchIngestion();
+    });
     this.createAsyncButton(actions, this.plugin.t("settingsWorkbenchApplyCompanion"), async () => {
       await this.plugin.applyCompanionPreset("obsidian-zotero-desktop-connector");
     });
     this.createActionButton(actions, this.plugin.t("settingsWorkbenchRunZotero"), () => {
       void this.plugin.importZoteroNotes();
+    });
+  }
+  renderIngestionDrawer(containerEl) {
+    this.createTextAreaField(
+      containerEl,
+      this.plugin.t("settingsWorkbenchIngestionCommandTitle"),
+      this.plugin.t("settingsWorkbenchIngestionCommandDescription"),
+      this.plugin.settings.ingestionCommand,
+      async (value) => {
+        this.plugin.settings.ingestionCommand = value;
+        await this.plugin.saveSettings();
+      },
+      6,
+      "node /path/to/lti-research.mjs ingest --source-type {{source_type}} --source {{source}} --vault {{vault}}"
+    );
+    this.createNumberField(
+      containerEl,
+      this.plugin.t("settingsWorkbenchIngestionTimeoutTitle"),
+      "",
+      String(this.plugin.settings.ingestionTimeoutMs),
+      async (value) => {
+        const parsed = Number.parseInt(value, 10);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          this.plugin.settings.ingestionTimeoutMs = parsed;
+          await this.plugin.saveSettings();
+        }
+      }
+    );
+    containerEl.createDiv({
+      text: this.plugin.t("settingsWorkbenchIngestionHint"),
+      cls: "setting-item-description lti-workbench-inline-note"
+    });
+    const actions = containerEl.createDiv({ cls: "lti-workbench-drawer-actions" });
+    this.createActionButton(actions, this.plugin.t("settingsWorkbenchRunIngestion"), () => {
+      this.plugin.openResearchIngestion();
     });
   }
   renderSmartDrawer(containerEl) {
@@ -5222,6 +5772,9 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian8.PluginSetting
     }
   }
   getStatusTone(companion) {
+    if (companion.optional && !companion.installed) {
+      return "optional";
+    }
     if (!companion.installed && !companion.optional) {
       return "missing";
     }
@@ -5307,9 +5860,9 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian8.PluginSetting
 };
 
 // src/view.ts
-var import_obsidian9 = require("obsidian");
+var import_obsidian10 = require("obsidian");
 var LINK_TAG_INTELLIGENCE_VIEW = "link-tag-intelligence-view";
-var LinkTagIntelligenceView = class extends import_obsidian9.ItemView {
+var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.sectionState = /* @__PURE__ */ new Map();
@@ -5324,6 +5877,9 @@ var LinkTagIntelligenceView = class extends import_obsidian9.ItemView {
   async onOpen() {
     this.containerEl.addClass("link-tag-intelligence-view");
     await this.refresh();
+    if (!this.plugin.getContextNoteFile()) {
+      setTimeout(() => void this.refresh(), 500);
+    }
   }
   async refresh(options = {}) {
     const scrollContainer = this.getScrollContainer();
@@ -5332,7 +5888,10 @@ var LinkTagIntelligenceView = class extends import_obsidian9.ItemView {
     content.empty();
     content.addClass("link-tag-intelligence-view");
     const toolbar = content.createDiv({ cls: "lti-toolbar" });
+    const hasContext = Boolean(this.plugin.getContextNoteFile());
+    const fileRequiredKeys = /* @__PURE__ */ new Set(["insertLink", "insertBlockRef", "insertLineRef", "quickLink"]);
     const buttons = [
+      ["ingestionCapture", () => this.plugin.openResearchIngestion()],
       ["insertLink", () => this.plugin.openLinkInsertModal("wikilink")],
       ["insertBlockRef", () => this.plugin.openBlockReferenceFlow()],
       ["insertLineRef", () => this.plugin.openLineReferenceFlow()],
@@ -5343,15 +5902,23 @@ var LinkTagIntelligenceView = class extends import_obsidian9.ItemView {
       ["semanticSearch", () => this.plugin.openSemanticSearch()]
     ];
     for (const [key, handler] of buttons) {
+      const needsFile = fileRequiredKeys.has(key);
+      const disabled = needsFile && !hasContext;
       const button = toolbar.createEl("button", {
         text: this.plugin.t(key),
         cls: "lti-toolbar-button"
       });
       button.dataset.action = key;
-      button.addEventListener("click", handler);
+      if (disabled) {
+        button.disabled = true;
+        button.title = this.plugin.t("noActiveNote");
+        button.addClass("lti-toolbar-button-disabled");
+      } else {
+        button.addEventListener("click", handler);
+      }
     }
-    const activeFile = this.plugin.getContextMarkdownFile();
-    if (!(activeFile instanceof import_obsidian9.TFile)) {
+    const activeFile = this.plugin.getContextNoteFile();
+    if (!(activeFile instanceof import_obsidian10.TFile)) {
       content.createDiv({ text: this.plugin.t("noActiveNote"), cls: "lti-empty" });
       return;
     }
@@ -5373,11 +5940,14 @@ var LinkTagIntelligenceView = class extends import_obsidian9.ItemView {
     }
     this.renderFileSection(content, "outgoing-links", this.plugin.t("outgoingLinks"), await getOutgoingLinkFiles(this.app, activeFile), true);
     this.renderFileSection(content, "backlinks", this.plugin.t("backlinks"), await getBacklinkFiles(this.app, activeFile), false);
-    this.renderExactReferenceSection(content, "outgoing-references", this.plugin.t("outgoingReferences"), await getOutgoingExactReferences(this.app, activeFile), "outgoing", true);
-    this.renderExactReferenceSection(content, "incoming-references", this.plugin.t("incomingReferences"), await getIncomingExactReferences(this.app, activeFile), "incoming", false);
+    if (!isExcalidrawFile(activeFile)) {
+      this.renderExactReferenceSection(content, "outgoing-references", this.plugin.t("outgoingReferences"), await getOutgoingExactReferences(this.app, activeFile), "outgoing", true);
+      this.renderExactReferenceSection(content, "incoming-references", this.plugin.t("incomingReferences"), await getIncomingExactReferences(this.app, activeFile), "incoming", false);
+    }
     this.renderRelationSection(content, activeFile);
     this.renderTagSection(content, activeFile);
     await this.renderMentionsSection(content, activeFile);
+    this.renderCaptureSection(content);
     this.renderSemanticSection(content);
     if (previousScrollTop !== null || options.focusSectionId) {
       window.requestAnimationFrame(() => {
@@ -5580,6 +6150,20 @@ var LinkTagIntelligenceView = class extends import_obsidian9.ItemView {
       });
     }
   }
+  renderCaptureSection(parent) {
+    const section = this.createSection(parent, "capture", this.plugin.t("ingestionCapture"), void 0, false);
+    if (!section) {
+      return;
+    }
+    section.createDiv({
+      text: isIngestionConfigured(this.plugin.settings) ? this.plugin.t("configured") : this.plugin.t("notConfigured"),
+      cls: "lti-item-subtext"
+    });
+    section.createDiv({
+      text: this.plugin.t("ingestionStatusHint"),
+      cls: "lti-item-subtext"
+    });
+  }
   renderMetadataPills(parent, metadata) {
     const chips = this.plugin.formatResearchMetadataChips(metadata);
     if (chips.length === 0) {
@@ -5660,12 +6244,13 @@ var LinkTagIntelligenceView = class extends import_obsidian9.ItemView {
 };
 
 // src/main.ts
-var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
+var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
   constructor() {
     super(...arguments);
     this.settings = DEFAULT_SETTINGS;
-    this.lastMarkdownLeaf = null;
-    this.lastMarkdownFilePath = null;
+    this.lastEditorLeaf = null;
+    this.lastEditorFilePath = null;
+    this.lastSupportedFilePath = null;
     this.referencePreview = new ReferencePreviewPopover();
     this.referencePreviewToken = 0;
   }
@@ -5676,6 +6261,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
       version: this.manifest.version,
       debugLogPath,
       language: this.settings.language,
+      ingestionCommandConfigured: Boolean(this.settings.ingestionCommand.trim()),
       semanticBridgeEnabled: this.settings.semanticBridgeEnabled
     });
     this.referencePreview.setOnHide(() => {
@@ -5701,37 +6287,61 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     this.addCommand({
       id: "insert-link-with-preview",
       name: this.t("insertLink"),
-      editorCallback: () => {
-        this.openLinkInsertModal("wikilink");
+      checkCallback: (checking) => {
+        if (!this.getContextNoteFile()) {
+          return false;
+        }
+        if (!checking) {
+          this.openLinkInsertModal("wikilink");
+        }
+        return true;
       }
     });
     this.addCommand({
       id: "quick-link-selection",
       name: this.t("quickLink"),
-      editorCallback: () => {
-        this.openLinkInsertModal("quick_link");
+      checkCallback: (checking) => {
+        if (!this.getContextNoteFile()) {
+          return false;
+        }
+        if (!checking) {
+          this.openLinkInsertModal("quick_link");
+        }
+        return true;
       }
     });
     this.addCommand({
       id: "insert-block-reference",
       name: this.t("insertBlockRef"),
-      editorCallback: () => {
-        this.openBlockReferenceFlow();
+      checkCallback: (checking) => {
+        if (!this.getContextNoteFile()) {
+          return false;
+        }
+        if (!checking) {
+          this.openBlockReferenceFlow();
+        }
+        return true;
       }
     });
     this.addCommand({
       id: "insert-line-reference",
       name: this.t("insertLineRef"),
-      editorCallback: () => {
-        this.openLineReferenceFlow();
+      checkCallback: (checking) => {
+        if (!this.getContextNoteFile()) {
+          return false;
+        }
+        if (!checking) {
+          this.openLineReferenceFlow();
+        }
+        return true;
       }
     });
     this.addCommand({
       id: "add-relation-to-current-note",
       name: this.t("addRelation"),
       checkCallback: (checking) => {
-        const activeFile = this.getContextMarkdownFile();
-        if (!activeFile) {
+        const activeFile2 = this.getContextNoteFile();
+        if (!activeFile2) {
           return false;
         }
         if (!checking) {
@@ -5749,8 +6359,8 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
       id: "suggest-tags-for-current-note",
       name: this.t("suggestTags"),
       checkCallback: (checking) => {
-        const activeFile = this.getContextMarkdownFile();
-        if (!(activeFile instanceof import_obsidian10.TFile)) {
+        const activeFile2 = this.getContextNoteFile();
+        if (!(activeFile2 instanceof import_obsidian11.TFile)) {
           return false;
         }
         if (!checking) {
@@ -5758,6 +6368,11 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
         }
         return true;
       }
+    });
+    this.addCommand({
+      id: "ingest-research-source",
+      name: this.t("ingestionCapture"),
+      callback: () => this.openResearchIngestion()
     });
     this.addCommand({
       id: "semantic-search-external",
@@ -5769,19 +6384,26 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
       display: this.t("pluginName"),
       defaultMod: false
     });
-    this.captureMarkdownContext(this.getActiveMarkdownLeaf());
-    if (!this.lastMarkdownLeaf) {
-      this.captureMarkdownContext(this.app.workspace.getLeavesOfType("markdown")[0] ?? null);
+    this.captureEditorContext(this.getActiveEditorLeaf());
+    const activeFile = this.getActiveSupportedFile();
+    if (activeFile) {
+      this.lastSupportedFilePath = activeFile.path;
+    }
+    if (!this.lastEditorLeaf) {
+      this.captureEditorContext(this.app.workspace.getLeavesOfType("markdown")[0] ?? null);
     }
     this.registerEvent(this.app.workspace.on("file-open", (file) => {
-      if (file instanceof import_obsidian10.TFile) {
-        this.lastMarkdownFilePath = file.path;
+      const changed = this.captureSupportedFileContext(file instanceof import_obsidian11.TFile ? file : null);
+      if (!changed && file instanceof import_obsidian11.TFile && isSupportedNoteFile(file)) {
+        this.lastSupportedFilePath = file.path;
       }
       this.refreshAllViews();
     }));
     this.registerEvent(this.app.metadataCache.on("changed", () => this.refreshAllViews()));
     this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => {
-      if (this.captureMarkdownContext(leaf)) {
+      const editorChanged = this.captureEditorContext(leaf);
+      const fileChanged = this.captureSupportedFileContext(this.app.workspace.getActiveFile());
+      if (editorChanged || fileChanged) {
         this.refreshAllViews();
       }
     }));
@@ -5818,7 +6440,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
   }
   async applyResearchPreset() {
     const state = await this.getResearchWorkbenchState();
-    for (const companionId of ["obsidian-zotero-desktop-connector", "pdf-plus", "smart-connections"]) {
+    for (const companionId of ["pdf-plus", "smart-connections"]) {
       const status = state.companions.find((item) => item.id === companionId);
       if (!status?.installed) {
         continue;
@@ -5826,30 +6448,30 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
       await applyCompanionPresetToVault(this.app, companionId, state.profile);
     }
     this.refreshAllViews();
-    new import_obsidian10.Notice(this.t("settingsWorkbenchPresetApplied"));
+    new import_obsidian11.Notice(this.t("settingsWorkbenchPresetApplied"));
   }
   async applyCompanionPreset(id) {
     if (id === "semantic-bridge") {
       await this.saveSettings();
       this.refreshAllViews();
-      new import_obsidian10.Notice(this.t("settingsWorkbenchCompanionApplied", { name: "Semantic bridge" }));
+      new import_obsidian11.Notice(this.t("settingsWorkbenchCompanionApplied", { name: "Semantic bridge" }));
       return true;
     }
     const state = await this.getResearchWorkbenchState();
     const status = state.companions.find((item) => item.id === id);
     if (!status?.installed) {
-      new import_obsidian10.Notice(this.t("settingsWorkbenchPluginMissing"));
+      new import_obsidian11.Notice(this.t("settingsWorkbenchPluginMissing"));
       return false;
     }
     await applyCompanionPresetToVault(this.app, id, state.profile);
     this.refreshAllViews();
-    new import_obsidian10.Notice(this.t("settingsWorkbenchCompanionApplied", { name: this.getCompanionDisplayName(id) }));
+    new import_obsidian11.Notice(this.t("settingsWorkbenchCompanionApplied", { name: this.getCompanionDisplayName(id) }));
     return true;
   }
   openCompanionSettings(id) {
     const settingApi = this.app.setting;
     if (!settingApi?.open || !settingApi.openTabById) {
-      new import_obsidian10.Notice(this.t("settingsWorkbenchSettingsUnavailable"));
+      new import_obsidian11.Notice(this.t("settingsWorkbenchSettingsUnavailable"));
       return false;
     }
     settingApi.open();
@@ -5885,7 +6507,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
       return parseTagAliasMap(this.settings.tagAliasMapText);
     } catch (error) {
       console.warn(error);
-      new import_obsidian10.Notice(this.t("invalidAliasMap"));
+      new import_obsidian11.Notice(this.t("invalidAliasMap"));
       return /* @__PURE__ */ new Map();
     }
   }
@@ -5895,7 +6517,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     } catch (error) {
       console.warn(error);
       if (!options.suppressNotice) {
-        new import_obsidian10.Notice(this.t("invalidFacetMap"));
+        new import_obsidian11.Notice(this.t("invalidFacetMap"));
       }
       return /* @__PURE__ */ new Map();
     }
@@ -5946,72 +6568,107 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
   formatSuggestedRelationSummary(relations) {
     return Object.entries(relations).filter(([, values]) => values.length > 0).map(([key, values]) => `${this.relationLabel(key)} (${values.length})`).join(" \xB7 ");
   }
-  getActiveMarkdownLeaf() {
-    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian10.MarkdownView);
-    if (!(activeView?.file instanceof import_obsidian10.TFile)) {
+  getActiveSupportedFile() {
+    const activeFile = this.app.workspace.getActiveFile();
+    return isSupportedNoteFile(activeFile) ? activeFile : null;
+  }
+  getActiveEditorLeaf() {
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian11.MarkdownView);
+    if (!(activeView?.file instanceof import_obsidian11.TFile) || !isSupportedNoteFile(activeView.file)) {
       return null;
     }
     return activeView.leaf;
   }
-  captureMarkdownContext(leaf) {
-    const view = leaf?.view;
-    if (!(view instanceof import_obsidian10.MarkdownView) || !(view.file instanceof import_obsidian10.TFile)) {
+  captureSupportedFileContext(file) {
+    if (!isSupportedNoteFile(file)) {
       return false;
     }
-    const changed = this.lastMarkdownLeaf !== leaf || this.lastMarkdownFilePath !== view.file.path;
-    this.lastMarkdownLeaf = leaf;
-    this.lastMarkdownFilePath = view.file.path;
+    const changed = this.lastSupportedFilePath !== file.path;
+    this.lastSupportedFilePath = file.path;
     return changed;
   }
-  getContextMarkdownView() {
-    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian10.MarkdownView);
-    if (activeView?.file instanceof import_obsidian10.TFile) {
-      this.captureMarkdownContext(activeView.leaf);
+  captureEditorContext(leaf) {
+    const view = leaf?.view;
+    if (!(view instanceof import_obsidian11.MarkdownView) || !(view.file instanceof import_obsidian11.TFile) || !isSupportedNoteFile(view.file)) {
+      return false;
+    }
+    const editorChanged = this.lastEditorLeaf !== leaf || this.lastEditorFilePath !== view.file.path;
+    this.lastEditorLeaf = leaf;
+    this.lastEditorFilePath = view.file.path;
+    const fileChanged = this.captureSupportedFileContext(view.file);
+    return editorChanged || fileChanged;
+  }
+  getContextEditorView() {
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian11.MarkdownView);
+    if (activeView?.file instanceof import_obsidian11.TFile && isSupportedNoteFile(activeView.file)) {
+      this.captureEditorContext(activeView.leaf);
       return activeView;
     }
-    const rememberedView = this.lastMarkdownLeaf?.view;
-    if (rememberedView instanceof import_obsidian10.MarkdownView && rememberedView.file instanceof import_obsidian10.TFile) {
-      this.lastMarkdownFilePath = rememberedView.file.path;
+    const activeFile = this.app.workspace.getActiveFile();
+    if (activeFile && !isSupportedNotePath(activeFile.path)) {
+      return null;
+    }
+    const rememberedView = this.lastEditorLeaf?.view;
+    if (rememberedView instanceof import_obsidian11.MarkdownView && rememberedView.file instanceof import_obsidian11.TFile && isSupportedNoteFile(rememberedView.file)) {
+      this.lastEditorFilePath = rememberedView.file.path;
       return rememberedView;
     }
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
       const view = leaf.view;
-      if (!(view instanceof import_obsidian10.MarkdownView) || !(view.file instanceof import_obsidian10.TFile)) {
+      if (!(view instanceof import_obsidian11.MarkdownView) || !(view.file instanceof import_obsidian11.TFile) || !isSupportedNoteFile(view.file)) {
         continue;
       }
-      if (!this.lastMarkdownFilePath || view.file.path === this.lastMarkdownFilePath) {
-        this.captureMarkdownContext(leaf);
+      if (!this.lastEditorFilePath || view.file.path === this.lastEditorFilePath) {
+        this.captureEditorContext(leaf);
         return view;
       }
     }
     return null;
   }
-  getContextMarkdownFile() {
-    const view = this.getContextMarkdownView();
-    if (view?.file instanceof import_obsidian10.TFile) {
-      return view.file;
-    }
-    if (!this.lastMarkdownFilePath) {
+  getContextMarkdownView() {
+    return this.getContextEditorView();
+  }
+  getContextNoteFile() {
+    const activeFile = this.app.workspace.getActiveFile();
+    if (activeFile instanceof import_obsidian11.TFile) {
+      if (isSupportedNoteFile(activeFile)) {
+        this.captureSupportedFileContext(activeFile);
+        return activeFile;
+      }
       return null;
     }
-    const file = this.app.vault.getAbstractFileByPath(this.lastMarkdownFilePath);
-    return file instanceof import_obsidian10.TFile ? file : null;
+    const view = this.getContextEditorView();
+    if (view?.file instanceof import_obsidian11.TFile && isSupportedNoteFile(view.file)) {
+      return view.file;
+    }
+    if (!this.lastSupportedFilePath) {
+      return null;
+    }
+    const file = this.app.vault.getAbstractFileByPath(this.lastSupportedFilePath);
+    return isSupportedNoteFile(file) ? file : null;
+  }
+  getContextMarkdownFile() {
+    return this.getContextNoteFile();
   }
   getContextSelection() {
-    return this.getContextMarkdownView()?.editor?.getSelection() ?? "";
+    return this.getContextEditorView()?.editor?.getSelection() ?? "";
   }
   getNavigationLeaf() {
-    const activeLeaf = this.getActiveMarkdownLeaf();
-    if (activeLeaf?.view instanceof import_obsidian10.MarkdownView) {
-      this.captureMarkdownContext(activeLeaf);
+    const activeLeaf = this.app.workspace.activeLeaf;
+    const activeFile = this.getActiveSupportedFile();
+    if (activeLeaf && activeFile) {
+      this.captureSupportedFileContext(activeFile);
+      if (activeLeaf.view instanceof import_obsidian11.MarkdownView) {
+        this.captureEditorContext(activeLeaf);
+      }
       return activeLeaf;
     }
-    if (this.lastMarkdownLeaf) {
-      return this.lastMarkdownLeaf;
+    if (this.lastEditorLeaf) {
+      return this.lastEditorLeaf;
     }
     const fallbackLeaf = this.app.workspace.getLeavesOfType("markdown")[0];
     if (fallbackLeaf) {
-      this.captureMarkdownContext(fallbackLeaf);
+      this.captureEditorContext(fallbackLeaf);
       return fallbackLeaf;
     }
     return this.app.workspace.getLeaf(true);
@@ -6057,47 +6714,50 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
       { placeholder: this.t("pickLineRefTarget") }
     ).open();
   }
-  insertTextIntoContextEditor(text) {
-    const view = this.getContextMarkdownView();
-    const editor = view?.editor;
-    if (!editor) {
-      new import_obsidian10.Notice(this.t("noActiveNote"));
+  async insertTextIntoFile(text) {
+    const editor = this.getContextEditorView()?.editor;
+    if (editor) {
+      editor.replaceSelection(text);
+      this.refreshAllViews();
+      return true;
+    }
+    const file = this.getContextNoteFile();
+    if (!file) {
+      new import_obsidian11.Notice(this.t("noActiveNote"));
       return false;
     }
-    editor.replaceSelection(text);
+    await this.app.vault.process(
+      file,
+      (content) => appendTextToMarkdownSection(content, text, isExcalidrawFile(file))
+    );
+    new import_obsidian11.Notice(this.t("appendedToFile", { title: file.basename }));
     this.refreshAllViews();
     return true;
   }
-  insertLinkIntoEditor(file, alias = "") {
-    const view = this.getContextMarkdownView();
-    const editor = view?.editor;
-    if (!editor) {
-      new import_obsidian10.Notice(this.t("noActiveNote"));
-      return;
-    }
+  async insertLinkIntoEditor(file, alias = "") {
     const normalizedAlias = alias.trim();
     const linkText = normalizedAlias ? `[[${file.basename}|${normalizedAlias}]]` : `[[${file.basename}]]`;
-    editor.replaceSelection(linkText);
-    this.pushRecentTarget(file.path);
-    new import_obsidian10.Notice(this.t("insertedLink", { title: file.basename }));
-    this.refreshAllViews();
-  }
-  insertBlockReferenceIntoEditor(file, startLine, endLine) {
-    const sourcePath = this.getContextMarkdownFile()?.path ?? "";
-    const target = sourcePath ? this.app.metadataCache.fileToLinktext(file, sourcePath, true) : file.basename;
-    const text = formatLegacyBlockReference(target, startLine, endLine);
-    if (this.insertTextIntoContextEditor(text)) {
+    if (await this.insertTextIntoFile(linkText)) {
       this.pushRecentTarget(file.path);
-      new import_obsidian10.Notice(this.t("blockRefInserted", { title: file.basename }));
+      new import_obsidian11.Notice(this.t("insertedLink", { title: file.basename }));
     }
   }
-  insertLineReferenceIntoEditor(file, startLine, endLine) {
-    const sourcePath = this.getContextMarkdownFile()?.path ?? "";
+  async insertBlockReferenceIntoEditor(file, startLine, endLine) {
+    const sourcePath = this.getContextNoteFile()?.path ?? "";
+    const target = sourcePath ? this.app.metadataCache.fileToLinktext(file, sourcePath, true) : file.basename;
+    const text = formatLegacyBlockReference(target, startLine, endLine);
+    if (await this.insertTextIntoFile(text)) {
+      this.pushRecentTarget(file.path);
+      new import_obsidian11.Notice(this.t("blockRefInserted", { title: file.basename }));
+    }
+  }
+  async insertLineReferenceIntoEditor(file, startLine, endLine) {
+    const sourcePath = this.getContextNoteFile()?.path ?? "";
     const target = sourcePath ? this.app.metadataCache.fileToLinktext(file, sourcePath, true) : file.basename;
     const text = formatLegacyLineReference(target, startLine, endLine);
-    if (this.insertTextIntoContextEditor(text)) {
+    if (await this.insertTextIntoFile(text)) {
       this.pushRecentTarget(file.path);
-      new import_obsidian10.Notice(this.t("lineRefInserted", { title: file.basename }));
+      new import_obsidian11.Notice(this.t("lineRefInserted", { title: file.basename }));
     }
   }
   async getReferenceTooltip(options) {
@@ -6223,8 +6883,8 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     void this.saveSettings();
   }
   openRelationFlow() {
-    const currentFile = this.getContextMarkdownFile();
-    if (!(currentFile instanceof import_obsidian10.TFile)) {
+    const currentFile = this.getContextNoteFile();
+    if (!(currentFile instanceof import_obsidian11.TFile)) {
       return;
     }
     new RelationKeyModal(this, (relationKey) => {
@@ -6235,7 +6895,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
           frontmatter[relationKey] = next;
         });
         this.pushRecentTarget(candidate.file.path);
-        new import_obsidian10.Notice(this.t("savedRelation", { relation: this.relationLabel(relationKey) }));
+        new import_obsidian11.Notice(this.t("savedRelation", { relation: this.relationLabel(relationKey) }));
         this.refreshAllViews();
       }).open();
     }).open();
@@ -6244,14 +6904,85 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     new TagManagerModal(this).open();
   }
   openTagSuggestion() {
-    const currentFile = this.getContextMarkdownFile();
-    if (!(currentFile instanceof import_obsidian10.TFile)) {
+    const currentFile = this.getContextNoteFile();
+    if (!(currentFile instanceof import_obsidian11.TFile)) {
       return;
     }
     new TagSuggestionModal(this, currentFile).open();
   }
+  openResearchIngestion() {
+    new ResearchIngestionModal(this).open();
+  }
   openSemanticSearch() {
     new SemanticSearchModal(this).open();
+  }
+  async runResearchIngestion(request) {
+    const result = await runIngestionCommand(
+      this.app,
+      this.settings,
+      request,
+      this.getContextNoteFile(),
+      this.getContextSelection()
+    );
+    this.pushRecentTarget(result.notePath);
+    this.refreshAllViews();
+    if (this.settings.researchOpenNoteAfterImport) {
+      const importedFile = await this.waitForVaultMarkdownFile(result.notePath);
+      if (importedFile) {
+        this.openFile(importedFile);
+      }
+    }
+    new import_obsidian11.Notice(
+      result.warnings.length > 0 ? this.t("ingestionCreatedWithWarnings", { title: result.title, count: result.warnings.length }) : this.t("ingestionCreated", { title: result.title })
+    );
+    return result;
+  }
+  async waitForVaultMarkdownFile(path, timeoutMs = 3e3) {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt <= timeoutMs) {
+      const file = this.app.vault.getAbstractFileByPath(path);
+      if (file instanceof import_obsidian11.TFile) {
+        return file;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 150));
+    }
+    return null;
+  }
+  ingestionErrorToMessage(message) {
+    if (message === "desktop-only" || message === "desktop-shell-unavailable") {
+      return this.t("ingestionDesktopOnly");
+    }
+    if (message === "missing-command") {
+      return this.t("ingestionMissingCommand");
+    }
+    if (message === "missing-source") {
+      return this.t("ingestionMissingSource");
+    }
+    if (message === "invalid-doi") {
+      return this.t("ingestionInvalidDoi");
+    }
+    if (message === "invalid-arxiv") {
+      return this.t("ingestionInvalidArxiv");
+    }
+    if (message === "invalid-pdf") {
+      return this.t("ingestionInvalidPdf");
+    }
+    if (message === "doi-not-found" || message === "arxiv-entry-not-found") {
+      return this.t("ingestionSourceNotFound");
+    }
+    if (message === "invalid-cli-response") {
+      return this.t("ingestionInvalidResponse");
+    }
+    if (message.startsWith("doi-lookup-failed:")) {
+      return this.t("ingestionLookupFailed", { target: "DOI", status: message.split(":")[1] ?? "error" });
+    }
+    if (message.startsWith("arxiv-lookup-failed:")) {
+      return this.t("ingestionLookupFailed", { target: "arXiv", status: message.split(":")[1] ?? "error" });
+    }
+    if (message.startsWith("pdf-download-failed:")) {
+      return this.t("ingestionPdfDownloadFailed", { status: message.split(":")[1] ?? "error" });
+    }
+    return this.t("ingestionFailed", { message });
   }
   semanticErrorToMessage(message) {
     if (message === "desktop-only") {
@@ -6266,7 +6997,8 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     this.hideReferencePreview();
     const leaf = this.getNavigationLeaf();
     void leaf.openFile(file).then(() => {
-      this.captureMarkdownContext(leaf);
+      this.captureSupportedFileContext(file);
+      this.captureEditorContext(leaf);
       this.app.workspace.setActiveLeaf(leaf, { focus: true });
     });
   }
@@ -6274,9 +7006,10 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     this.hideReferencePreview();
     const leaf = this.getNavigationLeaf();
     void leaf.openFile(file).then(() => {
-      this.captureMarkdownContext(leaf);
+      this.captureSupportedFileContext(file);
+      this.captureEditorContext(leaf);
       const view = leaf.view;
-      if (view instanceof import_obsidian10.MarkdownView) {
+      if (view instanceof import_obsidian11.MarkdownView) {
         const editor = view.editor;
         const start = Math.max(0, startLine - 1);
         const safeEndLine = Math.max(start, (endLine ?? startLine) - 1);
@@ -6291,11 +7024,12 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     this.hideReferencePreview();
     const leaf = this.getNavigationLeaf();
     void leaf.openFile(file).then(() => {
-      this.captureMarkdownContext(leaf);
+      this.captureSupportedFileContext(file);
+      this.captureEditorContext(leaf);
       const view = leaf.view;
-      if (view instanceof import_obsidian10.MarkdownView) {
+      if (view instanceof import_obsidian11.MarkdownView) {
         const cache = this.app.metadataCache.getFileCache(file);
-        const resolved = cache ? (0, import_obsidian10.resolveSubpath)(cache, `#^${blockId}`) : null;
+        const resolved = cache ? (0, import_obsidian11.resolveSubpath)(cache, `#^${blockId}`) : null;
         if (resolved?.type === "block") {
           const editor = view.editor;
           const start = Math.max(0, resolved.start.line);
@@ -6314,7 +7048,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
       this.openFile(file);
       return;
     }
-    new import_obsidian10.Notice(path);
+    new import_obsidian11.Notice(path);
   }
   openResolvedLineReference(target, sourcePath, startLine, endLine) {
     const file = resolveNoteTarget(this.app, target, sourcePath);
@@ -6322,7 +7056,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
       this.openFileAtLine(file, startLine, endLine);
       return;
     }
-    new import_obsidian10.Notice(target);
+    new import_obsidian11.Notice(target);
   }
   openResolvedBlockReference(target, sourcePath, blockId) {
     const file = resolveNoteTarget(this.app, target, sourcePath);
@@ -6330,18 +7064,18 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
       this.openFileAtBlock(file, blockId);
       return;
     }
-    new import_obsidian10.Notice(target);
+    new import_obsidian11.Notice(target);
   }
-  insertLinkFromPath(path) {
+  async insertLinkFromPath(path) {
     const file = resolveNoteTarget(this.app, path);
     if (!file) {
       return;
     }
-    this.insertLinkIntoEditor(file, this.getContextSelection());
+    await this.insertLinkIntoEditor(file, this.getContextSelection());
   }
   async addSuggestedTags(tags) {
-    const currentFile = this.getContextMarkdownFile();
-    if (!(currentFile instanceof import_obsidian10.TFile)) {
+    const currentFile = this.getContextNoteFile();
+    if (!(currentFile instanceof import_obsidian11.TFile)) {
       return;
     }
     await appendTagsToFrontmatter(this.app, currentFile, tags);
@@ -6377,12 +7111,12 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     const commandIds = commandRegistry ? Object.keys(commandRegistry) : [];
     const resolved = candidates.find((candidate) => commandIds.includes(candidate)) ?? candidates.map((candidate) => commandIds.find((commandId) => commandId.endsWith(`:${candidate}`) || commandId.includes(candidate))).find(Boolean);
     if (!resolved || typeof commands?.executeCommandById !== "function") {
-      new import_obsidian10.Notice(this.t("settingsWorkbenchCommandUnavailable"));
+      new import_obsidian11.Notice(this.t("settingsWorkbenchCommandUnavailable"));
       return false;
     }
     const result = await commands.executeCommandById(resolved);
     if (result === false) {
-      new import_obsidian10.Notice(this.t("settingsWorkbenchCommandUnavailable"));
+      new import_obsidian11.Notice(this.t("settingsWorkbenchCommandUnavailable"));
       return false;
     }
     return true;

@@ -1,6 +1,7 @@
 import { ItemView, TFile, WorkspaceLeaf } from "obsidian";
 
 import type LinkTagIntelligencePlugin from "./main";
+import { isIngestionConfigured } from "./ingestion";
 import {
   type ExactReference,
   findUnlinkedMentions,
@@ -10,7 +11,8 @@ import {
   getIncomingExactReferences,
   getOutgoingLinkFiles,
   getOutgoingExactReferences,
-  getResolvedRelations
+  getResolvedRelations,
+  isExcalidrawFile
 } from "./notes";
 import { isSemanticBridgeConfigured } from "./semantic";
 
@@ -36,6 +38,9 @@ export class LinkTagIntelligenceView extends ItemView {
   async onOpen(): Promise<void> {
     this.containerEl.addClass("link-tag-intelligence-view");
     await this.refresh();
+    if (!this.plugin.getContextNoteFile()) {
+      setTimeout(() => void this.refresh(), 500);
+    }
   }
 
   async refresh(options: { preserveScroll?: boolean; focusSectionId?: string } = {}): Promise<void> {
@@ -46,7 +51,10 @@ export class LinkTagIntelligenceView extends ItemView {
     content.addClass("link-tag-intelligence-view");
 
     const toolbar = content.createDiv({ cls: "lti-toolbar" });
+    const hasContext = Boolean(this.plugin.getContextNoteFile());
+    const fileRequiredKeys = new Set(["insertLink", "insertBlockRef", "insertLineRef", "quickLink"]);
     const buttons: Array<[string, () => void]> = [
+      ["ingestionCapture", () => this.plugin.openResearchIngestion()],
       ["insertLink", () => this.plugin.openLinkInsertModal("wikilink")],
       ["insertBlockRef", () => this.plugin.openBlockReferenceFlow()],
       ["insertLineRef", () => this.plugin.openLineReferenceFlow()],
@@ -58,15 +66,23 @@ export class LinkTagIntelligenceView extends ItemView {
     ];
 
     for (const [key, handler] of buttons) {
+      const needsFile = fileRequiredKeys.has(key);
+      const disabled = needsFile && !hasContext;
       const button = toolbar.createEl("button", {
         text: this.plugin.t(key as never),
         cls: "lti-toolbar-button"
       });
       button.dataset.action = key;
-      button.addEventListener("click", handler);
+      if (disabled) {
+        button.disabled = true;
+        button.title = this.plugin.t("noActiveNote");
+        button.addClass("lti-toolbar-button-disabled");
+      } else {
+        button.addEventListener("click", handler);
+      }
     }
 
-    const activeFile = this.plugin.getContextMarkdownFile();
+    const activeFile = this.plugin.getContextNoteFile();
     if (!(activeFile instanceof TFile)) {
       content.createDiv({ text: this.plugin.t("noActiveNote"), cls: "lti-empty" });
       return;
@@ -91,11 +107,14 @@ export class LinkTagIntelligenceView extends ItemView {
 
     this.renderFileSection(content, "outgoing-links", this.plugin.t("outgoingLinks"), await getOutgoingLinkFiles(this.app, activeFile), true);
     this.renderFileSection(content, "backlinks", this.plugin.t("backlinks"), await getBacklinkFiles(this.app, activeFile), false);
-    this.renderExactReferenceSection(content, "outgoing-references", this.plugin.t("outgoingReferences"), await getOutgoingExactReferences(this.app, activeFile), "outgoing", true);
-    this.renderExactReferenceSection(content, "incoming-references", this.plugin.t("incomingReferences"), await getIncomingExactReferences(this.app, activeFile), "incoming", false);
+    if (!isExcalidrawFile(activeFile)) {
+      this.renderExactReferenceSection(content, "outgoing-references", this.plugin.t("outgoingReferences"), await getOutgoingExactReferences(this.app, activeFile), "outgoing", true);
+      this.renderExactReferenceSection(content, "incoming-references", this.plugin.t("incomingReferences"), await getIncomingExactReferences(this.app, activeFile), "incoming", false);
+    }
     this.renderRelationSection(content, activeFile);
     this.renderTagSection(content, activeFile);
     await this.renderMentionsSection(content, activeFile);
+    this.renderCaptureSection(content);
     this.renderSemanticSection(content);
 
     if (previousScrollTop !== null || options.focusSectionId) {
@@ -328,6 +347,22 @@ export class LinkTagIntelligenceView extends ItemView {
         cls: "lti-item-subtext"
       });
     }
+  }
+
+  private renderCaptureSection(parent: HTMLElement): void {
+    const section = this.createSection(parent, "capture", this.plugin.t("ingestionCapture"), undefined, false);
+    if (!section) {
+      return;
+    }
+
+    section.createDiv({
+      text: isIngestionConfigured(this.plugin.settings) ? this.plugin.t("configured") : this.plugin.t("notConfigured"),
+      cls: "lti-item-subtext"
+    });
+    section.createDiv({
+      text: this.plugin.t("ingestionStatusHint"),
+      cls: "lti-item-subtext"
+    });
   }
 
   private renderMetadataPills(parent: HTMLElement, metadata: Parameters<LinkTagIntelligencePlugin["formatResearchMetadataChips"]>[0]): void {
