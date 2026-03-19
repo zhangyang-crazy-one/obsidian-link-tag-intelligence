@@ -352,29 +352,34 @@
 }
 
 .lti-section-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 200ms ease-out;
+  overflow: hidden;
+}
+
+.lti-section-body > .lti-section-inner {
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 0.46rem;
   padding: 0.5rem 0.62rem 0.62rem;
   border-top: 1px solid color-mix(in srgb, var(--lti-border) 82%, transparent);
   background: linear-gradient(180deg, color-mix(in srgb, var(--background-primary) 16%, transparent), transparent 72%);
-  max-height: 2000px;
   opacity: 1;
-  overflow: hidden;
-  transition:
-    max-height 200ms ease-out,
-    opacity 200ms ease-out,
-    padding 200ms ease-out;
+  transition: opacity 200ms ease-out;
 }
 
 .lti-section-body.is-collapsed {
-  max-height: 0;
-  opacity: 0;
-  padding-top: 0;
-  padding-bottom: 0;
+  grid-template-rows: 0fr;
 }
 
-.lti-section[data-section-id="current-note"] .lti-section-body {
+.lti-section-body.is-collapsed > .lti-section-inner {
+  opacity: 0;
+}
+
+.lti-section[data-section-id="current-note"] .lti-section-body > .lti-section-inner {
   gap: 0.4rem;
   padding-top: 0.42rem;
 }

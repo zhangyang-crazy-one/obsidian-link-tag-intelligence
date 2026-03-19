@@ -1,4 +1,42 @@
 {
+  "language": "chinese",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "tool == \"Edit\" || tool == \"Write\" || tool == \"MultiEdit\"",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/.claude/hooks/pre-tool-guard.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/.claude/hooks/session-complete.sh"
+          },
+          {
+            "type": "command",
+            "command": "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/.claude/hooks/planning-save.sh"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/.claude/hooks/session-init.sh"
+          }
+        ]
+      }
+    ]
+  },
   "enabledPlugins": {
     "context7@claude-plugins-official": true,
     "claude-md-management@claude-plugins-official": true,

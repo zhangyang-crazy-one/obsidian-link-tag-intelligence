@@ -1,0 +1,39 @@
+{
+  "version": "3.0",
+  "description": "Self Improvement unified learning pipeline",
+  "storage": {
+    "mode": "auto",
+    "data_roots": {
+      "claude": "~/.claude/homunculus",
+      "codex": "~/.codex/self-improvement"
+    }
+  },
+  "observation": {
+    "enabled": true,
+    "file_name": "observations.jsonl",
+    "max_file_size_mb": 10,
+    "archive_after_days": 7
+  },
+  "instincts": {
+    "personal_dir": "instincts/personal",
+    "inherited_dir": "instincts/inherited",
+    "min_confidence": 0.3,
+    "auto_approve_threshold": 0.7,
+    "confidence_decay_rate": 0.05
+  },
+  "observer": {
+    "enabled": true,
+    "model": "haiku",
+    "run_interval_minutes": 5,
+    "patterns_to_detect": [
+      "user_corrections",
+      "error_resolutions",
+      "repeated_workflows",
+      "tool_preferences"
+    ]
+  },
+  "evolution": {
+    "cluster_threshold": 3,
+    "evolved_dir": "evolved"
+  }
+}

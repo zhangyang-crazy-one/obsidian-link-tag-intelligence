@@ -5873,6 +5873,8 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.sectionState = /* @__PURE__ */ new Map();
+    this.refreshTimer = null;
+    this.refreshPromise = null;
     this.plugin = plugin;
   }
   getViewType() {
@@ -5885,10 +5887,29 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
     this.containerEl.addClass("link-tag-intelligence-view");
     await this.refresh();
     if (!this.plugin.getContextNoteFile()) {
-      setTimeout(() => void this.refresh(), 500);
+      if (this.refreshTimer !== null) {
+        window.clearTimeout(this.refreshTimer);
+      }
+      this.refreshTimer = window.setTimeout(() => {
+        this.refreshTimer = null;
+        void this.refresh();
+      }, 500);
     }
   }
   async refresh(options = {}) {
+    if (this.refreshPromise !== null) {
+      return;
+    }
+    this.refreshPromise = (async () => {
+      try {
+        await this.doRefresh(options);
+      } finally {
+        this.refreshPromise = null;
+      }
+    })();
+    return this.refreshPromise;
+  }
+  async doRefresh(options = {}) {
     const scrollContainer = this.getScrollContainer();
     const previousScrollTop = options.preserveScroll ? scrollContainer.scrollTop : null;
     const content = this.contentEl;
@@ -6180,7 +6201,7 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
   }
   createSection(parent, id, title, count, defaultExpanded = false, emphasized = false) {
     const expanded = this.getSectionExpanded(id, defaultExpanded);
-    const section = parent.createDiv({ cls: `lti-section${expanded ? "" : " is-collapsed"}${emphasized ? " lti-note-focus" : ""}` });
+    const section = parent.createDiv({ cls: `lti-section${emphasized ? " lti-note-focus" : ""}` });
     section.dataset.sectionId = id;
     const header = section.createDiv({ cls: "lti-section-header" });
     header.dataset.sectionId = id;
@@ -6196,8 +6217,10 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
       toggle.createSpan({ text: String(count), cls: "lti-section-count" });
     }
     const onToggle = () => {
-      this.sectionState.set(id, !expanded);
-      void this.refresh({ preserveScroll: true, focusSectionId: id });
+      const newExpanded = !this.getSectionExpanded(id, defaultExpanded);
+      this.sectionState.set(id, newExpanded);
+      section.classList.toggle("is-collapsed", !newExpanded);
+      body.classList.toggle("is-collapsed", !newExpanded);
     };
     toggle.addEventListener("click", onToggle);
     toggle.addEventListener("keydown", (event) => {
@@ -6208,10 +6231,11 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
     });
     const body = section.createDiv({ cls: "lti-section-body" });
     body.dataset.sectionId = id;
+    const inner = body.createDiv({ cls: "lti-section-inner" });
     if (!expanded) {
       body.addClass("is-collapsed");
     }
-    return body;
+    return inner;
   }
   getSectionExpanded(id, defaultExpanded) {
     return this.sectionState.get(id) ?? defaultExpanded;
@@ -6242,6 +6266,10 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
     this.plugin.openFile(reference.sourceFile);
   }
   onClose() {
+    if (this.refreshTimer !== null) {
+      window.clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
     this.contentEl.empty();
     return Promise.resolve();
   }
@@ -6426,6 +6454,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
     this.registerEditorExtension(buildReferenceEditorExtension(this));
   }
   onunload() {
+    this.app.workspace.detachLeavesOfType(LINK_TAG_INTELLIGENCE_VIEW);
     this.referencePreview.destroy();
   }
   async loadSettings() {

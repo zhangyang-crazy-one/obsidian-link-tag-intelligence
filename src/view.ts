@@ -21,6 +21,8 @@ export const LINK_TAG_INTELLIGENCE_VIEW = "link-tag-intelligence-view";
 export class LinkTagIntelligenceView extends ItemView {
   plugin: LinkTagIntelligencePlugin;
   private readonly sectionState = new Map<string, boolean>();
+  private refreshTimer: number | null = null;
+  private refreshPromise: Promise<void> | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: LinkTagIntelligencePlugin) {
     super(leaf);
@@ -36,14 +38,42 @@ export class LinkTagIntelligenceView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
+    // CRITICAL: Clear any stale content and timer from a previous view instance.
+    // During hot-reload, onClose() may NOT be called, so we must guard
+    // against zombie DOM and dangling timers here in onOpen().
+    if (this.refreshTimer !== null) {
+      window.clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+    this.contentEl.empty();
     this.containerEl.addClass("link-tag-intelligence-view");
     await this.refresh();
     if (!this.plugin.getContextNoteFile()) {
-      setTimeout(() => void this.refresh(), 500);
+      this.refreshTimer = window.setTimeout(() => {
+        this.refreshTimer = null;
+        void this.refresh();
+      }, 500);
     }
   }
 
   async refresh(options: { preserveScroll?: boolean; focusSectionId?: string } = {}): Promise<void> {
+    // Prevent concurrent refresh calls - similar to Excalidraw's guard pattern
+    if (this.refreshPromise !== null) {
+      return;
+    }
+
+    this.refreshPromise = (async () => {
+      try {
+        await this.doRefresh(options);
+      } finally {
+        this.refreshPromise = null;
+      }
+    })();
+
+    return this.refreshPromise;
+  }
+
+  private async doRefresh(options: { preserveScroll?: boolean; focusSectionId?: string } = {}): Promise<void> {
     const scrollContainer = this.getScrollContainer();
     const previousScrollTop = options.preserveScroll ? scrollContainer.scrollTop : null;
     const content = this.contentEl;
@@ -382,7 +412,7 @@ export class LinkTagIntelligenceView extends ItemView {
     emphasized = false
   ): HTMLElement | null {
     const expanded = this.getSectionExpanded(id, defaultExpanded);
-    const section = parent.createDiv({ cls: `lti-section${expanded ? "" : " is-collapsed"}${emphasized ? " lti-note-focus" : ""}` });
+    const section = parent.createDiv({ cls: `lti-section${emphasized ? " lti-note-focus" : ""}` });
     section.dataset.sectionId = id;
     const header = section.createDiv({ cls: "lti-section-header" });
     header.dataset.sectionId = id;
@@ -399,8 +429,10 @@ export class LinkTagIntelligenceView extends ItemView {
     }
 
     const onToggle = (): void => {
-      this.sectionState.set(id, !expanded);
-      void this.refresh({ preserveScroll: true, focusSectionId: id });
+      const newExpanded = !this.getSectionExpanded(id, defaultExpanded);
+      this.sectionState.set(id, newExpanded);
+      section.classList.toggle("is-collapsed", !newExpanded);
+      body.classList.toggle("is-collapsed", !newExpanded);
     };
 
     toggle.addEventListener("click", onToggle);
@@ -413,10 +445,11 @@ export class LinkTagIntelligenceView extends ItemView {
 
     const body = section.createDiv({ cls: "lti-section-body" });
     body.dataset.sectionId = id;
+    const inner = body.createDiv({ cls: "lti-section-inner" });
     if (!expanded) {
       body.addClass("is-collapsed");
     }
-    return body;
+    return inner;
   }
 
   private getSectionExpanded(id: string, defaultExpanded: boolean): boolean {
@@ -458,6 +491,10 @@ export class LinkTagIntelligenceView extends ItemView {
   }
 
   onClose(): Promise<void> {
+    if (this.refreshTimer !== null) {
+      window.clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
     this.contentEl.empty();
     return Promise.resolve();
   }

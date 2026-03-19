@@ -1,0 +1,15 @@
+{
+  "name": "brain-storm-hooks",
+  "version": "1.0.0",
+  "description": "Brain-storm Claude Code hooks",
+  "type": "module",
+  "main": "utils.js",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": ["claude", "hooks", "brain-storm"],
+  "license": "MIT"
+}

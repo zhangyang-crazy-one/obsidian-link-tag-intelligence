@@ -1,0 +1,20 @@
+{
+  "profile": "default",
+  "poll_interval_seconds": 20,
+  "timeout_seconds": 3600,
+  "jobs": [
+    {
+      "notebook_id": "41ea77d4-4871-4162-aec3-a25396f32c5a",
+      "artifact_id": "465e92c4-ce69-4cd2-a268-82b482ce884f",
+      "artifact_type": "slide_deck",
+      "output_path": "/absolute/path/to/vault/Topic.assets/topic-slides.pdf",
+      "slide_deck_format": "pdf"
+    },
+    {
+      "notebook_id": "41ea77d4-4871-4162-aec3-a25396f32c5a",
+      "artifact_id": "c216a3bb-29f3-4e73-ab7f-8dea7d37849c",
+      "artifact_type": "infographic",
+      "output_path": "/absolute/path/to/vault/Topic.assets/topic-infographic.png"
+    }
+  ]
+}

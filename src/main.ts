@@ -231,6 +231,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   }
 
   onunload(): void {
+    this.app.workspace.detachLeavesOfType(LINK_TAG_INTELLIGENCE_VIEW);
     this.referencePreview.destroy();
   }
 

@@ -1,0 +1,10 @@
+{
+  "id": "link-tag-intelligence",
+  "name": "Link & Tag Intelligence",
+  "version": "0.2.0",
+  "minAppVersion": "1.6.0",
+  "description": "Native-first bilingual link and tag workflows with preview-driven references and semantic bridge hooks.",
+  "author": "zhangcrazyone",
+  "authorUrl": "https://github.com/zhangyang-crazy-one",
+  "isDesktopOnly": false
+}
