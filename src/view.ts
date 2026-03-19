@@ -127,10 +127,6 @@ export class LinkTagIntelligenceView extends ItemView {
           const toggle = this.contentEl.querySelector<HTMLElement>(`.lti-section-toggle[data-section-id="${options.focusSectionId}"]`);
           toggle?.focus({ preventScroll: true });
         }
-
-        if (previousScrollTop !== null) {
-          scrollContainer.scrollTop = previousScrollTop;
-        }
       });
     }
   }
@@ -415,12 +411,11 @@ export class LinkTagIntelligenceView extends ItemView {
       }
     });
 
-    if (!expanded) {
-      return null;
-    }
-
     const body = section.createDiv({ cls: "lti-section-body" });
     body.dataset.sectionId = id;
+    if (!expanded) {
+      body.addClass("is-collapsed");
+    }
     return body;
   }
 

@@ -16,6 +16,8 @@
   --lti-border-hover: var(--background-modifier-border-hover, var(--interactive-accent));
   --lti-text-soft: var(--text-muted);
   --lti-text-faint: var(--text-faint, var(--text-muted));
+  --lti-transition: var(--lti-transition);
+  --lti-transition-fast: 80ms ease;
   --lti-shadow-soft: 0 10px 22px -20px color-mix(in srgb, var(--interactive-accent) 24%, transparent);
   --lti-shadow-panel:
     0 10px 24px -22px color-mix(in srgb, var(--interactive-accent) 20%, transparent),
@@ -30,6 +32,18 @@
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--interactive-accent) 3%, transparent), transparent 18%),
     var(--background-primary);
+}
+
+/* Text utilities */
+.lti-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lti-break-wrap {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .lti-toolbar,
@@ -74,11 +88,11 @@
   border-radius: 10px;
   cursor: pointer;
   transition:
-    transform 140ms ease,
-    background-color 140ms ease,
-    border-color 140ms ease,
-    box-shadow 140ms ease,
-    color 140ms ease;
+    transform var(--lti-transition),
+    background-color var(--lti-transition),
+    border-color var(--lti-transition),
+    box-shadow var(--lti-transition),
+    color var(--lti-transition);
 }
 
 .lti-toolbar button,
@@ -318,10 +332,10 @@
   transform: rotate(0deg);
   transform-origin: center;
   transition:
-    transform 140ms ease,
-    color 140ms ease,
-    border-color 140ms ease,
-    background-color 140ms ease;
+    transform var(--lti-transition),
+    color var(--lti-transition),
+    border-color var(--lti-transition),
+    background-color var(--lti-transition);
 }
 
 .lti-section:not(.is-collapsed) .lti-section-chevron {
@@ -344,6 +358,20 @@
   padding: 0.5rem 0.62rem 0.62rem;
   border-top: 1px solid color-mix(in srgb, var(--lti-border) 82%, transparent);
   background: linear-gradient(180deg, color-mix(in srgb, var(--background-primary) 16%, transparent), transparent 72%);
+  max-height: 2000px;
+  opacity: 1;
+  overflow: hidden;
+  transition:
+    max-height 200ms ease-out,
+    opacity 200ms ease-out,
+    padding 200ms ease-out;
+}
+
+.lti-section-body.is-collapsed {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .lti-section[data-section-id="current-note"] .lti-section-body {
@@ -442,10 +470,10 @@
     color-mix(in srgb, var(--background-primary) 92%, var(--background-secondary));
   box-shadow: none;
   transition:
-    transform 140ms ease,
-    border-color 140ms ease,
-    box-shadow 140ms ease,
-    background-color 140ms ease;
+    transform var(--lti-transition),
+    border-color var(--lti-transition),
+    box-shadow var(--lti-transition),
+    background-color var(--lti-transition);
 }
 
 .lti-item-compact {
@@ -519,9 +547,9 @@
   font-size: 0.84rem;
   font-weight: 700;
   line-height: 1.32;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lti-list-row-meta,
@@ -626,7 +654,7 @@
   word-break: break-word;
   cursor: pointer;
   text-align: left;
-  transition: color 140ms ease, text-decoration-color 140ms ease;
+  transition: color var(--lti-transition), text-decoration-color var(--lti-transition);
 }
 
 .lti-note-link:hover {
@@ -833,9 +861,9 @@
   cursor: pointer;
   box-shadow: var(--shadow-s, none);
   transition:
-    background-color 140ms ease,
-    border-color 140ms ease,
-    transform 140ms ease;
+    background-color var(--lti-transition),
+    border-color var(--lti-transition),
+    transform var(--lti-transition);
 }
 
 .lti-inline-ref:hover {
@@ -1016,10 +1044,10 @@
   cursor: pointer;
   box-shadow: none;
   transition:
-    transform 140ms ease,
-    border-color 140ms ease,
-    background-color 140ms ease,
-    box-shadow 140ms ease;
+    transform var(--lti-transition),
+    border-color var(--lti-transition),
+    background-color var(--lti-transition),
+    box-shadow var(--lti-transition);
 }
 
 .lti-tag-card:hover {
@@ -1144,10 +1172,10 @@
   box-shadow: var(--shadow-s, none);
   user-select: none;
   transition:
-    background-color 140ms ease,
-    border-color 140ms ease,
-    transform 140ms ease,
-    box-shadow 140ms ease;
+    background-color var(--lti-transition),
+    border-color var(--lti-transition),
+    transform var(--lti-transition),
+    box-shadow var(--lti-transition);
 }
 
 .cm-lti-ref-chip:hover {
@@ -1199,6 +1227,18 @@
   border-color: var(--text-error, var(--background-modifier-border));
 }
 
+.lti-fallback-popover {
+  position: fixed;
+  z-index: var(--layer-popover, 300);
+  max-width: min(28rem, calc(100vw - 1.5rem));
+  padding: 0.8rem;
+  border: 1px solid var(--lti-border);
+  border-radius: 12px;
+  background: var(--lti-surface);
+  box-shadow: var(--lti-shadow-panel);
+  overflow: hidden;
+}
+
 .lti-reading-hover-content {
   padding: 0.8rem;
   background: transparent;
@@ -1228,8 +1268,11 @@
   font-size: 0.95rem;
   font-weight: 750;
   line-height: 1.4;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lti-reading-hover-path {
@@ -1870,10 +1913,10 @@
   background: var(--lti-settings-surface-raised);
   color: var(--text-normal);
   transition:
-    border-color 140ms ease,
-    background-color 140ms ease,
-    box-shadow 140ms ease,
-    color 140ms ease;
+    border-color var(--lti-transition),
+    background-color var(--lti-transition),
+    box-shadow var(--lti-transition),
+    color var(--lti-transition);
 }
 
 .lti-workbench-button {
@@ -2268,9 +2311,9 @@
   font-weight: 730;
   line-height: 1.2;
   transition:
-    border-color 140ms ease,
-    background-color 140ms ease,
-    color 140ms ease;
+    border-color var(--lti-transition),
+    background-color var(--lti-transition),
+    color var(--lti-transition);
 }
 
 .lti-workbench-page-tab:hover {
@@ -2406,7 +2449,7 @@
   height: 100%;
   border-radius: 999px;
   background: color-mix(in srgb, var(--background-modifier-border) 85%, transparent);
-  transition: background-color 140ms ease;
+  transition: background-color var(--lti-transition);
 }
 
 .lti-workbench-switch-slider::after {
@@ -2419,7 +2462,7 @@
   border-radius: 999px;
   background: var(--background-primary);
   box-shadow: 0 2px 8px -4px rgba(0, 0, 0, 0.45);
-  transition: transform 140ms ease;
+  transition: transform var(--lti-transition);
 }
 
 .lti-workbench-switch input:checked + .lti-workbench-switch-slider {
@@ -2978,10 +3021,10 @@
   box-sizing: border-box;
   overflow: hidden;
   transition:
-    border-color 140ms ease,
-    background-color 140ms ease,
-    box-shadow 140ms ease,
-    color 140ms ease;
+    border-color var(--lti-transition),
+    background-color var(--lti-transition),
+    box-shadow var(--lti-transition),
+    color var(--lti-transition);
 }
 
 .lti-settings-root .lti-workbench-action-item:hover {

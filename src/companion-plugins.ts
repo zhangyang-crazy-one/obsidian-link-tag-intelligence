@@ -506,7 +506,7 @@ export async function readResearchWorkbenchState(
     installed: zoteroInstalled,
     enabled: enabledPluginIds.includes(ZOTERO_ID),
     ready: zoteroInstalled && enabledPluginIds.includes(ZOTERO_ID) && diffZoteroConfig(zoteroConfig, profile).length === 0,
-    optional: false,
+    optional: true,
     configPath: zoteroConfigPath,
     mismatches: diffZoteroConfig(zoteroConfig, profile),
     actual: extractZoteroActual(zoteroConfig)

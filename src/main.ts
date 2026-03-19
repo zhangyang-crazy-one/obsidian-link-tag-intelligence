@@ -2,9 +2,14 @@ import { MarkdownView, Notice, Plugin, resolveSubpath, TFile, type HoverParent, 
 
 import { buildReferenceEditorExtension } from "./editor-extension";
 import { debugLog, resetDebugLog } from "./debug-log";
+import { runIngestionCommand, type ResearchIngestionRequest } from "./ingestion";
 import { relationKeyLabel, tr, resolveLanguage, type UILanguage } from "./i18n";
-import { LinkInsertModal, ReferenceInsertModal, RelationKeyModal, SemanticSearchModal, TagManagerModal, TagSuggestionModal } from "./modals";
+import { LinkInsertModal, ReferenceInsertModal, RelationKeyModal, ResearchIngestionModal, SemanticSearchModal, TagManagerModal, TagSuggestionModal } from "./modals";
 import {
+  appendTextToMarkdownSection,
+  isExcalidrawFile,
+  isSupportedNoteFile,
+  isSupportedNotePath,
   type ResearchSourceMetadata,
   resolveNoteTarget
 } from "./notes";
@@ -36,8 +41,9 @@ import { LINK_TAG_INTELLIGENCE_VIEW, LinkTagIntelligenceView } from "./view";
 
 export default class LinkTagIntelligencePlugin extends Plugin {
   settings: LinkTagIntelligenceSettings = DEFAULT_SETTINGS;
-  private lastMarkdownLeaf: WorkspaceLeaf | null = null;
-  private lastMarkdownFilePath: string | null = null;
+  private lastEditorLeaf: WorkspaceLeaf | null = null;
+  private lastEditorFilePath: string | null = null;
+  private lastSupportedFilePath: string | null = null;
   private readonly referencePreview = new ReferencePreviewPopover();
   private referencePreviewToken = 0;
 
@@ -48,6 +54,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       version: this.manifest.version,
       debugLogPath,
       language: this.settings.language,
+      ingestionCommandConfigured: Boolean(this.settings.ingestionCommand.trim()),
       semanticBridgeEnabled: this.settings.semanticBridgeEnabled
     });
     this.referencePreview.setOnHide(() => {
@@ -77,32 +84,56 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     this.addCommand({
       id: "insert-link-with-preview",
       name: this.t("insertLink"),
-      editorCallback: () => {
-        this.openLinkInsertModal("wikilink");
+      checkCallback: (checking) => {
+        if (!this.getContextNoteFile()) {
+          return false;
+        }
+        if (!checking) {
+          this.openLinkInsertModal("wikilink");
+        }
+        return true;
       }
     });
 
     this.addCommand({
       id: "quick-link-selection",
       name: this.t("quickLink"),
-      editorCallback: () => {
-        this.openLinkInsertModal("quick_link");
+      checkCallback: (checking) => {
+        if (!this.getContextNoteFile()) {
+          return false;
+        }
+        if (!checking) {
+          this.openLinkInsertModal("quick_link");
+        }
+        return true;
       }
     });
 
     this.addCommand({
       id: "insert-block-reference",
       name: this.t("insertBlockRef"),
-      editorCallback: () => {
-        this.openBlockReferenceFlow();
+      checkCallback: (checking) => {
+        if (!this.getContextNoteFile()) {
+          return false;
+        }
+        if (!checking) {
+          this.openBlockReferenceFlow();
+        }
+        return true;
       }
     });
 
     this.addCommand({
       id: "insert-line-reference",
       name: this.t("insertLineRef"),
-      editorCallback: () => {
-        this.openLineReferenceFlow();
+      checkCallback: (checking) => {
+        if (!this.getContextNoteFile()) {
+          return false;
+        }
+        if (!checking) {
+          this.openLineReferenceFlow();
+        }
+        return true;
       }
     });
 
@@ -110,7 +141,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       id: "add-relation-to-current-note",
       name: this.t("addRelation"),
       checkCallback: (checking) => {
-        const activeFile = this.getContextMarkdownFile();
+        const activeFile = this.getContextNoteFile();
         if (!activeFile) {
           return false;
         }
@@ -131,7 +162,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       id: "suggest-tags-for-current-note",
       name: this.t("suggestTags"),
       checkCallback: (checking) => {
-        const activeFile = this.getContextMarkdownFile();
+        const activeFile = this.getContextNoteFile();
         if (!(activeFile instanceof TFile)) {
           return false;
         }
@@ -140,6 +171,12 @@ export default class LinkTagIntelligencePlugin extends Plugin {
         }
         return true;
       }
+    });
+
+    this.addCommand({
+      id: "ingest-research-source",
+      name: this.t("ingestionCapture"),
+      callback: () => this.openResearchIngestion()
     });
 
     this.addCommand({
@@ -154,20 +191,27 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       defaultMod: false
     });
 
-    this.captureMarkdownContext(this.getActiveMarkdownLeaf());
-    if (!this.lastMarkdownLeaf) {
-      this.captureMarkdownContext(this.app.workspace.getLeavesOfType("markdown")[0] ?? null);
+    this.captureEditorContext(this.getActiveEditorLeaf());
+    const activeFile = this.getActiveSupportedFile();
+    if (activeFile) {
+      this.lastSupportedFilePath = activeFile.path;
+    }
+    if (!this.lastEditorLeaf) {
+      this.captureEditorContext(this.app.workspace.getLeavesOfType("markdown")[0] ?? null);
     }
 
     this.registerEvent(this.app.workspace.on("file-open", (file) => {
-      if (file instanceof TFile) {
-        this.lastMarkdownFilePath = file.path;
+      const changed = this.captureSupportedFileContext(file instanceof TFile ? file : null);
+      if (!changed && file instanceof TFile && isSupportedNoteFile(file)) {
+        this.lastSupportedFilePath = file.path;
       }
       this.refreshAllViews();
     }));
     this.registerEvent(this.app.metadataCache.on("changed", () => this.refreshAllViews()));
     this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => {
-      if (this.captureMarkdownContext(leaf)) {
+      const editorChanged = this.captureEditorContext(leaf);
+      const fileChanged = this.captureSupportedFileContext(this.app.workspace.getActiveFile());
+      if (editorChanged || fileChanged) {
         this.refreshAllViews();
       }
     }));
@@ -209,7 +253,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
   async applyResearchPreset(): Promise<void> {
     const state = await this.getResearchWorkbenchState();
-    for (const companionId of ["obsidian-zotero-desktop-connector", "pdf-plus", "smart-connections"] as const) {
+    for (const companionId of ["pdf-plus", "smart-connections"] as const) {
       const status = state.companions.find((item) => item.id === companionId);
       if (!status?.installed) {
         continue;
@@ -366,47 +410,68 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       .join(" · ");
   }
 
-  private getActiveMarkdownLeaf(): WorkspaceLeaf | null {
+  private getActiveSupportedFile(): TFile | null {
+    const activeFile = this.app.workspace.getActiveFile();
+    return isSupportedNoteFile(activeFile) ? activeFile : null;
+  }
+
+  private getActiveEditorLeaf(): WorkspaceLeaf | null {
     const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (!(activeView?.file instanceof TFile)) {
+    if (!(activeView?.file instanceof TFile) || !isSupportedNoteFile(activeView.file)) {
       return null;
     }
 
     return activeView.leaf;
   }
 
-  private captureMarkdownContext(leaf: WorkspaceLeaf | null): boolean {
-    const view = leaf?.view;
-    if (!(view instanceof MarkdownView) || !(view.file instanceof TFile)) {
+  private captureSupportedFileContext(file: TFile | null): boolean {
+    if (!isSupportedNoteFile(file)) {
       return false;
     }
 
-    const changed = this.lastMarkdownLeaf !== leaf || this.lastMarkdownFilePath !== view.file.path;
-    this.lastMarkdownLeaf = leaf;
-    this.lastMarkdownFilePath = view.file.path;
+    const changed = this.lastSupportedFilePath !== file.path;
+    this.lastSupportedFilePath = file.path;
     return changed;
   }
 
-  getContextMarkdownView(): MarkdownView | null {
+  private captureEditorContext(leaf: WorkspaceLeaf | null): boolean {
+    const view = leaf?.view;
+    if (!(view instanceof MarkdownView) || !(view.file instanceof TFile) || !isSupportedNoteFile(view.file)) {
+      return false;
+    }
+
+    const editorChanged = this.lastEditorLeaf !== leaf || this.lastEditorFilePath !== view.file.path;
+    this.lastEditorLeaf = leaf;
+    this.lastEditorFilePath = view.file.path;
+    const fileChanged = this.captureSupportedFileContext(view.file);
+    return editorChanged || fileChanged;
+  }
+
+  getContextEditorView(): MarkdownView | null {
     const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (activeView?.file instanceof TFile) {
-      this.captureMarkdownContext(activeView.leaf);
+    if (activeView?.file instanceof TFile && isSupportedNoteFile(activeView.file)) {
+      this.captureEditorContext(activeView.leaf);
       return activeView;
     }
 
-    const rememberedView = this.lastMarkdownLeaf?.view;
-    if (rememberedView instanceof MarkdownView && rememberedView.file instanceof TFile) {
-      this.lastMarkdownFilePath = rememberedView.file.path;
+    const activeFile = this.app.workspace.getActiveFile();
+    if (activeFile && !isSupportedNotePath(activeFile.path)) {
+      return null;
+    }
+
+    const rememberedView = this.lastEditorLeaf?.view;
+    if (rememberedView instanceof MarkdownView && rememberedView.file instanceof TFile && isSupportedNoteFile(rememberedView.file)) {
+      this.lastEditorFilePath = rememberedView.file.path;
       return rememberedView;
     }
 
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
       const view = leaf.view;
-      if (!(view instanceof MarkdownView) || !(view.file instanceof TFile)) {
+      if (!(view instanceof MarkdownView) || !(view.file instanceof TFile) || !isSupportedNoteFile(view.file)) {
         continue;
       }
-      if (!this.lastMarkdownFilePath || view.file.path === this.lastMarkdownFilePath) {
-        this.captureMarkdownContext(leaf);
+      if (!this.lastEditorFilePath || view.file.path === this.lastEditorFilePath) {
+        this.captureEditorContext(leaf);
         return view;
       }
     }
@@ -414,38 +479,59 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     return null;
   }
 
-  getContextMarkdownFile(): TFile | null {
-    const view = this.getContextMarkdownView();
-    if (view?.file instanceof TFile) {
-      return view.file;
-    }
+  getContextMarkdownView(): MarkdownView | null {
+    return this.getContextEditorView();
+  }
 
-    if (!this.lastMarkdownFilePath) {
+  getContextNoteFile(): TFile | null {
+    const activeFile = this.app.workspace.getActiveFile();
+    if (activeFile instanceof TFile) {
+      if (isSupportedNoteFile(activeFile)) {
+        this.captureSupportedFileContext(activeFile);
+        return activeFile;
+      }
       return null;
     }
 
-    const file = this.app.vault.getAbstractFileByPath(this.lastMarkdownFilePath);
-    return file instanceof TFile ? file : null;
+    const view = this.getContextEditorView();
+    if (view?.file instanceof TFile && isSupportedNoteFile(view.file)) {
+      return view.file;
+    }
+
+    if (!this.lastSupportedFilePath) {
+      return null;
+    }
+
+    const file = this.app.vault.getAbstractFileByPath(this.lastSupportedFilePath);
+    return isSupportedNoteFile(file) ? file : null;
+  }
+
+  getContextMarkdownFile(): TFile | null {
+    return this.getContextNoteFile();
   }
 
   getContextSelection(): string {
-    return this.getContextMarkdownView()?.editor?.getSelection() ?? "";
+    return this.getContextEditorView()?.editor?.getSelection() ?? "";
   }
 
   private getNavigationLeaf(): WorkspaceLeaf {
-    const activeLeaf = this.getActiveMarkdownLeaf();
-    if (activeLeaf?.view instanceof MarkdownView) {
-      this.captureMarkdownContext(activeLeaf);
-      return activeLeaf;
+    const activeLeaf = this.app.workspace.activeLeaf;
+    const activeFile = this.getActiveSupportedFile();
+    if (activeLeaf && activeFile) {
+      this.captureSupportedFileContext(activeFile);
+      if (activeLeaf.view instanceof MarkdownView) {
+        this.captureEditorContext(activeLeaf);
+        return activeLeaf;
+      }
     }
 
-    if (this.lastMarkdownLeaf) {
-      return this.lastMarkdownLeaf;
+    if (this.lastEditorLeaf) {
+      return this.lastEditorLeaf;
     }
 
     const fallbackLeaf = this.app.workspace.getLeavesOfType("markdown")[0];
     if (fallbackLeaf) {
-      this.captureMarkdownContext(fallbackLeaf);
+      this.captureEditorContext(fallbackLeaf);
       return fallbackLeaf;
     }
 
@@ -498,56 +584,57 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     ).open();
   }
 
-  private insertTextIntoContextEditor(text: string): boolean {
-    const view = this.getContextMarkdownView();
-    const editor = view?.editor;
-    if (!editor) {
+  private async insertTextIntoFile(text: string): Promise<boolean> {
+    const editor = this.getContextEditorView()?.editor;
+    if (editor) {
+      editor.replaceSelection(text);
+      this.refreshAllViews();
+      return true;
+    }
+    const file = this.getContextNoteFile();
+    if (!file) {
       new Notice(this.t("noActiveNote"));
       return false;
     }
-    editor.replaceSelection(text);
+    await this.app.vault.process(file, (content) =>
+      appendTextToMarkdownSection(content, text, isExcalidrawFile(file))
+    );
+    new Notice(this.t("appendedToFile", { title: file.basename }));
     this.refreshAllViews();
     return true;
   }
 
-  insertLinkIntoEditor(file: TFile, alias = ""): void {
-    const view = this.getContextMarkdownView();
-    const editor = view?.editor;
-    if (!editor) {
-      new Notice(this.t("noActiveNote"));
-      return;
-    }
+  async insertLinkIntoEditor(file: TFile, alias = ""): Promise<void> {
     const normalizedAlias = alias.trim();
     const linkText = normalizedAlias
       ? `[[${file.basename}|${normalizedAlias}]]`
       : `[[${file.basename}]]`;
 
-    editor.replaceSelection(linkText);
-
-    this.pushRecentTarget(file.path);
-    new Notice(this.t("insertedLink", { title: file.basename }));
-    this.refreshAllViews();
+    if (await this.insertTextIntoFile(linkText)) {
+      this.pushRecentTarget(file.path);
+      new Notice(this.t("insertedLink", { title: file.basename }));
+    }
   }
 
-  insertBlockReferenceIntoEditor(file: TFile, startLine: number, endLine?: number): void {
-    const sourcePath = this.getContextMarkdownFile()?.path ?? "";
+  async insertBlockReferenceIntoEditor(file: TFile, startLine: number, endLine?: number): Promise<void> {
+    const sourcePath = this.getContextNoteFile()?.path ?? "";
     const target = sourcePath
       ? this.app.metadataCache.fileToLinktext(file, sourcePath, true)
       : file.basename;
     const text = formatLegacyBlockReference(target, startLine, endLine);
-    if (this.insertTextIntoContextEditor(text)) {
+    if (await this.insertTextIntoFile(text)) {
       this.pushRecentTarget(file.path);
       new Notice(this.t("blockRefInserted", { title: file.basename }));
     }
   }
 
-  insertLineReferenceIntoEditor(file: TFile, startLine: number, endLine?: number): void {
-    const sourcePath = this.getContextMarkdownFile()?.path ?? "";
+  async insertLineReferenceIntoEditor(file: TFile, startLine: number, endLine?: number): Promise<void> {
+    const sourcePath = this.getContextNoteFile()?.path ?? "";
     const target = sourcePath
       ? this.app.metadataCache.fileToLinktext(file, sourcePath, true)
       : file.basename;
     const text = formatLegacyLineReference(target, startLine, endLine);
-    if (this.insertTextIntoContextEditor(text)) {
+    if (await this.insertTextIntoFile(text)) {
       this.pushRecentTarget(file.path);
       new Notice(this.t("lineRefInserted", { title: file.basename }));
     }
@@ -731,7 +818,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   }
 
   openRelationFlow(): void {
-    const currentFile = this.getContextMarkdownFile();
+    const currentFile = this.getContextNoteFile();
     if (!(currentFile instanceof TFile)) {
       return;
     }
@@ -759,15 +846,96 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   }
 
   openTagSuggestion(): void {
-    const currentFile = this.getContextMarkdownFile();
+    const currentFile = this.getContextNoteFile();
     if (!(currentFile instanceof TFile)) {
       return;
     }
     new TagSuggestionModal(this, currentFile).open();
   }
 
+  openResearchIngestion(): void {
+    new ResearchIngestionModal(this).open();
+  }
+
   openSemanticSearch(): void {
     new SemanticSearchModal(this).open();
+  }
+
+  async runResearchIngestion(request: ResearchIngestionRequest): Promise<Awaited<ReturnType<typeof runIngestionCommand>>> {
+    const result = await runIngestionCommand(
+      this.app,
+      this.settings,
+      request,
+      this.getContextNoteFile(),
+      this.getContextSelection()
+    );
+
+    this.pushRecentTarget(result.notePath);
+    this.refreshAllViews();
+
+    if (this.settings.researchOpenNoteAfterImport) {
+      const importedFile = await this.waitForVaultMarkdownFile(result.notePath);
+      if (importedFile) {
+        this.openFile(importedFile);
+      }
+    }
+
+    new Notice(
+      result.warnings.length > 0
+        ? this.t("ingestionCreatedWithWarnings", { title: result.title, count: result.warnings.length })
+        : this.t("ingestionCreated", { title: result.title })
+    );
+
+    return result;
+  }
+
+  private async waitForVaultMarkdownFile(path: string, timeoutMs = 3000): Promise<TFile | null> {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt <= timeoutMs) {
+      const file = this.app.vault.getAbstractFileByPath(path);
+      if (file instanceof TFile) {
+        return file;
+      }
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 150));
+    }
+    return null;
+  }
+
+  ingestionErrorToMessage(message: string): string {
+    if (message === "desktop-only" || message === "desktop-shell-unavailable") {
+      return this.t("ingestionDesktopOnly");
+    }
+    if (message === "missing-command") {
+      return this.t("ingestionMissingCommand");
+    }
+    if (message === "missing-source") {
+      return this.t("ingestionMissingSource");
+    }
+    if (message === "invalid-doi") {
+      return this.t("ingestionInvalidDoi");
+    }
+    if (message === "invalid-arxiv") {
+      return this.t("ingestionInvalidArxiv");
+    }
+    if (message === "invalid-pdf") {
+      return this.t("ingestionInvalidPdf");
+    }
+    if (message === "doi-not-found" || message === "arxiv-entry-not-found") {
+      return this.t("ingestionSourceNotFound");
+    }
+    if (message === "invalid-cli-response") {
+      return this.t("ingestionInvalidResponse");
+    }
+    if (message.startsWith("doi-lookup-failed:")) {
+      return this.t("ingestionLookupFailed", { target: "DOI", status: message.split(":")[1] ?? "error" });
+    }
+    if (message.startsWith("arxiv-lookup-failed:")) {
+      return this.t("ingestionLookupFailed", { target: "arXiv", status: message.split(":")[1] ?? "error" });
+    }
+    if (message.startsWith("pdf-download-failed:")) {
+      return this.t("ingestionPdfDownloadFailed", { status: message.split(":")[1] ?? "error" });
+    }
+    return this.t("ingestionFailed", { message });
   }
 
   semanticErrorToMessage(message: string): string {
@@ -784,7 +952,8 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     this.hideReferencePreview();
     const leaf = this.getNavigationLeaf();
     void leaf.openFile(file).then(() => {
-      this.captureMarkdownContext(leaf);
+      this.captureSupportedFileContext(file);
+      this.captureEditorContext(leaf);
       this.app.workspace.setActiveLeaf(leaf, { focus: true });
     });
   }
@@ -793,7 +962,8 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     this.hideReferencePreview();
     const leaf = this.getNavigationLeaf();
     void leaf.openFile(file).then(() => {
-      this.captureMarkdownContext(leaf);
+      this.captureSupportedFileContext(file);
+      this.captureEditorContext(leaf);
       const view = leaf.view;
       if (view instanceof MarkdownView) {
         const editor = view.editor;
@@ -811,7 +981,8 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     this.hideReferencePreview();
     const leaf = this.getNavigationLeaf();
     void leaf.openFile(file).then(() => {
-      this.captureMarkdownContext(leaf);
+      this.captureSupportedFileContext(file);
+      this.captureEditorContext(leaf);
       const view = leaf.view;
       if (view instanceof MarkdownView) {
         const cache = this.app.metadataCache.getFileCache(file);
@@ -856,16 +1027,16 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     new Notice(target);
   }
 
-  insertLinkFromPath(path: string): void {
+  async insertLinkFromPath(path: string): Promise<void> {
     const file = resolveNoteTarget(this.app, path);
     if (!file) {
       return;
     }
-    this.insertLinkIntoEditor(file, this.getContextSelection());
+    await this.insertLinkIntoEditor(file, this.getContextSelection());
   }
 
   async addSuggestedTags(tags: string[]): Promise<void> {
-    const currentFile = this.getContextMarkdownFile();
+    const currentFile = this.getContextNoteFile();
     if (!(currentFile instanceof TFile)) {
       return;
     }

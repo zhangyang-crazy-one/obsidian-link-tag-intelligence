@@ -12,6 +12,7 @@ type TranslationKey =
   | "addRelation"
   | "manageTags"
   | "suggestTags"
+  | "ingestionCapture"
   | "semanticSearch"
   | "currentNote"
   | "outgoingLinks"
@@ -25,6 +26,7 @@ type TranslationKey =
   | "notConfigured"
   | "configured"
   | "noActiveNote"
+  | "noActiveEditor"
   | "emptyList"
   | "path"
   | "aliases"
@@ -44,6 +46,19 @@ type TranslationKey =
   | "createdFrontmatterTag"
   | "tagsUpdated"
   | "tagSuggestionsReady"
+  | "ingestionDesktopOnly"
+  | "ingestionMissingCommand"
+  | "ingestionMissingSource"
+  | "ingestionInvalidDoi"
+  | "ingestionInvalidArxiv"
+  | "ingestionInvalidPdf"
+  | "ingestionSourceNotFound"
+  | "ingestionInvalidResponse"
+  | "ingestionLookupFailed"
+  | "ingestionPdfDownloadFailed"
+  | "ingestionFailed"
+  | "ingestionCreated"
+  | "ingestionCreatedWithWarnings"
   | "semanticDesktopOnly"
   | "semanticMissingCommand"
   | "semanticFailed"
@@ -56,6 +71,7 @@ type TranslationKey =
   | "promptRelationKey"
   | "savedRelation"
   | "insertedLink"
+  | "appendedToFile"
   | "invalidAliasMap"
   | "invalidFacetMap"
   | "settingsWorkflowMode"
@@ -70,6 +86,12 @@ type TranslationKey =
   | "settingsTagAliasMapDescription"
   | "settingsTagFacetMap"
   | "settingsTagFacetMapDescription"
+  | "settingsWorkbenchIngestionTitle"
+  | "settingsWorkbenchIngestionDescription"
+  | "settingsWorkbenchIngestionCommandTitle"
+  | "settingsWorkbenchIngestionCommandDescription"
+  | "settingsWorkbenchIngestionTimeoutTitle"
+  | "settingsWorkbenchIngestionHint"
   | "settingsSemanticEnabled"
   | "settingsSemanticEnabledDescription"
   | "settingsSemanticCommand"
@@ -141,6 +163,8 @@ type TranslationKey =
   | "settingsWorkbenchActionGroupRecallDescription"
   | "settingsWorkbenchActionGroupOrganizeTitle"
   | "settingsWorkbenchActionGroupOrganizeDescription"
+  | "settingsWorkbenchActionIngestionTitle"
+  | "settingsWorkbenchActionIngestionDescription"
   | "settingsWorkbenchActionZoteroTitle"
   | "settingsWorkbenchActionZoteroDescription"
   | "settingsWorkbenchActionSmartTitle"
@@ -198,6 +222,7 @@ type TranslationKey =
   | "settingsWorkbenchBacklinksTitle"
   | "settingsWorkbenchLanguageTitle"
   | "settingsWorkbenchExpectedPrefix"
+  | "settingsWorkbenchRunIngestion"
   | "settingsWorkbenchRunZotero"
   | "settingsWorkbenchRunSmart"
   | "settingsWorkbenchRunSemantic"
@@ -236,7 +261,31 @@ type TranslationKey =
   | "modalTagSuggestionsDescription"
   | "modalRelationDescription"
   | "modalManageTagsDescription"
+  | "modalIngestionDescription"
   | "modalSemanticDescription"
+  | "ingestionSourceType"
+  | "ingestionTypeDoi"
+  | "ingestionTypeArxiv"
+  | "ingestionTypePdf"
+  | "ingestionSourceValue"
+  | "ingestionMetadataHeading"
+  | "ingestionMetadataDoiPlaceholder"
+  | "ingestionMetadataArxivPlaceholder"
+  | "ingestionDownloadPdf"
+  | "ingestionOverrideHeading"
+  | "ingestionTitlePlaceholder"
+  | "ingestionAuthorsPlaceholder"
+  | "ingestionYearPlaceholder"
+  | "ingestionContextNote"
+  | "ingestionResultSummary"
+  | "ingestionWarningsTitle"
+  | "ingestionOpen"
+  | "ingestionInsert"
+  | "ingestionRun"
+  | "ingestionArxivPlaceholder"
+  | "ingestionPdfPlaceholder"
+  | "ingestionDoiPlaceholder"
+  | "ingestionStatusHint"
   | "tagSuggestionAlias"
   | "tagSuggestionFacet"
   | "tagSuggestionKnown"
@@ -285,6 +334,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     addRelation: "Add relation to current note",
     manageTags: "Manage vault tags",
     suggestTags: "Suggest tags for current note",
+    ingestionCapture: "Ingest research source",
     semanticSearch: "Semantic search via external command",
     currentNote: "Current note",
     outgoingLinks: "Outgoing links",
@@ -297,7 +347,8 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     semanticBridge: "Semantic bridge",
     notConfigured: "Not configured",
     configured: "Configured",
-    noActiveNote: "Open a markdown note to use this view.",
+    noActiveNote: "Open a Markdown or Excalidraw note to use this view.",
+    noActiveEditor: "Open a Markdown note, or the markdown source of an Excalidraw note, to insert links or references.",
     emptyList: "Nothing to show.",
     path: "Path",
     aliases: "Aliases",
@@ -317,6 +368,19 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     createdFrontmatterTag: "Added tags to frontmatter.",
     tagsUpdated: "Tags updated.",
     tagSuggestionsReady: "Suggested tags are ready.",
+    ingestionDesktopOnly: "Research ingestion is desktop-only.",
+    ingestionMissingCommand: "Ingestion command is not configured.",
+    ingestionMissingSource: "Provide a DOI, arXiv ID, or PDF path/URL.",
+    ingestionInvalidDoi: "The DOI input is invalid.",
+    ingestionInvalidArxiv: "The arXiv input is invalid.",
+    ingestionInvalidPdf: "The PDF path or URL is invalid.",
+    ingestionSourceNotFound: "The requested source could not be resolved.",
+    ingestionInvalidResponse: "The ingestion CLI returned an invalid response.",
+    ingestionLookupFailed: "{target} lookup failed ({status}).",
+    ingestionPdfDownloadFailed: "PDF download failed ({status}).",
+    ingestionFailed: "Research ingestion failed: {message}",
+    ingestionCreated: "Created literature note for {title}.",
+    ingestionCreatedWithWarnings: "Created literature note for {title} with {count} warning(s).",
     semanticDesktopOnly: "Semantic bridge is desktop-only.",
     semanticMissingCommand: "Semantic command is not configured.",
     semanticFailed: "Semantic search failed: {message}",
@@ -329,6 +393,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     promptRelationKey: "Select relation key",
     savedRelation: "Saved relation {relation}.",
     insertedLink: "Inserted link to {title}.",
+    appendedToFile: "Appended to {title} (text added to markdown section).",
     invalidAliasMap: "Tag alias map is invalid JSON. Falling back to empty map.",
     invalidFacetMap: "Tag facet map is invalid JSON. Falling back to empty map.",
     settingsWorkflowMode: "Workflow mode",
@@ -343,8 +408,14 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsTagAliasMapDescription: "JSON object from canonical tag to aliases. Used for bilingual matching, not automatic rewrites.",
     settingsTagFacetMap: "Research tag facet map JSON",
     settingsTagFacetMapDescription: "JSON object from facet name to canonical tags and aliases. Used to boost topic / method / dataset / writing-stage tags.",
+    settingsWorkbenchIngestionTitle: "External ingestion CLI",
+    settingsWorkbenchIngestionDescription: "Configure the command that creates literature notes from DOI, arXiv, or PDF input.",
+    settingsWorkbenchIngestionCommandTitle: "Ingestion command",
+    settingsWorkbenchIngestionCommandDescription: "Desktop-only shell command. Supported placeholders: {{source_type}} {{source}} {{vault}} {{file}} {{selection}} {{literature}} {{attachments}} {{template}} {{metadata_doi}} {{metadata_arxiv}} {{title}} {{authors}} {{year}} {{download_pdf}} {{open_after_import}}.",
+    settingsWorkbenchIngestionTimeoutTitle: "Ingestion timeout (ms)",
+    settingsWorkbenchIngestionHint: "Recommended CLI contract: stdout JSON with note_path, attachment_paths, warnings, and metadata. This is the primary capture path for Codex or Claude Code shell workflows.",
     settingsSemanticEnabled: "Enable semantic bridge",
-    settingsSemanticEnabledDescription: "Keep disabled if you only use native links and companion plugins. Enable when you have an external research search CLI.",
+    settingsSemanticEnabledDescription: "Keep disabled unless you have an external retrieval CLI. Capture and import are handled separately by the ingestion CLI.",
     settingsSemanticCommand: "Semantic command",
     settingsSemanticCommandDescription: "Desktop-only shell command. Supported placeholders: {{query}} {{vault}} {{file}} {{selection}}. Prefer returning citekey / author / year / page / source_type / evidence_kind.",
     settingsSemanticTimeout: "Semantic timeout (ms)",
@@ -353,28 +424,28 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsResearchGuideTitle: "Research workflow guide",
     settingsResearchGuideDescription: "This mode is designed for literature notes, evidence gathering, synthesis, and drafting. Keep exact references, typed relations, and controlled tags aligned.",
     settingsResearchLayoutTitle: "Vault layout",
-    settingsResearchLayoutDescription: "Keep the workflow within a shallow 3-level structure so Zotero imports, templates, and attachments stay predictable across plugins and CLI tools.",
+    settingsResearchLayoutDescription: "Keep the workflow within a shallow 3-level structure so CLI-created literature notes, optional Zotero exports, and attachments stay predictable across tools.",
     settingsResearchPathLiterature: "Literature notes",
     settingsResearchPathTemplates: "Template",
     settingsResearchPathAttachments: "Annotation assets",
     settingsResearchWorkflowTitle: "Working sequence",
     settingsResearchWorkflowDescription: "A practical loop for capture, page-aware reading, argument linking, and drafting.",
     settingsResearchWorkflowStep1Title: "Import source notes",
-    settingsResearchWorkflowStep1Body: "Use Zotero Integration to create one structured literature note per citekey.",
+    settingsResearchWorkflowStep1Body: "Use the ingestion CLI to create one structured literature note per DOI, arXiv ID, or PDF.",
     settingsResearchWorkflowStep2Title: "Quote with page context",
     settingsResearchWorkflowStep2Body: "Use PDF++ copy actions to move exact page evidence into literature notes or draft notes.",
     settingsResearchWorkflowStep3Title: "Link claims and tags",
     settingsResearchWorkflowStep3Body: "Use typed relations and controlled bilingual tags to connect source notes, evidence, and arguments.",
     settingsResearchWorkflowStep4Title: "Retrieve while drafting",
     settingsResearchWorkflowStep4Body: "Use Smart Connections for local semantic recall, and enable the external semantic bridge only when you have a research CLI ready.",
-    settingsResearchGuideStep1: "Use Zotero Integration or PDF++ to capture source material and page-level annotations.",
+    settingsResearchGuideStep1: "Use the ingestion CLI or PDF++ to capture source metadata, PDFs, and page-level annotations.",
     settingsResearchGuideStep2: "Use typed relations like supports / contradicts / extends to connect notes and claims.",
     settingsResearchGuideStep3: "Maintain controlled topic, method, dataset, status, and writing-stage tags to keep recommendation quality high.",
     settingsCompanionPluginsTitle: "Recommended companion plugins",
     settingsCompanionActionLabel: "What to click",
-    settingsCompanionZoteroDesc: "Bring in citekeys, literature-note metadata, and source annotations.",
-    settingsCompanionZoteroSetup: "Configured to write notes into {literaturePath}, use template {templatePath}, and save exported images under {attachmentsPath}.",
-    settingsCompanionZoteroAction: "Command palette -> Zotero Integration: Import notes",
+    settingsCompanionZoteroDesc: "Optional adapter for importing an existing Zotero library, citekeys, and annotations.",
+    settingsCompanionZoteroSetup: "Optional. If you keep Zotero in the stack, align it with {literaturePath}, {templatePath}, and {attachmentsPath}.",
+    settingsCompanionZoteroAction: "Optional: Command palette -> Zotero Integration: Import notes",
     settingsCompanionPdfDesc: "Work with PDF highlights, page jumps, and annotation-heavy reading workflows.",
     settingsCompanionPdfSetup: "Configured for page-aware quote and cite-callout copy commands, with bibliography hover kept active for citation-heavy reading.",
     settingsCompanionPdfAction: "Open a PDF -> select text -> choose a PDF++ copy format",
@@ -387,7 +458,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsSemanticResearchHint: "Recommended semantic result fields: citekey, author, year, page, source_type, evidence_kind, suggested_tags, suggested_relations.",
     settingsWorkbenchEyebrow: "Research workbench",
     settingsWorkbenchTitle: "Research workflow control center",
-    settingsWorkbenchDescription: "Inspect companion plugins, sync critical research settings, and launch the next reading or writing step from one place.",
+    settingsWorkbenchDescription: "Inspect companion tools, configure CLI-first capture, sync research-critical settings, and launch the next reading or writing step from one place.",
     settingsWorkbenchPreferencesTitle: "Workbench preferences",
     settingsWorkbenchPreferencesDescription: "Keep language and default mode in the detail drawer, not on the dashboard.",
     settingsWorkbenchStatReady: "Ready companions",
@@ -409,13 +480,15 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsWorkbenchQuickActionsTitle: "Workflow entry points",
     settingsWorkbenchQuickActionsDescription: "Group high-frequency actions by capture, recall, and organization so the workbench stays readable.",
     settingsWorkbenchActionGroupCaptureTitle: "Capture & import",
-    settingsWorkbenchActionGroupCaptureDescription: "Keep literature import and PDF reading tools together.",
+    settingsWorkbenchActionGroupCaptureDescription: "Keep the CLI capture flow, optional Zotero import, and PDF reading tools together.",
     settingsWorkbenchActionGroupRecallTitle: "Recall & retrieval",
     settingsWorkbenchActionGroupRecallDescription: "Open semantic views and current-note intelligence without leaving the workbench.",
     settingsWorkbenchActionGroupOrganizeTitle: "Tags & structure",
     settingsWorkbenchActionGroupOrganizeDescription: "Clean native tags and keep controlled suggestions aligned while drafting.",
-    settingsWorkbenchActionZoteroTitle: "Import Zotero notes",
-    settingsWorkbenchActionZoteroDescription: "Run the import command directly.",
+    settingsWorkbenchActionIngestionTitle: "Ingest DOI / arXiv / PDF",
+    settingsWorkbenchActionIngestionDescription: "Launch the CLI-first capture modal.",
+    settingsWorkbenchActionZoteroTitle: "Import from Zotero (optional)",
+    settingsWorkbenchActionZoteroDescription: "Use the Zotero adapter when you are importing from an existing Zotero library.",
     settingsWorkbenchActionSmartTitle: "Open Smart Connections",
     settingsWorkbenchActionSmartDescription: "Jump into local semantic recall.",
     settingsWorkbenchActionPanelTitle: "Open intelligence panel",
@@ -439,11 +512,11 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsWorkbenchApplyCompanion: "Apply preset",
     settingsWorkbenchOpenSettings: "Open settings",
     settingsWorkbenchConfigTitle: "Workflow configuration",
-    settingsWorkbenchConfigDescription: "Edit the research-critical defaults that control imports, local indexing, and the optional semantic bridge.",
+    settingsWorkbenchConfigDescription: "Edit the research-critical defaults that control CLI capture, optional adapters, local indexing, and the semantic bridge.",
     settingsWorkbenchPathsTitle: "Workspace paths",
-    settingsWorkbenchPathsDescription: "Keep note, template, and attachment paths stable so imports and citations remain predictable.",
+    settingsWorkbenchPathsDescription: "Keep note, template, and attachment paths stable so CLI imports, optional Zotero exports, and citations remain predictable.",
     settingsWorkbenchOpenImportedTitle: "Open imported note",
-    settingsWorkbenchOpenImportedDescription: "When enabled, Zotero imports should open the latest created note immediately.",
+    settingsWorkbenchOpenImportedDescription: "When enabled, newly created literature notes should open immediately after CLI capture or Zotero import.",
     settingsWorkbenchRecallTitle: "Semantic recall scope",
     settingsWorkbenchRecallDescription: "Define what Smart Connections should skip and how many results it should return.",
     settingsWorkbenchFolderExclusionsTitle: "Folder exclusions",
@@ -453,7 +526,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsWorkbenchResultsLimitTitle: "Semantic results limit",
     settingsWorkbenchSemanticTitle: "External semantic bridge",
     settingsWorkbenchSemanticDescription: "Keep this optional and enable it only when your research CLI returns structured citation fields.",
-    settingsWorkbenchConfigHint: "Edit here, then sync the preset or apply the matching companion preset.",
+    settingsWorkbenchConfigHint: "Edit here, then run the CLI capture flow or sync the matching companion preset.",
     settingsWorkbenchCurrentExclusions: "Current normalized exclusions: {value}",
     settingsWorkbenchAdvancedTitle: "Advanced taxonomy",
     settingsWorkbenchAdvancedDescription: "Keep the dashboard clean and expand these panels only when relation keys or JSON vocabularies need tuning.",
@@ -471,6 +544,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsWorkbenchBacklinksTitle: "Backlink highlighting",
     settingsWorkbenchLanguageTitle: "Index language",
     settingsWorkbenchExpectedPrefix: "Expected",
+    settingsWorkbenchRunIngestion: "Open capture modal",
     settingsWorkbenchRunZotero: "Run import",
     settingsWorkbenchRunSmart: "Open view",
     settingsWorkbenchRunSemantic: "Run search",
@@ -498,7 +572,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsWorkbenchMismatchSmartResults: "Smart Connections results limit is not aligned.",
     settingsWorkbenchMismatchSmartRender: "Smart Connections should keep markdown rendering enabled in results.",
     settingsWorkbenchMismatchSemanticCommand: "Semantic bridge is enabled but the command is empty.",
-    settingsWorkbenchPresetApplied: "Research preset synced to installed companion plugins.",
+    settingsWorkbenchPresetApplied: "Research preset synced to the installed default companions.",
     settingsWorkbenchCompanionApplied: "Applied the recommended configuration for {name}.",
     settingsWorkbenchPluginMissing: "That companion plugin is not installed in the current vault.",
     settingsWorkbenchSettingsUnavailable: "Obsidian settings could not be opened programmatically.",
@@ -509,7 +583,31 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     modalTagSuggestionsDescription: "Suggestions are ranked from aliases, research facets, existing vault tags, source paths, and recurring keywords.",
     modalRelationDescription: "Choose a typed relation to write into frontmatter.",
     modalManageTagsDescription: "Rename, merge, or delete native tags across the vault.",
+    modalIngestionDescription: "Send DOI, arXiv, or PDF input to your external ingestion CLI and create a literature note.",
     modalSemanticDescription: "Run your external semantic command against the current note context.",
+    ingestionSourceType: "Source type",
+    ingestionTypeDoi: "DOI",
+    ingestionTypeArxiv: "arXiv",
+    ingestionTypePdf: "PDF",
+    ingestionSourceValue: "Source",
+    ingestionMetadataHeading: "PDF metadata enrichment",
+    ingestionMetadataDoiPlaceholder: "Optional DOI for PDF enrichment",
+    ingestionMetadataArxivPlaceholder: "Optional arXiv ID for PDF enrichment",
+    ingestionDownloadPdf: "Copy PDF into attachments",
+    ingestionOverrideHeading: "Metadata overrides",
+    ingestionTitlePlaceholder: "Optional title override",
+    ingestionAuthorsPlaceholder: "Optional authors override",
+    ingestionYearPlaceholder: "Optional year override",
+    ingestionContextNote: "Current note context: {path}",
+    ingestionResultSummary: "Source type: {sourceType} · Attachments: {attachments}",
+    ingestionWarningsTitle: "Warnings",
+    ingestionOpen: "Open note",
+    ingestionInsert: "Insert link",
+    ingestionRun: "Run ingestion",
+    ingestionArxivPlaceholder: "2403.01234 or https://arxiv.org/abs/...",
+    ingestionPdfPlaceholder: "/path/to/file.pdf or https://example.com/file.pdf",
+    ingestionDoiPlaceholder: "10.1145/...",
+    ingestionStatusHint: "Use the CLI-first capture flow for DOI, arXiv, and PDF imports. Zotero remains optional.",
     tagSuggestionAlias: "Alias match",
     tagSuggestionFacet: "Research facet",
     tagSuggestionKnown: "Existing vault tag",
@@ -557,6 +655,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     addRelation: "为当前笔记添加关系",
     manageTags: "管理整个库的标签",
     suggestTags: "为当前笔记推荐标签",
+    ingestionCapture: "导入研究来源",
     semanticSearch: "通过外部命令进行语义检索",
     currentNote: "当前笔记",
     outgoingLinks: "出链",
@@ -569,7 +668,8 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     semanticBridge: "语义桥接",
     notConfigured: "未配置",
     configured: "已配置",
-    noActiveNote: "请先打开一个 Markdown 笔记。",
+    noActiveNote: "请先打开一个 Markdown 或 Excalidraw 笔记。",
+    noActiveEditor: "请先打开可编辑的 Markdown 笔记，或 Excalidraw 笔记的 Markdown 源文件，再插入链接或引用。",
     emptyList: "没有内容。",
     path: "路径",
     aliases: "别名",
@@ -589,6 +689,19 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     createdFrontmatterTag: "已把标签写入 frontmatter。",
     tagsUpdated: "标签已更新。",
     tagSuggestionsReady: "标签建议已生成。",
+    ingestionDesktopOnly: "研究来源导入仅支持桌面端。",
+    ingestionMissingCommand: "尚未配置导入命令。",
+    ingestionMissingSource: "请提供 DOI、arXiv 编号或 PDF 路径/URL。",
+    ingestionInvalidDoi: "DOI 输入无效。",
+    ingestionInvalidArxiv: "arXiv 输入无效。",
+    ingestionInvalidPdf: "PDF 路径或 URL 无效。",
+    ingestionSourceNotFound: "未能解析这个来源。",
+    ingestionInvalidResponse: "导入 CLI 返回了无效响应。",
+    ingestionLookupFailed: "{target} 查询失败（{status}）。",
+    ingestionPdfDownloadFailed: "PDF 下载失败（{status}）。",
+    ingestionFailed: "研究来源导入失败：{message}",
+    ingestionCreated: "已为 {title} 创建文献笔记。",
+    ingestionCreatedWithWarnings: "已为 {title} 创建文献笔记，但有 {count} 条警告。",
     semanticDesktopOnly: "语义桥接仅支持桌面端。",
     semanticMissingCommand: "尚未配置语义命令。",
     semanticFailed: "语义检索失败：{message}",
@@ -601,6 +714,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     promptRelationKey: "选择关系键",
     savedRelation: "已保存关系 {relation}。",
     insertedLink: "已插入指向 {title} 的链接。",
+    appendedToFile: "已追加到 {title}（文本已添加到 Markdown 区域）。",
     invalidAliasMap: "标签别名映射不是合法 JSON，已回退为空映射。",
     invalidFacetMap: "标签分面映射不是合法 JSON，已回退为空映射。",
     settingsWorkflowMode: "工作流模式",
@@ -615,8 +729,14 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsTagAliasMapDescription: "从规范标签到别名的 JSON 对象，用于中英文匹配，不会自动改写已有标签。",
     settingsTagFacetMap: "研究标签分面映射 JSON",
     settingsTagFacetMapDescription: "从分面名到规范标签及别名的 JSON 对象，用于优先识别 topic / method / dataset / writing-stage 等研究标签。",
+    settingsWorkbenchIngestionTitle: "外部导入 CLI",
+    settingsWorkbenchIngestionDescription: "配置把 DOI、arXiv 或 PDF 输入转成文献笔记的命令。",
+    settingsWorkbenchIngestionCommandTitle: "导入命令",
+    settingsWorkbenchIngestionCommandDescription: "仅桌面端 shell 命令。支持占位符：{{source_type}} {{source}} {{vault}} {{file}} {{selection}} {{literature}} {{attachments}} {{template}} {{metadata_doi}} {{metadata_arxiv}} {{title}} {{authors}} {{year}} {{download_pdf}} {{open_after_import}}。",
+    settingsWorkbenchIngestionTimeoutTitle: "导入超时（毫秒）",
+    settingsWorkbenchIngestionHint: "推荐 CLI 协议：stdout 返回包含 note_path、attachment_paths、warnings、metadata 的 JSON。这是 Codex 或 Claude Code shell 工作流的主采集路径。",
     settingsSemanticEnabled: "启用语义桥接",
-    settingsSemanticEnabledDescription: "如果你只使用原生链接和搭配插件，可以关闭。若有外部研究检索 CLI，再开启。",
+    settingsSemanticEnabledDescription: "只有在你有外部检索 CLI 时再开启。采集与导入由独立的 ingestion CLI 负责。",
     settingsSemanticCommand: "语义命令",
     settingsSemanticCommandDescription: "仅桌面端的 shell 命令。支持占位符：{{query}} {{vault}} {{file}} {{selection}}。建议返回 citekey / author / year / page / source_type / evidence_kind。",
     settingsSemanticTimeout: "语义超时（毫秒）",
@@ -625,28 +745,28 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsResearchGuideTitle: "研究工作流指南",
     settingsResearchGuideDescription: "该模式面向文献笔记、证据采集、综合整理与论文写作。尽量让精确引用、关系类型与受控标签保持一致。",
     settingsResearchLayoutTitle: "目录布局",
-    settingsResearchLayoutDescription: "保持 3 层以内的浅层结构，让 Zotero 导入、模板和批注附件路径在插件与 CLI 之间长期稳定。",
+    settingsResearchLayoutDescription: "保持 3 层以内的浅层结构，让 CLI 创建的文献笔记、可选的 Zotero 导出和附件路径长期稳定。",
     settingsResearchPathLiterature: "文献笔记",
     settingsResearchPathTemplates: "模板",
     settingsResearchPathAttachments: "批注附件",
     settingsResearchWorkflowTitle: "工作顺序",
     settingsResearchWorkflowDescription: "围绕采集、带页码阅读、论证连接和写作检索的一条实用闭环。",
     settingsResearchWorkflowStep1Title: "导入来源笔记",
-    settingsResearchWorkflowStep1Body: "用 Zotero Integration 以 citekey 为单位生成结构化文献笔记。",
+    settingsResearchWorkflowStep1Body: "用 ingestion CLI 按 DOI、arXiv 编号或 PDF 生成结构化文献笔记。",
     settingsResearchWorkflowStep2Title: "复制带页码证据",
     settingsResearchWorkflowStep2Body: "用 PDF++ 的复制动作把精确页码证据带入文献笔记或草稿笔记。",
     settingsResearchWorkflowStep3Title: "补关系与标签",
     settingsResearchWorkflowStep3Body: "用关系键和中英文受控标签连接来源、证据与论点。",
     settingsResearchWorkflowStep4Title: "写作时再检索",
     settingsResearchWorkflowStep4Body: "用 Smart Connections 做本地语义召回；只有在研究 CLI 准备好后再启用外部语义桥接。",
-    settingsResearchGuideStep1: "用 Zotero Integration 或 PDF++ 采集文献元数据、页码定位和批注内容。",
+    settingsResearchGuideStep1: "用 ingestion CLI 或 PDF++ 采集来源元数据、PDF 和页码定位内容。",
     settingsResearchGuideStep2: "用 supports / contradicts / extends 等关系连接文献、观点和证据。",
     settingsResearchGuideStep3: "维护 topic、method、dataset、status、writing-stage 等受控标签，能显著提升推荐质量。",
     settingsCompanionPluginsTitle: "推荐搭配插件",
     settingsCompanionActionLabel: "在 Obsidian 里点击",
-    settingsCompanionZoteroDesc: "导入 citekey、文献笔记元数据和来源批注。",
-    settingsCompanionZoteroSetup: "已配置为把笔记写入 {literaturePath}，使用模板 {templatePath}，并把导出的批注图片存到 {attachmentsPath}。",
-    settingsCompanionZoteroAction: "命令面板 -> Zotero Integration: Import notes",
+    settingsCompanionZoteroDesc: "可选适配器，用于导入现有 Zotero 文库、citekey 和批注。",
+    settingsCompanionZoteroSetup: "这是可选项。如果你继续保留 Zotero，请让它与 {literaturePath}、{templatePath} 和 {attachmentsPath} 对齐。",
+    settingsCompanionZoteroAction: "可选：命令面板 -> Zotero Integration: Import notes",
     settingsCompanionPdfDesc: "处理 PDF 高亮、页码跳转和重标注阅读流程。",
     settingsCompanionPdfSetup: "已配置为适合研究摘录的页码引用与 cite callout 复制动作，并保留引文悬停预览。",
     settingsCompanionPdfAction: "打开 PDF -> 选中文本 -> 选择 PDF++ 复制格式",
@@ -659,7 +779,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsSemanticResearchHint: "推荐语义结果字段：citekey、author、year、page、source_type、evidence_kind、suggested_tags、suggested_relations。",
     settingsWorkbenchEyebrow: "研究工作台",
     settingsWorkbenchTitle: "研究工作流控制中心",
-    settingsWorkbenchDescription: "在一个页面内查看 companion 状态、同步关键研究配置，并直接开始下一步导入、检索或整理。",
+    settingsWorkbenchDescription: "在一个页面内查看 companion 状态、配置 CLI-first 采集、同步关键研究设置，并直接开始下一步导入、检索或整理。",
     settingsWorkbenchPreferencesTitle: "工作台偏好",
     settingsWorkbenchPreferencesDescription: "把语言和默认模式收进右侧详情区，不再占首页空间。",
     settingsWorkbenchStatReady: "已就绪插件",
@@ -681,13 +801,15 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsWorkbenchQuickActionsTitle: "工作流入口",
     settingsWorkbenchQuickActionsDescription: "按采集、召回、整理分组展示高频动作，避免首页继续被长按钮挤满。",
     settingsWorkbenchActionGroupCaptureTitle: "采集与导入",
-    settingsWorkbenchActionGroupCaptureDescription: "把文献导入与 PDF 阅读工具放在一起。",
+    settingsWorkbenchActionGroupCaptureDescription: "把 CLI 采集流、可选的 Zotero 导入和 PDF 阅读工具放在一起。",
     settingsWorkbenchActionGroupRecallTitle: "检索与召回",
     settingsWorkbenchActionGroupRecallDescription: "集中打开语义检索、上下文侧栏和召回视图。",
     settingsWorkbenchActionGroupOrganizeTitle: "标签与结构",
     settingsWorkbenchActionGroupOrganizeDescription: "在整理笔记时同步维护原生标签和受控标签建议。",
-    settingsWorkbenchActionZoteroTitle: "导入 Zotero 笔记",
-    settingsWorkbenchActionZoteroDescription: "直接执行导入命令。",
+    settingsWorkbenchActionIngestionTitle: "导入 DOI / arXiv / PDF",
+    settingsWorkbenchActionIngestionDescription: "打开 CLI-first 采集模态框。",
+    settingsWorkbenchActionZoteroTitle: "从 Zotero 导入（可选）",
+    settingsWorkbenchActionZoteroDescription: "只有在你要导入现有 Zotero 文库时才使用这个适配器。",
     settingsWorkbenchActionSmartTitle: "打开 Smart Connections",
     settingsWorkbenchActionSmartDescription: "直接进入本地语义召回视图。",
     settingsWorkbenchActionPanelTitle: "打开智能侧栏",
@@ -711,11 +833,11 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsWorkbenchApplyCompanion: "应用预设",
     settingsWorkbenchOpenSettings: "打开设置",
     settingsWorkbenchConfigTitle: "工作流配置",
-    settingsWorkbenchConfigDescription: "这里维护导入、索引和外部语义桥接最关键的研究默认值。",
+    settingsWorkbenchConfigDescription: "这里维护 CLI 采集、可选适配器、本地索引和外部语义桥接最关键的研究默认值。",
     settingsWorkbenchPathsTitle: "研究路径",
-    settingsWorkbenchPathsDescription: "保持笔记、模板和附件路径稳定，导入和引用才会长期可预测。",
+    settingsWorkbenchPathsDescription: "保持笔记、模板和附件路径稳定，CLI 导入、可选 Zotero 导出和引用才会长期可预测。",
     settingsWorkbenchOpenImportedTitle: "导入后打开笔记",
-    settingsWorkbenchOpenImportedDescription: "开启后，Zotero 导入会自动打开最新生成的文献笔记。",
+    settingsWorkbenchOpenImportedDescription: "开启后，CLI 导入或 Zotero 导入后都会自动打开新生成的文献笔记。",
     settingsWorkbenchRecallTitle: "语义召回范围",
     settingsWorkbenchRecallDescription: "控制 Smart Connections 跳过哪些内容，以及单次返回多少结果。",
     settingsWorkbenchFolderExclusionsTitle: "排除文件夹",
@@ -725,7 +847,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsWorkbenchResultsLimitTitle: "语义结果上限",
     settingsWorkbenchSemanticTitle: "外部语义桥接",
     settingsWorkbenchSemanticDescription: "这是可选层。只有研究 CLI 能返回结构化引文字段时再开启。",
-    settingsWorkbenchConfigHint: "在这里修改后，同步总预设，或对单个 companion 应用对应预设。",
+    settingsWorkbenchConfigHint: "在这里修改后，可以直接运行 CLI 采集流，或对单个 companion 应用对应预设。",
     settingsWorkbenchCurrentExclusions: "当前标准化排除项：{value}",
     settingsWorkbenchAdvancedTitle: "高级词表",
     settingsWorkbenchAdvancedDescription: "默认保持首页清爽；只有在需要调整关系键或大段 JSON 词表时，再展开这些面板。",
@@ -743,6 +865,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsWorkbenchBacklinksTitle: "反链高亮",
     settingsWorkbenchLanguageTitle: "索引语言",
     settingsWorkbenchExpectedPrefix: "期望值",
+    settingsWorkbenchRunIngestion: "打开采集框",
     settingsWorkbenchRunZotero: "执行导入",
     settingsWorkbenchRunSmart: "打开视图",
     settingsWorkbenchRunSemantic: "执行检索",
@@ -770,7 +893,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsWorkbenchMismatchSmartResults: "Smart Connections 的结果上限未对齐。",
     settingsWorkbenchMismatchSmartRender: "Smart Connections 应保持结果中的 Markdown 渲染开启。",
     settingsWorkbenchMismatchSemanticCommand: "语义桥接已开启，但命令仍为空。",
-    settingsWorkbenchPresetApplied: "已将研究预设同步到已安装的 companion 插件。",
+    settingsWorkbenchPresetApplied: "已将研究预设同步到已安装的默认 companion。",
     settingsWorkbenchCompanionApplied: "已为 {name} 应用推荐配置。",
     settingsWorkbenchPluginMissing: "当前 vault 中没有安装这个 companion 插件。",
     settingsWorkbenchSettingsUnavailable: "无法通过程序方式打开 Obsidian 设置页。",
@@ -781,7 +904,31 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     modalTagSuggestionsDescription: "建议会优先参考别名、研究分面、现有 vault 标签、正文关键词与引用语境，尽量避免目录路径噪声。",
     modalRelationDescription: "选择要写入 frontmatter 的关系类型。",
     modalManageTagsDescription: "对整个库的原生标签进行重命名、合并或删除。",
+    modalIngestionDescription: "把 DOI、arXiv 或 PDF 输入发送到外部 ingestion CLI，并创建文献笔记。",
     modalSemanticDescription: "基于当前笔记上下文执行你的外部语义命令。",
+    ingestionSourceType: "来源类型",
+    ingestionTypeDoi: "DOI",
+    ingestionTypeArxiv: "arXiv",
+    ingestionTypePdf: "PDF",
+    ingestionSourceValue: "来源输入",
+    ingestionMetadataHeading: "PDF 元数据补全",
+    ingestionMetadataDoiPlaceholder: "可选：用于补全 PDF 的 DOI",
+    ingestionMetadataArxivPlaceholder: "可选：用于补全 PDF 的 arXiv 编号",
+    ingestionDownloadPdf: "复制 PDF 到附件目录",
+    ingestionOverrideHeading: "元数据覆盖",
+    ingestionTitlePlaceholder: "可选：覆盖标题",
+    ingestionAuthorsPlaceholder: "可选：覆盖作者，逗号分隔",
+    ingestionYearPlaceholder: "可选：覆盖年份",
+    ingestionContextNote: "当前笔记上下文：{path}",
+    ingestionResultSummary: "来源类型：{sourceType} · 附件数：{attachments}",
+    ingestionWarningsTitle: "警告",
+    ingestionOpen: "打开笔记",
+    ingestionInsert: "插入链接",
+    ingestionRun: "执行导入",
+    ingestionArxivPlaceholder: "2403.01234 或 https://arxiv.org/abs/...",
+    ingestionPdfPlaceholder: "/path/to/file.pdf 或 https://example.com/file.pdf",
+    ingestionDoiPlaceholder: "10.1145/...",
+    ingestionStatusHint: "优先使用 CLI-first 流程导入 DOI、arXiv 和 PDF。Zotero 现在是可选适配器。",
     tagSuggestionAlias: "别名命中",
     tagSuggestionFacet: "研究分面",
     tagSuggestionKnown: "已有标签",

@@ -5,6 +5,24 @@ export interface SemanticSearchContext {
   selection: string;
 }
 
+export interface IngestionCommandContext {
+  sourceType: string;
+  source: string;
+  vaultPath: string;
+  filePath: string;
+  selection: string;
+  literatureFolder: string;
+  attachmentsFolder: string;
+  templatePath: string;
+  metadataDoi: string;
+  metadataArxiv: string;
+  title: string;
+  authors: string;
+  year: string;
+  downloadPdf: string;
+  openAfterImport: string;
+}
+
 export type TagFacetMap = Map<string, Map<string, string[]>>;
 
 function normalizeStringArray(value: unknown): string[] {
@@ -90,10 +108,58 @@ export function shellEscape(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-export function buildSemanticCommand(template: string, context: SemanticSearchContext): string {
-  return template
-    .replaceAll("{{query}}", shellEscape(context.query))
-    .replaceAll("{{vault}}", shellEscape(context.vaultPath))
-    .replaceAll("{{file}}", shellEscape(context.filePath))
-    .replaceAll("{{selection}}", shellEscape(context.selection));
+export function buildShellCommand(template: string, replacements: Record<string, string>): string {
+  let command = template;
+  for (const [key, value] of Object.entries(replacements)) {
+    command = command.replaceAll(`{{${key}}}`, shellEscape(value));
+  }
+  return command;
 }
+
+export function buildSemanticCommand(template: string, context: SemanticSearchContext): string {
+  return buildShellCommand(template, {
+    query: context.query,
+    vault: context.vaultPath,
+    file: context.filePath,
+    selection: context.selection
+  });
+}
+
+export function buildIngestionCommand(template: string, context: IngestionCommandContext): string {
+  return buildShellCommand(template, {
+    source_type: context.sourceType,
+    source: context.source,
+    vault: context.vaultPath,
+    file: context.filePath,
+    selection: context.selection,
+    literature: context.literatureFolder,
+    attachments: context.attachmentsFolder,
+    template: context.templatePath,
+    metadata_doi: context.metadataDoi,
+    metadata_arxiv: context.metadataArxiv,
+    title: context.title,
+    authors: context.authors,
+    year: context.year,
+    download_pdf: context.downloadPdf,
+    open_after_import: context.openAfterImport
+  });
+}
+
+export const CssClasses = {
+  SECTION: "lti-section",
+  SECTION_BODY: "lti-section-body",
+  SECTION_HEADER: "lti-section-header",
+  SECTION_TOGGLE: "lti-section-toggle",
+  SECTION_CHEVRON: "lti-section-chevron",
+  SECTION_TITLE: "lti-section-toggle-title",
+  SECTION_COUNT: "lti-section-count",
+  SECTION_COLLAPSED: "is-collapsed",
+  SECTION_HIDDEN: "is-hidden",
+  TRUNCATE: "lti-truncate",
+  BREAK_WRAP: "lti-break-wrap",
+} as const;
+
+export const Layout = {
+  GAP: 10,
+  MARGIN: 12,
+} as const;

@@ -3122,6 +3122,7 @@ var TagManagerModal = class extends import_obsidian7.Modal {
   constructor(plugin) {
     super(plugin.app);
     this.search = "";
+    this.searchDebounceTimer = null;
     this.plugin = plugin;
   }
   onOpen() {
@@ -3139,7 +3140,13 @@ var TagManagerModal = class extends import_obsidian7.Modal {
     });
     input.addEventListener("input", () => {
       this.search = input.value;
-      this.render();
+      if (this.searchDebounceTimer !== null) {
+        window.clearTimeout(this.searchDebounceTimer);
+      }
+      this.searchDebounceTimer = window.setTimeout(() => {
+        this.render();
+        this.searchDebounceTimer = null;
+      }, 150);
     });
     input.focus();
     const list = contentEl.createDiv();
@@ -5958,9 +5965,6 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
           const toggle = this.contentEl.querySelector(`.lti-section-toggle[data-section-id="${options.focusSectionId}"]`);
           toggle?.focus({ preventScroll: true });
         }
-        if (previousScrollTop !== null) {
-          scrollContainer.scrollTop = previousScrollTop;
-        }
       });
     }
   }
@@ -6202,11 +6206,11 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
         onToggle();
       }
     });
-    if (!expanded) {
-      return null;
-    }
     const body = section.createDiv({ cls: "lti-section-body" });
     body.dataset.sectionId = id;
+    if (!expanded) {
+      body.addClass("is-collapsed");
+    }
     return body;
   }
   getSectionExpanded(id, defaultExpanded) {
@@ -6660,8 +6664,8 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
       this.captureSupportedFileContext(activeFile);
       if (activeLeaf.view instanceof import_obsidian11.MarkdownView) {
         this.captureEditorContext(activeLeaf);
+        return activeLeaf;
       }
-      return activeLeaf;
     }
     if (this.lastEditorLeaf) {
       return this.lastEditorLeaf;

@@ -1,6 +1,6 @@
 import { App, CachedMetadata, TFile } from "obsidian";
 
-import { getAllMarkdownFiles, getAliasesFromCache, getAllTagsForFile, resolveNoteTarget, stripFrontmatter } from "./notes";
+import { getAllSupportedNoteFiles, getAliasesFromCache, getAllTagsForFile, resolveNoteTarget, stripFrontmatter } from "./notes";
 import { extractLegacyLineReferences, extractNativeBlockReferences } from "./references";
 import { parseTagAliasMap, parseTagFacetMap } from "./shared";
 
@@ -432,7 +432,7 @@ export function getTagStats(app: App, aliasMapText: string): TagStat[] {
   })();
   const stats = new Map<string, TagStat>();
 
-  for (const file of getAllMarkdownFiles(app)) {
+  for (const file of getAllSupportedNoteFiles(app)) {
     const tags = getAllTagsForFile(app, file);
     for (const tag of tags) {
       const key = tag.toLowerCase();
@@ -478,7 +478,7 @@ async function updateTagInFile(app: App, file: TFile, oldTag: string, newTag: st
 
 export async function renameTagAcrossVault(app: App, oldTag: string, newTag: string): Promise<number> {
   let updated = 0;
-  for (const file of getAllMarkdownFiles(app)) {
+  for (const file of getAllSupportedNoteFiles(app)) {
     if (await updateTagInFile(app, file, oldTag, newTag)) {
       updated += 1;
     }
@@ -488,7 +488,7 @@ export async function renameTagAcrossVault(app: App, oldTag: string, newTag: str
 
 export async function deleteTagAcrossVault(app: App, tag: string): Promise<number> {
   let updated = 0;
-  for (const file of getAllMarkdownFiles(app)) {
+  for (const file of getAllSupportedNoteFiles(app)) {
     if (await updateTagInFile(app, file, tag, null)) {
       updated += 1;
     }

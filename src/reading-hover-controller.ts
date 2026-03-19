@@ -109,6 +109,7 @@ class LegacyReadingHoverController extends MarkdownRenderChild implements Readin
   private readonly hoverParent: HoverParent | null;
   private readonly getPreviewData: (options: ReadingReferencePreviewOptions) => Promise<ReferencePreviewData>;
   private popover: HoverPopover | null = null;
+  private fallbackEl: HTMLDivElement | null = null;
   private hideTimer: number | null = null;
   private previewToken = 0;
   private readonly win: Window;
@@ -155,18 +156,27 @@ class LegacyReadingHoverController extends MarkdownRenderChild implements Readin
       return;
     }
 
-    const popover = this.ensurePopover(anchor);
-    const hoverEl = popover.hoverEl;
-    hoverEl.classList.add("lti-reading-hover-popover");
-    hoverEl.classList.toggle("is-missing", data.missing === true);
-    hoverEl.replaceChildren(buildReadingHoverContent(anchor.ownerDocument, data));
-    debugLog(this.app, "reading.hover.show-commit", {
-      token,
-      target: options.target,
-      hoverElClass: hoverEl.className,
-      parentHoverPopoverMatches: this.hoverParent ? this.hoverParent.hoverPopover === popover : false,
-      snippetPreview: data.snippet.slice(0, 120)
-    });
+    if (this.hoverParent) {
+      const popover = this.ensurePopover(anchor);
+      const hoverEl = popover.hoverEl;
+      hoverEl.classList.add("lti-reading-hover-popover");
+      hoverEl.classList.toggle("is-missing", data.missing === true);
+      hoverEl.replaceChildren(buildReadingHoverContent(anchor.ownerDocument, data));
+      debugLog(this.app, "reading.hover.show-commit", {
+        token,
+        target: options.target,
+        hoverElClass: hoverEl.className,
+        parentHoverPopoverMatches: this.hoverParent.hoverPopover === popover,
+        snippetPreview: data.snippet.slice(0, 120)
+      });
+    } else {
+      this.showFallbackPopover(anchor, data);
+      debugLog(this.app, "reading.hover.show-fallback", {
+        token,
+        target: options.target,
+        snippetPreview: data.snippet.slice(0, 120)
+      });
+    }
   }
 
   cancelHide(): void {
@@ -197,26 +207,59 @@ class LegacyReadingHoverController extends MarkdownRenderChild implements Readin
   }
 
   private ensurePopover(anchor: HTMLElement): HoverPopover {
-    if (!this.hoverParent) {
-      debugLog(this.app, "reading.hover.ensure-popover-error", {
-        reason: "missing-hover-parent"
-      });
-      throw new Error("Missing MarkdownView hover parent for reading hover preview");
-    }
-
     debugLog(this.app, "reading.hover.ensure-popover", {
       hadExistingPopover: Boolean(this.popover),
-      parentExistingPopover: Boolean(this.hoverParent.hoverPopover),
-      hoverParentType: this.hoverParent.constructor?.name ?? "unknown",
+      parentExistingPopover: Boolean(this.hoverParent?.hoverPopover),
+      hoverParentType: this.hoverParent?.constructor?.name ?? "unknown",
       targetClass: anchor.className
     });
     this.destroyPopover();
 
-    const popover = new HoverPopover(this.hoverParent, anchor, 0);
+    const popover = new HoverPopover(this.hoverParent!, anchor, 0);
     popover.hoverEl.addEventListener("mouseenter", this.handlePopoverEnter);
     popover.hoverEl.addEventListener("mouseleave", this.handlePopoverLeave);
     this.popover = popover;
     return popover;
+  }
+
+  private showFallbackPopover(anchor: HTMLElement, data: ReferencePreviewData): void {
+    this.destroyFallbackPopover();
+    const doc = anchor.ownerDocument;
+    const el = doc.createElement("div");
+    el.className = "lti-reading-hover-popover lti-fallback-popover";
+    el.classList.toggle("is-missing", data.missing === true);
+    el.replaceChildren(buildReadingHoverContent(doc, data));
+    el.addEventListener("mouseenter", this.handlePopoverEnter);
+    el.addEventListener("mouseleave", this.handlePopoverLeave);
+    doc.body.appendChild(el);
+    this.fallbackEl = el;
+
+    const gap = 8;
+    const margin = 12;
+    const rect = anchor.getBoundingClientRect();
+    el.style.position = "fixed";
+    el.style.zIndex = "var(--layer-popover, 300)";
+
+    const elRect = el.getBoundingClientRect();
+    const left = Math.min(rect.left, doc.documentElement.clientWidth - elRect.width - margin);
+    const spaceBelow = doc.documentElement.clientHeight - rect.bottom - margin;
+    const top = spaceBelow >= elRect.height + gap
+      ? rect.bottom + gap
+      : rect.top - elRect.height - gap;
+
+    el.style.left = `${Math.max(margin, left)}px`;
+    el.style.top = `${Math.max(margin, top)}px`;
+    el.style.maxWidth = `min(28rem, calc(100vw - ${margin * 2}px))`;
+  }
+
+  private destroyFallbackPopover(): void {
+    if (!this.fallbackEl) {
+      return;
+    }
+    this.fallbackEl.removeEventListener("mouseenter", this.handlePopoverEnter);
+    this.fallbackEl.removeEventListener("mouseleave", this.handlePopoverLeave);
+    this.fallbackEl.remove();
+    this.fallbackEl = null;
   }
 
   private hide(): void {
@@ -224,6 +267,7 @@ class LegacyReadingHoverController extends MarkdownRenderChild implements Readin
       token: this.previewToken
     });
     this.destroyPopover();
+    this.destroyFallbackPopover();
   }
 
   private destroyPopover(): void {

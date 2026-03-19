@@ -68,6 +68,34 @@ function getOffsetLineRange(content: string, start: number, end: number): { star
 const FRONTMATTER_RE = /^\s*---\n[\s\S]*?\n---\n?/;
 const CJK_RE = /[\u3400-\u9fff]/;
 
+export function isSupportedNotePath(path: string): boolean {
+  const lower = path.trim().toLowerCase();
+  return lower.endsWith(".md") || lower.endsWith(".excalidraw");
+}
+
+export function isSupportedNoteFile(file: TFile | null | undefined): file is TFile {
+  return file instanceof TFile && isSupportedNotePath(file.path);
+}
+
+export function isExcalidrawFile(file: TFile): boolean {
+  const lower = file.path.toLowerCase();
+  return lower.endsWith(".excalidraw.md") || file.extension === "excalidraw";
+}
+
+export function appendTextToMarkdownSection(content: string, text: string, isExcalidraw: boolean): string {
+  if (isExcalidraw) {
+    const idx = content.indexOf("\n%%\n");
+    if (idx >= 0) {
+      const before = content.slice(0, idx);
+      const after = content.slice(idx);
+      const sep = before.endsWith("\n") ? "" : "\n";
+      return `${before}${sep}${text}\n${after}`;
+    }
+  }
+  const sep = content.endsWith("\n") ? "" : "\n";
+  return `${content}${sep}${text}\n`;
+}
+
 function readStringArray(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.map((item) => String(item).trim()).filter(Boolean);
@@ -121,20 +149,38 @@ export function getNoteExcerpt(content: string): string {
   return stripped.join(" ").slice(0, 180);
 }
 
+export function getAllSupportedNoteFiles(app: App): TFile[] {
+  const mdFiles = app.vault.getMarkdownFiles().filter((file) => isSupportedNoteFile(file));
+  const excalidrawFiles = app.vault.getFiles().filter(
+    (file) => file.extension === "excalidraw"
+  );
+  return [...mdFiles, ...excalidrawFiles];
+}
+
 export function getAllMarkdownFiles(app: App): TFile[] {
-  return app.vault.getMarkdownFiles();
+  return getAllSupportedNoteFiles(app);
+}
+
+export function getCurrentEditorView(app: App): MarkdownView | null {
+  const activeView = app.workspace.getActiveViewOfType(MarkdownView) ?? null;
+  return isSupportedNoteFile(activeView?.file ?? null) ? activeView : null;
 }
 
 export function getCurrentMarkdownView(app: App): MarkdownView | null {
-  return app.workspace.getActiveViewOfType(MarkdownView) ?? null;
+  return getCurrentEditorView(app);
+}
+
+export function getCurrentNoteFile(app: App): TFile | null {
+  const activeFile = app.workspace.getActiveFile();
+  return isSupportedNoteFile(activeFile) ? activeFile : null;
 }
 
 export function getCurrentMarkdownFile(app: App): TFile | null {
-  return getCurrentMarkdownView(app)?.file ?? null;
+  return getCurrentNoteFile(app);
 }
 
 export function getCurrentSelection(app: App): string {
-  return getCurrentMarkdownView(app)?.editor?.getSelection() ?? "";
+  return getCurrentEditorView(app)?.editor?.getSelection() ?? "";
 }
 
 export function getAliasesFromCache(cache?: CachedMetadata | null): string[] {
@@ -171,7 +217,7 @@ export function getResearchSourceMetadataFromFrontmatter(frontmatter?: Record<st
     citekey: readScalarString(frontmatter.citekey ?? frontmatter.citationKey ?? frontmatter.citation_key ?? frontmatter.cite_key),
     author,
     year: readScalarString(frontmatter.year ?? frontmatter.publication_year ?? frontmatter.date),
-    sourceType: readScalarString(frontmatter.source_type ?? frontmatter.sourceType ?? frontmatter.entry_type ?? frontmatter.itemType),
+    sourceType: readScalarString(frontmatter.entry_type ?? frontmatter.itemType ?? frontmatter.source_type ?? frontmatter.sourceType),
     locator: readScalarString(frontmatter.page ?? frontmatter.pages ?? frontmatter.locator),
     evidenceKind: readScalarString(frontmatter.evidence_kind ?? frontmatter.evidenceKind ?? frontmatter.note_kind)
   };
@@ -210,7 +256,7 @@ export function resolveNoteTarget(app: App, target: string, sourcePath?: string)
   }
 
   const lower = normalized.toLowerCase();
-  for (const file of getAllMarkdownFiles(app)) {
+  for (const file of getAllSupportedNoteFiles(app)) {
     if (file.path.toLowerCase() === lower || file.basename.toLowerCase() === lower || file.name.toLowerCase() === lower) {
       return file;
     }
@@ -266,7 +312,7 @@ export async function collectLinkCandidates(
   const currentRelationTargets = new Set(Object.values(currentRelations).flat().map((value) => value.toLowerCase()));
 
   const candidates = await Promise.all(
-    getAllMarkdownFiles(app)
+    getAllSupportedNoteFiles(app)
       .filter((file) => !currentFile || file.path !== currentFile.path)
       .map(async (file) => {
         const cache = app.metadataCache.getFileCache(file);
@@ -377,7 +423,7 @@ export async function getBacklinkFiles(app: App, file: TFile): Promise<TFile[]> 
     }
   }
 
-  for (const otherFile of getAllMarkdownFiles(app)) {
+  for (const otherFile of getAllSupportedNoteFiles(app)) {
     if (otherFile.path === file.path || seen.has(otherFile.path)) {
       continue;
     }
@@ -458,7 +504,7 @@ export async function getOutgoingExactReferences(app: App, file: TFile): Promise
 export async function getIncomingExactReferences(app: App, file: TFile): Promise<ExactReference[]> {
   const collected: Array<ExactReference & { order: number }> = [];
 
-  for (const otherFile of getAllMarkdownFiles(app)) {
+  for (const otherFile of getAllSupportedNoteFiles(app)) {
     if (otherFile.path === file.path) {
       continue;
     }
@@ -555,7 +601,7 @@ export async function findUnlinkedMentions(
   const results: MentionCandidate[] = [];
   const resolvedLinks = app.metadataCache.resolvedLinks;
 
-  for (const otherFile of getAllMarkdownFiles(app)) {
+  for (const otherFile of getAllSupportedNoteFiles(app)) {
     if (otherFile.path === file.path) {
       continue;
     }

@@ -112,6 +112,8 @@ export interface LinkTagIntelligenceSettings {
   relationKeys: string[];
   tagAliasMapText: string;
   tagFacetMapText: string;
+  ingestionCommand: string;
+  ingestionTimeoutMs: number;
   semanticBridgeEnabled: boolean;
   semanticCommand: string;
   semanticTimeoutMs: number;
@@ -145,6 +147,8 @@ export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSetting
       2
     ),
     tagFacetMapText: DEFAULT_TAG_FACET_MAP_TEXT,
+    ingestionCommand: "",
+    ingestionTimeoutMs: 60000,
     semanticBridgeEnabled: false,
     semanticCommand: "",
     semanticTimeoutMs: 30000,
@@ -202,58 +206,60 @@ const WORKBENCH_GUIDE: Record<UILanguage, WorkbenchGuideCopy> = {
   zh: {
     localeLabel: "中文",
     overviewTitle: "研究工作台总览",
-    overviewDescription: "首页同时给出中英文研究栈说明，便于核对 Zotero 桌面桥接、证据提取和语义召回的职责边界。",
-    lead: "这个首页是研究型 Obsidian 库的操作总览。Link & Tag Intelligence 负责连接来源、证据、论点、关系键和中英文受控标签，不替代 Zotero 桌面端、Better BibTeX、PDF 阅读器或外部语义检索。",
-    bridgeLabel: "Zotero 桌面桥接前置条件",
-    bridgeValue: "保持 Zotero 桌面端正在运行，并在 Zotero 中安装并启用 Better BibTeX for Zotero，保证 citekey 稳定且 Obsidian 导入链路可连接。",
+    overviewDescription: "首页同时给出中英文研究栈说明，便于核对 CLI-first 采集、证据提取和语义召回的职责边界。",
+    lead: "这个首页是研究型 Obsidian 库的操作总览。Link & Tag Intelligence 负责连接来源、证据、论点、关系键和中英文受控标签，不替代 PDF 阅读器、可选的 Zotero 适配器或外部语义检索。",
+    bridgeLabel: "CLI-first 采集基线",
+    bridgeValue: "优先配置一个 shell JSON ingestion CLI，用 DOI、arXiv 或 PDF 直接生成文献笔记；Zotero 只在你已有文库时作为可选适配器。",
     stackTitle: "推荐研究栈",
     stackItems: [
-      "Zotero 桌面端 + Better BibTeX：保持 Zotero 正在运行，并在 Zotero 中安装 Better BibTeX，保证 citekey 稳定、Obsidian 导入链路可连接。",
-      "Zotero Integration：把文献条目、元数据和批注导入到库内文献笔记。",
+      "Research ingestion CLI：用 DOI、arXiv 或 PDF 输入直接创建文献笔记，并通过 stdout JSON 回传结果。",
       "PDF++：把带页码的原文证据复制到文献笔记或写作草稿里。",
       "Link & Tag Intelligence：连接来源、证据、论点、关系键和中英文受控标签。",
-      "Smart Connections / 外部语义桥接：在写作或综述时补充召回，但不替代精确引用。"
+      "Smart Connections / 外部语义桥接：在写作或综述时补充召回，但不替代精确引用。",
+      "Zotero Integration + Better BibTeX：只在你需要导入现有 Zotero 文库时使用。"
     ],
     flowTitle: "建议工作流",
     flowItems: [
-      "先启动 Zotero 桌面端，并确认 Better BibTeX 已安装且能正常生成 citekey。",
-      "在 Obsidian 中运行 Zotero 导入，把文献笔记写入研究目录。",
+      "先配置 ingestion CLI，并确认它能处理 DOI、arXiv 或 PDF 输入。",
+      "在 Obsidian 中运行 CLI-first 导入，把文献笔记写入研究目录。",
       "打开 PDF，用 PDF++ 复制带页码的证据片段。",
       "回到本插件侧栏，补关系键、引用定位和中英文标签。",
-      "写作或综述时，再打开 Smart Connections 或外部语义检索补充召回。"
+      "写作或综述时，再打开 Smart Connections 或外部语义检索补充召回。",
+      "只有在需要导入旧 Zotero 文库时，再使用 Zotero 适配器。"
     ],
-    troubleshootTitle: "常见报错排查",
-    troubleshootBody: "出现“Cannot connect to Zotero”这类报错时，通常不是 Obsidian 页面布局问题，而是桌面桥接前置条件未满足：先确认 Zotero 正在运行，再确认 Zotero 中已经安装并启用了 Better BibTeX。两项都满足后，再回到工作流里执行导入。",
+    troubleshootTitle: "常见问题排查",
+    troubleshootBody: "如果 CLI 导入失败，优先检查导入命令、占位符、网络访问和 PDF 路径。只有在你启用了 Zotero 适配器时，Zotero 桌面端和 Better BibTeX 才是必查项。",
     workflowTitle: "工作流执行顺序",
-    workflowDescription: "先满足 Zotero 桌面桥接前置条件，再执行导入、摘录证据、补关系与标签，最后才进入语义召回。"
+    workflowDescription: "先执行 CLI 采集，再摘录证据、补关系与标签，最后才进入语义召回。"
   },
   en: {
     localeLabel: "English",
     overviewTitle: "Research Workbench Overview",
-    overviewDescription: "The home page now explains the stack in both Chinese and English so the Zotero desktop bridge, evidence capture, and semantic recall roles stay explicit.",
-    lead: "This home page is the operating overview for a research-oriented Obsidian vault. Link & Tag Intelligence connects sources, evidence, claims, typed relations, and bilingual controlled tags. It does not replace Zotero desktop, Better BibTeX, a PDF reader, or your external semantic retrieval stack.",
-    bridgeLabel: "Zotero desktop bridge prerequisite",
-    bridgeValue: "Keep Zotero desktop running and install Better BibTeX for Zotero inside Zotero so citekeys stay stable and the Obsidian import bridge can connect.",
+    overviewDescription: "The home page now explains the stack in both Chinese and English so the CLI-first capture, evidence extraction, and semantic recall roles stay explicit.",
+    lead: "This home page is the operating overview for a research-oriented Obsidian vault. Link & Tag Intelligence connects sources, evidence, claims, typed relations, and bilingual controlled tags. It does not replace a PDF reader, an optional Zotero adapter, or your external semantic retrieval stack.",
+    bridgeLabel: "CLI-first capture baseline",
+    bridgeValue: "Configure a shell JSON ingestion CLI first so DOI, arXiv, or PDF inputs can create literature notes directly. Zotero stays optional for existing libraries.",
     stackTitle: "Recommended research stack",
     stackItems: [
-      "Zotero desktop + Better BibTeX: keep Zotero running and install Better BibTeX inside Zotero so citekeys stay stable and the Obsidian import bridge can connect.",
-      "Zotero Integration: import literature items, metadata, and annotations into vault literature notes.",
+      "Research ingestion CLI: create literature notes directly from DOI, arXiv, or PDF input and return stdout JSON.",
       "PDF++: copy page-aware evidence into literature notes and draft notes.",
       "Link & Tag Intelligence: connect sources, evidence, claims, typed relations, and bilingual controlled tags.",
-      "Smart Connections / external semantic bridge: add broader recall while drafting or synthesizing, without replacing exact references."
+      "Smart Connections / external semantic bridge: add broader recall while drafting or synthesizing, without replacing exact references.",
+      "Zotero Integration + Better BibTeX: use only when you need to import an existing Zotero library."
     ],
     flowTitle: "Suggested flow",
     flowItems: [
-      "Start Zotero desktop first and confirm that Better BibTeX is installed and generating stable citekeys.",
-      "Run Zotero import inside Obsidian so literature notes land in the research folder.",
+      "Configure the ingestion CLI first and confirm that it can handle DOI, arXiv, or PDF inputs.",
+      "Run the CLI-first import inside Obsidian so literature notes land in the research folder.",
       "Open the source PDF and use PDF++ to copy page-aware evidence.",
       "Return to this plugin to add typed relations, reference context, and bilingual tags.",
-      "Only then use Smart Connections or the external semantic bridge for broader recall while drafting."
+      "Only then use Smart Connections or the external semantic bridge for broader recall while drafting.",
+      "Use the Zotero adapter only when you need to import an existing Zotero library."
     ],
     troubleshootTitle: "Troubleshooting",
-    troubleshootBody: "When you see errors such as “Cannot connect to Zotero”, this is usually not a layout issue inside Obsidian. It normally means the desktop bridge prerequisites are missing: first make sure Zotero is running, then make sure Better BibTeX is installed and enabled in Zotero. After both are in place, retry the import step.",
+    troubleshootBody: "If CLI ingestion fails, check the command, placeholders, network access, and PDF paths first. Zotero desktop and Better BibTeX are only required when you intentionally enable the optional Zotero adapter.",
     workflowTitle: "Workflow execution order",
-    workflowDescription: "Satisfy the Zotero desktop bridge prerequisites first, then import, capture evidence, add relations and tags, and only after that rely on semantic recall."
+    workflowDescription: "Run CLI capture first, then capture evidence, add relations and tags, and only after that rely on semantic recall."
   }
 };
 
@@ -290,6 +296,10 @@ export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagI
   normalized.workflowMode = normalized.workflowMode === "general" ? "general" : "researcher";
   normalized.tagAliasMapText = normalizeJsonText(normalized.tagAliasMapText, defaults.tagAliasMapText);
   normalized.tagFacetMapText = normalizeJsonText(normalized.tagFacetMapText, DEFAULT_TAG_FACET_MAP_TEXT);
+  normalized.ingestionCommand = typeof normalized.ingestionCommand === "string" ? normalized.ingestionCommand : "";
+  normalized.ingestionTimeoutMs = Number.isFinite(normalized.ingestionTimeoutMs) && normalized.ingestionTimeoutMs > 0
+    ? normalized.ingestionTimeoutMs
+    : defaults.ingestionTimeoutMs;
   normalized.semanticCommand = typeof normalized.semanticCommand === "string" ? normalized.semanticCommand : "";
   normalized.semanticTimeoutMs = Number.isFinite(normalized.semanticTimeoutMs) && normalized.semanticTimeoutMs > 0
     ? normalized.semanticTimeoutMs
@@ -430,6 +440,14 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     );
     paths.addClass("is-form");
     this.renderPathsDrawer(paths);
+
+    const ingestion = this.createSectionCard(
+      grid,
+      this.plugin.t("settingsWorkbenchIngestionTitle"),
+      this.plugin.t("settingsWorkbenchIngestionDescription")
+    );
+    ingestion.addClass("is-form");
+    this.renderIngestionDrawer(ingestion);
 
     const smart = this.createSectionCard(
       grid,
@@ -597,6 +615,11 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
       this.plugin.t("settingsWorkbenchActionGroupCaptureDescription"),
       [
         {
+          title: this.plugin.t("settingsWorkbenchActionIngestionTitle"),
+          description: this.plugin.t("settingsWorkbenchActionIngestionDescription"),
+          onClick: () => this.plugin.openResearchIngestion()
+        },
+        {
           title: this.plugin.t("settingsWorkbenchActionZoteroTitle"),
           description: this.plugin.t("settingsWorkbenchActionZoteroDescription"),
           onClick: () => {
@@ -687,6 +710,15 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     this.renderMetricRow(paths, this.plugin.t("settingsResearchPathTemplates"), this.compactPathLabel(this.plugin.settings.researchTemplatePath));
     this.renderMetricRow(paths, this.plugin.t("settingsResearchPathAttachments"), this.compactPathLabel(this.plugin.settings.researchAttachmentsFolder));
     this.attachModuleAction(paths, () => this.openPage("workflow"));
+
+    const ingestion = this.createModuleCard(
+      grid,
+      this.plugin.t("settingsWorkbenchIngestionTitle"),
+      this.plugin.t("settingsWorkbenchIngestionDescription")
+    );
+    this.renderMetricRow(ingestion, this.plugin.t("settingsWorkbenchIngestionCommandTitle"), this.plugin.settings.ingestionCommand.trim() ? this.plugin.t("configured") : this.plugin.t("notConfigured"));
+    this.renderMetricRow(ingestion, this.plugin.t("settingsWorkbenchIngestionTimeoutTitle"), String(this.plugin.settings.ingestionTimeoutMs));
+    this.attachModuleAction(ingestion, () => this.openPage("workflow"));
 
     const smart = this.createModuleCard(
       grid,
@@ -834,11 +866,50 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
       }
     );
     const actions = containerEl.createDiv({ cls: "lti-workbench-drawer-actions" });
+    this.createActionButton(actions, this.plugin.t("settingsWorkbenchRunIngestion"), () => {
+      this.plugin.openResearchIngestion();
+    });
     this.createAsyncButton(actions, this.plugin.t("settingsWorkbenchApplyCompanion"), async () => {
       await this.plugin.applyCompanionPreset("obsidian-zotero-desktop-connector");
     });
     this.createActionButton(actions, this.plugin.t("settingsWorkbenchRunZotero"), () => {
       void this.plugin.importZoteroNotes();
+    });
+  }
+
+  private renderIngestionDrawer(containerEl: HTMLElement): void {
+    this.createTextAreaField(
+      containerEl,
+      this.plugin.t("settingsWorkbenchIngestionCommandTitle"),
+      this.plugin.t("settingsWorkbenchIngestionCommandDescription"),
+      this.plugin.settings.ingestionCommand,
+      async (value) => {
+        this.plugin.settings.ingestionCommand = value;
+        await this.plugin.saveSettings();
+      },
+      6,
+      "node /path/to/lti-research.mjs ingest --source-type {{source_type}} --source {{source}} --vault {{vault}}"
+    );
+    this.createNumberField(
+      containerEl,
+      this.plugin.t("settingsWorkbenchIngestionTimeoutTitle"),
+      "",
+      String(this.plugin.settings.ingestionTimeoutMs),
+      async (value) => {
+        const parsed = Number.parseInt(value, 10);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          this.plugin.settings.ingestionTimeoutMs = parsed;
+          await this.plugin.saveSettings();
+        }
+      }
+    );
+    containerEl.createDiv({
+      text: this.plugin.t("settingsWorkbenchIngestionHint"),
+      cls: "setting-item-description lti-workbench-inline-note"
+    });
+    const actions = containerEl.createDiv({ cls: "lti-workbench-drawer-actions" });
+    this.createActionButton(actions, this.plugin.t("settingsWorkbenchRunIngestion"), () => {
+      this.plugin.openResearchIngestion();
     });
   }
 
@@ -1395,6 +1466,9 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
   }
 
   private getStatusTone(companion: CompanionPluginStatus): "ready" | "alert" | "missing" | "optional" {
+    if (companion.optional && !companion.installed) {
+      return "optional";
+    }
     if (!companion.installed && !companion.optional) {
       return "missing";
     }

@@ -1,168 +1,430 @@
 # Link & Tag Intelligence
 
-Native-first bilingual link and tag workflows with preview-driven references and semantic bridge hooks.
+Native-first bilingual linking, tagging, and research-note workflows for an Obsidian vault.
+
+The plugin is now designed around a CLI-first ingestion model:
+
+- the plugin handles display, triggering, preview, tags, and relations
+- an external shell JSON CLI handles DOI, arXiv, and PDF ingestion
+- Zotero remains optional for users who already maintain a Zotero library
 
 ## Features
 
 - Preview-driven link insertion
 - Block reference and line reference insertion
-- Sidebar for current note, outlinks, backlinks, exact references, relations, tags, unlinked mentions, and semantic bridge status
-- Research-oriented relation presets for literature review and drafting
-- Citation-aware exact reference cards that surface note metadata such as citekey, author, year, source type, locator, and evidence kind
-- Native tag management, bilingual tag suggestion, and research tag facet boosting
-- Optional desktop-only semantic bridge through an external CLI command
+- Sidebar for current note, outlinks, backlinks, exact references, relations, tags, unlinked mentions, ingestion status, and semantic bridge status
+- Typed research relations for literature review and drafting
+- Citation-aware metadata pills for citekey, author, year, source type, locator, and evidence kind
+- Native tag management and bilingual tag suggestions
+- External ingestion CLI for DOI, arXiv, and PDF capture with OpenAlex citation enrichment
+- Optional external semantic bridge for retrieval
 
-## Usage
+## Plugin Workflow
 
 After enabling the plugin, open the `Link & Tag Intelligence` sidebar from the ribbon or command palette.
 
 Main actions:
 
-- Insert link with preview
-- Insert block reference
-- Insert line reference
-- Quick link selected text
-- Add relation to current note
-- Manage vault tags
-- Suggest tags for current note
-- Semantic search via external command
+- `Ingest research source`
+- `Insert link with preview`
+- `Insert block reference`
+- `Insert line reference`
+- `Quick link selected text`
+- `Add relation to current note`
+- `Manage vault tags`
+- `Suggest tags for current note`
+- `Semantic search via external command`
 
-## Researcher workflow
+Recommended research flow:
 
-This plugin works best as the linking and synthesis layer in a research vault:
+1. Run the ingestion CLI from the plugin to create a literature note from a DOI, arXiv ID, or PDF.
+2. Open the source PDF and use `PDF++` for page-aware evidence capture.
+3. Use this plugin to add exact references, typed relations, and controlled tags.
+4. Use the semantic bridge only when you want retrieval from your own external search toolchain.
 
-1. Keep Zotero desktop running with Better BibTeX for Zotero installed, then capture bibliographic data and annotations with Zotero Integration or PDF++.
-2. Use exact references, typed relations, and controlled tags to connect source notes, evidence, and draft notes.
-3. Use the sidebar to inspect backlinks, exact references, relation neighborhoods, and faceted tags while drafting.
-4. Use the semantic bridge only when you want citation-aware retrieval from your own external toolchain.
+## Ingestion CLI
 
-Recommended frontmatter fields for literature notes:
+The repository ships a local CLI at [cli/lti-research.mjs](/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/cli/lti-research.mjs).
 
-```yaml
-citekey: smith2024coffee
-author: Smith
-year: 2024
-source_type: journal-article
-page: 18
-evidence_kind: quote
-tags:
-  - literature-review
-  - experiment
-  - draft
-```
+It supports five top-level commands plus a reference utility family:
 
-## Recommended companion plugins
+- `search`: query arXiv and return candidate papers
+- `resolve`: fetch metadata only
+- `ingest`: create a literature note and optional attachment copy
+- `paper`: build a topic note, analysis notes, matrix, map, outline, and draft
+- `inspect`: inspect a created note inside a vault
+- `ref inspect` / `ref locate` / `ref format`: inspect an exact line span, locate a line or paragraph from a snippet, and generate a line or block reference for agents
 
-`Link & Tag Intelligence` does not try to replace literature managers, PDF readers, or generic embedding search. The recommended stack is:
+When a source has a DOI, the CLI enriches it through OpenAlex. That applies to:
 
-- `Zotero Integration`
-  Use it for citekeys, literature-note metadata, and importing annotations from Zotero.
-- `Better BibTeX for Zotero`
-  Install it inside Zotero desktop so citekeys stay stable and the Obsidian-side Zotero import bridge can connect reliably.
-- `PDF++`
-  Use it for page-aware PDF reading, highlights, and annotation-heavy source review.
-- `Smart Connections`
-  Use it if you want embeddings-based recall across the vault without rebuilding semantic infrastructure here.
-- `External semantic bridge CLI`
-  Use it when you want fully controlled, research-aware retrieval with citation metadata in the returned results.
+- direct DOI ingestion
+- arXiv entries that expose a DOI
+- PDFs imported with `--metadata-doi`
 
-## Research stack preset
+OpenAlex-enriched fields include:
 
-The current research preset assumes a shallow vault layout so imports and evidence files stay stable:
+- `openalex_id`
+- `cited_by_count`
+- `referenced_works`
+- `related_works`
+- `concepts`
+- `counts_by_year`
+- `publication_date`
+- `source_display_name`
 
-- `Knowledge/Research/Literature`
-- `Knowledge/Research/Templates/zotero-literature-note.md`
-- `Knowledge/Research/Attachments`
-
-Recommended companion plugin preset:
-
-- `Zotero Integration`
-  Import notes into `Knowledge/Research/Literature`, use `Knowledge/Research/Templates/zotero-literature-note.md` as the export template, and export annotation images into `Knowledge/Research/Attachments`.
-- `Better BibTeX for Zotero`
-  Keep it installed and enabled inside Zotero desktop before running any Obsidian import workflow.
-- `PDF++`
-  Keep page-aware quote and cite-callout copy commands available so PDF evidence can move directly into literature notes and draft notes.
-- `Smart Connections`
-  Keep local embeddings enabled, but exclude `.obsidian`, `.smart-env`, `Archive/Imports`, `Excalidraw`, and `note_reader` so archive and system folders do not pollute the semantic index.
-- `Link & Tag Intelligence`
-  Stay in `Researcher` mode, keep typed relations for source-to-claim links, and only enable the semantic bridge after an external CLI command is ready.
-
-Recommended click path inside Obsidian:
-
-1. Start Zotero desktop and confirm `Better BibTeX for Zotero` is installed and enabled.
-2. Run `Zotero Integration: Import notes`.
-3. Open the imported literature note in `Knowledge/Research/Literature`.
-4. Open the source PDF and use a `PDF++` copy format for quote or cite-callout snippets.
-5. Open the `Link & Tag Intelligence` sidebar to add typed relations and review bilingual tag recommendations.
-6. Open `Smart Connections` when drafting and let local semantic recall surface related notes.
-
-Research workbench inside this plugin:
-
-1. Open `Settings -> Link & Tag Intelligence`.
-2. Use `Sync research preset` to write the recommended config into installed companion plugins.
-3. Use the `Workflow actions` section as the primary entry for Zotero import, Smart Connections, tag cleanup, and semantic search.
-4. Use the `Companion stack` cards to see drift, apply only one plugin preset, or open that plugin's native settings when deeper tuning is needed.
-5. Keep long JSON vocabularies under `Advanced taxonomy`, so the first screen remains an operational workbench instead of a documentation page.
-
-## Suggested setup order
-
-1. Set `Workflow mode` to `Researcher`.
-2. Keep the default research relation keys unless you already use a custom ontology.
-3. Fill in `Tag alias map JSON` for bilingual topic names and acronyms.
-4. Fill in `Research tag facet map JSON` so the recommender knows your topic / method / dataset / status vocabulary.
-5. Add literature-note frontmatter like `citekey`, `author`, `year`, `source_type`, `page`, and `evidence_kind`.
-6. Only then enable the semantic bridge if you have an external command ready.
-
-## Settings
-
-- Plugin language
-- Workflow mode
-- Relation keys for frontmatter-based note relations
-- Tag alias map JSON for bilingual matching
-- Research tag facet map JSON for topic / method / dataset / status / writing-stage boosting
-- Semantic bridge enable toggle, command, and timeout
-- Recent link memory size
-
-## Build
+Run help:
 
 ```bash
-npm install --package-lock=false
-npm run build
+node cli/lti-research.mjs --help
 ```
 
-## Manual install
+### Source inputs
 
-Copy these files into:
+You can select a source in either of these forms:
 
-```text
-<vault>/.obsidian/plugins/link-tag-intelligence/
+```bash
+--source-type doi --source 10.1145/...
+--source-type arxiv --source 2403.01234
+--source-type pdf --source /path/to/paper.pdf
 ```
 
-- `manifest.json`
-- `main.js`
-- `styles.css`
+Or use convenience flags:
 
-## External semantic bridge
+```bash
+--doi 10.1145/...
+--arxiv 2403.01234
+--pdf /path/to/paper.pdf
+```
 
-The semantic bridge is opt-in, desktop-only, and disabled by default. It runs a user-configured shell command and expects stdout JSON.
+### Resolve examples
 
-Supported placeholders inside the command string:
+```bash
+node cli/lti-research.mjs resolve --doi 10.1145/123456.7890
+node cli/lti-research.mjs resolve --arxiv 2403.01234
+node cli/lti-research.mjs resolve --pdf ./papers/coffee.pdf --metadata-doi 10.1145/123456.7890
+```
+
+### Search examples
+
+```bash
+node cli/lti-research.mjs search \
+  --query "data governance digital transformation" \
+  --max-results 10
+```
+
+### Ingest examples
+
+```bash
+node cli/lti-research.mjs ingest \
+  --doi 10.1145/123456.7890 \
+  --vault /path/to/vault
+
+node cli/lti-research.mjs ingest \
+  --arxiv 2403.01234 \
+  --vault /path/to/vault \
+  --literature-folder Knowledge/Research/Literature \
+  --attachments-folder Knowledge/Research/Attachments
+
+node cli/lti-research.mjs ingest \
+  --pdf ./papers/coffee.pdf \
+  --metadata-doi 10.1145/123456.7890 \
+  --vault /path/to/vault \
+  --download-pdf true
+```
+
+### Paper workflow examples
+
+Build a paper workspace from explicit source specs:
+
+```bash
+node cli/lti-research.mjs paper \
+  --topic "数据治理和数智转型" \
+  --vault /path/to/vault \
+  --sources "arxiv:1706.03762,arxiv:2403.01234,pdf:/absolute/path/to/local-paper.pdf" \
+  --max-sources 3
+```
+
+Or let the CLI search arXiv first and auto-ingest the top results:
+
+```bash
+node cli/lti-research.mjs paper \
+  --topic "数据治理和数智转型" \
+  --query "data governance digital transformation" \
+  --vault /path/to/vault \
+  --max-sources 3
+```
+
+Generated notes:
+
+- topic note in `Knowledge/Research/Topics`
+- per-paper analysis notes in `Knowledge/Research/Analysis`
+- comparison matrix and literature map in `Knowledge/Research/Analysis`
+- outline and draft in `Knowledge/Research/Drafts`
+- literature notes and workflow outputs include OpenAlex citation statistics when DOI metadata is available
+
+### Inspect example
+
+```bash
+node cli/lti-research.mjs inspect \
+  --vault /path/to/vault \
+  --note-path Knowledge/Research/Literature/doi-10-1145-123456-7890.md
+```
+
+### Reference examples
+
+Inspect an exact evidence span before writing:
+
+```bash
+node cli/lti-research.mjs ref inspect \
+  --vault /path/to/vault \
+  --note-path Knowledge/Research/Literature/doi-10-1093-polsoc-puaf001.md \
+  --start-line 20 \
+  --end-line 24
+```
+
+Locate paragraph-level evidence candidates from a snippet before choosing one:
+
+```bash
+node cli/lti-research.mjs ref locate \
+  --vault /path/to/vault \
+  --note-path Knowledge/Research/Literature/doi-10-1093-polsoc-puaf001.md \
+  --query "the data governance program must balance control and reuse" \
+  --scope paragraph
+```
+
+Generate a legacy line reference for an agent to insert into an analysis or draft:
+
+```bash
+node cli/lti-research.mjs ref format \
+  --vault /path/to/vault \
+  --note-path Knowledge/Research/Literature/doi-10-1093-polsoc-puaf001.md \
+  --kind line \
+  --start-line 20 \
+  --end-line 24
+```
+
+Generate a reference directly from a unique snippet match instead of hand-counting lines:
+
+```bash
+node cli/lti-research.mjs ref format \
+  --vault /path/to/vault \
+  --note-path Knowledge/Research/Literature/doi-10-1093-polsoc-puaf001.md \
+  --kind line \
+  --query "the data governance program must balance control and reuse" \
+  --scope paragraph
+```
+
+Generate the plugin's legacy block-style line-range reference:
+
+```bash
+node cli/lti-research.mjs ref format \
+  --vault /path/to/vault \
+  --note-path Knowledge/Research/Literature/doi-10-1093-polsoc-puaf001.md \
+  --kind block \
+  --start-line 20 \
+  --end-line 24
+```
+
+## Plugin Command Configuration
+
+Set the plugin's `Ingestion command` setting to a shell command that calls the CLI and returns JSON on stdout.
+
+Example:
+
+```bash
+node /absolute/path/to/obsidian-link-tag-intelligence/cli/lti-research.mjs ingest \
+  --source-type {{source_type}} \
+  --source {{source}} \
+  --vault {{vault}} \
+  --literature-folder {{literature}} \
+  --attachments-folder {{attachments}} \
+  --template-path {{template}} \
+  --metadata-doi {{metadata_doi}} \
+  --metadata-arxiv {{metadata_arxiv}} \
+  --title {{title}} \
+  --authors {{authors}} \
+  --year {{year}} \
+  --download-pdf {{download_pdf}}
+```
+
+Supported ingestion placeholders:
+
+- `{{source_type}}`
+- `{{source}}`
+- `{{vault}}`
+- `{{file}}`
+- `{{selection}}`
+- `{{literature}}`
+- `{{attachments}}`
+- `{{template}}`
+- `{{metadata_doi}}`
+- `{{metadata_arxiv}}`
+- `{{title}}`
+- `{{authors}}`
+- `{{year}}`
+- `{{download_pdf}}`
+
+Each placeholder is shell-escaped before execution.
+
+## Agent Usage
+
+This design is intended to work well with Codex, Claude Code, or any other shell-capable coding agent.
+
+Examples:
+
+```bash
+node cli/lti-research.mjs resolve --doi 10.1145/123456.7890
+
+node cli/lti-research.mjs ingest \
+  --pdf ./papers/coffee.pdf \
+  --metadata-arxiv 2403.01234 \
+  --vault /path/to/vault
+
+node cli/lti-research.mjs paper \
+  --topic "数据治理和数智转型" \
+  --vault /path/to/vault \
+  --sources "arxiv:1706.03762,arxiv:2403.01234"
+```
+
+The contract is simple:
+
+- input through shell flags
+- stdout as JSON
+- validation errors returned as JSON with a non-zero exit code
+- unexpected runtime errors on stderr
+- non-zero exit code on failure
+
+No MCP layer is required for the ingestion path.
+
+## Output Shape
+
+Typical `ingest` output:
+
+```json
+{
+  "status": "created",
+  "source_type": "doi",
+  "source_id": "10.1145/123456.7890",
+  "title": "Coffee Extraction Dynamics",
+  "note_path": "Knowledge/Research/Literature/doi-10-1145-123456-7890.md",
+  "attachment_paths": [
+    "Knowledge/Research/Attachments/doi-10-1145-123456-7890.pdf"
+  ],
+  "warnings": [],
+  "metadata": {
+    "entry_type": "journal-article",
+    "citekey": "smith2024coffee",
+    "openalex_id": "https://openalex.org/W1234567890",
+    "cited_by_count": 12,
+    "referenced_works_count": 24,
+    "related_works_count": 10,
+    "concepts": ["Data governance", "Digital transformation"]
+  }
+}
+```
+
+Typical `inspect` output:
+
+```json
+{
+  "status": "ok",
+  "note_path": "Knowledge/Research/Literature/doi-10-1145-123456-7890.md",
+  "attachment_exists": true,
+  "frontmatter": {
+    "title": "Coffee Extraction Dynamics",
+    "source_type": "doi",
+    "entry_type": "journal-article",
+    "openalex_id": "https://openalex.org/W1234567890",
+    "cited_by_count": 12,
+    "concepts": ["Data governance", "Digital transformation"]
+  }
+}
+```
+
+Typical `paper` output:
+
+```json
+{
+  "status": "created",
+  "topic": "数据治理和数智转型",
+  "source_count": 3,
+  "topic_note_path": "Knowledge/Research/Topics/topic-abc123.md",
+  "matrix_note_path": "Knowledge/Research/Analysis/topic-abc123-comparison-matrix.md",
+  "map_note_path": "Knowledge/Research/Analysis/topic-abc123-literature-map.md",
+  "outline_note_path": "Knowledge/Research/Drafts/topic-abc123-outline.md",
+  "draft_note_path": "Knowledge/Research/Drafts/topic-abc123-draft.md"
+}
+```
+
+## Literature Note Frontmatter
+
+Generated notes include fields such as:
+
+```yaml
+title: "Coffee Extraction Dynamics"
+authors:
+  - "Jane Smith"
+  - "Alex Lee"
+author: "Jane Smith, Alex Lee"
+year: "2024"
+source_id: "10.1145/123456.7890"
+source_type: "doi"
+entry_type: "journal-article"
+citekey: "smith2024coffee"
+openalex_id: "https://openalex.org/W1234567890"
+cited_by_count: 12
+referenced_works: ["https://openalex.org/W1", "https://openalex.org/W2"]
+related_works: ["https://openalex.org/W3"]
+concepts: ["Data governance", "Digital transformation"]
+counts_by_year: [{"year": 2025, "cited_by_count": 3}, {"year": 2024, "cited_by_count": 9}]
+publication_date: "2024-01-15"
+source_display_name: "Journal of Test Cases"
+doi: "10.1145/123456.7890"
+arxiv_id: ""
+pdf: "Knowledge/Research/Attachments/doi-10-1145-123456-7890.pdf"
+pdf_url: "https://example.com/paper.pdf"
+source_url: "https://example.com/paper"
+tags:
+  - literature-note
+```
+
+`entry_type` is intended to represent the human-meaningful source kind such as `journal-article`, `preprint`, or `pdf-document`.
+
+## Companion Tools
+
+Recommended stack:
+
+- `PDF++`
+  Use it for page-aware reading and evidence extraction.
+- `Smart Connections`
+  Use it for local semantic recall if you want embeddings-based retrieval in the vault.
+- `External semantic bridge CLI`
+  Use it when you want citation-aware retrieval results.
+- `Zotero Integration + Better BibTeX`
+  Optional. Keep this only if you already have a Zotero-centered workflow.
+
+## Semantic Bridge
+
+The semantic bridge is separate from ingestion.
+
+- ingestion creates or inspects literature notes
+- semantic bridge retrieves candidate notes from an external tool
+
+Supported semantic placeholders:
 
 - `{{query}}`
 - `{{vault}}`
 - `{{file}}`
 - `{{selection}}`
 
-Each placeholder is shell-escaped before execution.
-
-Recommended JSON shape:
+Recommended semantic JSON shape:
 
 ```json
 {
   "results": [
     {
-      "path": "Folder/Note.md",
-      "title": "Note",
+      "path": "Knowledge/Research/Literature/doi-10-1145-123456-7890.md",
+      "title": "Coffee Extraction Dynamics",
       "score": 0.91,
       "excerpt": "Relevant excerpt",
       "reason": "Matched by semantic retrieval",
@@ -181,4 +443,22 @@ Recommended JSON shape:
 }
 ```
 
-Only `path` is required. The rest of the research fields are optional but recommended because the plugin can surface them in semantic result cards and exact reference workflows.
+## Build
+
+```bash
+npm install --package-lock=false
+npm run build
+npm test
+```
+
+## Manual Install
+
+Copy these files into:
+
+```text
+<vault>/.obsidian/plugins/link-tag-intelligence/
+```
+
+- `manifest.json`
+- `main.js`
+- `styles.css`

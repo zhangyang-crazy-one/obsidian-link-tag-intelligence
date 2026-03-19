@@ -23,6 +23,7 @@ import {
   suggestTagsForFile,
   type TagSuggestion
 } from "./tags";
+import type { ResearchIngestionRequest, ResearchSourceType } from "./ingestion";
 
 function renderModalHeader(parent: HTMLElement, title: string, description?: string): void {
   const header = parent.createDiv({ cls: "lti-modal-header" });
@@ -50,6 +51,17 @@ function runModalTask(task: () => Promise<void> | void): void {
   } catch (error) {
     onError(error);
   }
+}
+
+function inferResearchSourceType(value: string): ResearchSourceType {
+  const normalized = value.trim();
+  if (/arxiv\.org\/(abs|pdf)\//i.test(normalized) || /^\d{4}\.\d{4,5}(v\d+)?$/i.test(normalized) || /^[a-z-]+\/\d{7}$/i.test(normalized)) {
+    return "arxiv";
+  }
+  if (/\.pdf($|\?)/i.test(normalized) || /^(\/|\.{1,2}\/)/.test(normalized)) {
+    return "pdf";
+  }
+  return "doi";
 }
 
 export class TextPromptModal extends Modal {
@@ -166,7 +178,7 @@ export class LinkInsertModal extends SuggestModal<LinkCandidate> {
     super(plugin.app);
     this.plugin = plugin;
     this.mode = mode;
-    this.currentFile = plugin.getContextMarkdownFile();
+    this.currentFile = plugin.getContextNoteFile();
     this.selectedText = plugin.getContextSelection();
     this.onChoose = onChoose ?? ((candidate) => this.plugin.insertLinkIntoEditor(candidate.file, this.mode === "quick_link" ? this.selectedText : ""));
     this.setPlaceholder(options?.placeholder ?? this.plugin.t("insertLinkPlaceholder"));
@@ -336,6 +348,7 @@ export class ReferenceInsertModal extends Modal {
 export class TagManagerModal extends Modal {
   private readonly plugin: LinkTagIntelligencePlugin;
   private search = "";
+  private searchDebounceTimer: number | null = null;
 
   constructor(plugin: LinkTagIntelligencePlugin) {
     super(plugin.app);
@@ -359,7 +372,13 @@ export class TagManagerModal extends Modal {
     });
     input.addEventListener("input", () => {
       this.search = input.value;
-      this.render();
+      if (this.searchDebounceTimer !== null) {
+        window.clearTimeout(this.searchDebounceTimer);
+      }
+      this.searchDebounceTimer = window.setTimeout(() => {
+        this.render();
+        this.searchDebounceTimer = null;
+      }, 150);
     });
     input.focus();
 
@@ -607,6 +626,229 @@ export class TagSuggestionModal extends Modal {
   }
 }
 
+export class ResearchIngestionModal extends Modal {
+  private readonly plugin: LinkTagIntelligencePlugin;
+  private readonly activeFile: TFile | null;
+  private sourceType: ResearchSourceType;
+  private source = "";
+  private metadataDoi = "";
+  private metadataArxiv = "";
+  private titleOverride = "";
+  private authorsOverride = "";
+  private yearOverride = "";
+  private downloadPdf = true;
+  private result: Awaited<ReturnType<LinkTagIntelligencePlugin["runResearchIngestion"]>> | null = null;
+  private inlineError = "";
+
+  constructor(plugin: LinkTagIntelligencePlugin) {
+    super(plugin.app);
+    this.plugin = plugin;
+    this.activeFile = plugin.getContextNoteFile();
+    this.source = plugin.getContextSelection().trim();
+    this.sourceType = inferResearchSourceType(this.source);
+  }
+
+  onOpen(): void {
+    this.render();
+  }
+
+  private render(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    renderModalHeader(contentEl, this.plugin.t("ingestionCapture"), this.plugin.t("modalIngestionDescription"));
+
+    const form = contentEl.createDiv({ cls: "lti-form" });
+
+    const typeRow = form.createDiv({ cls: "lti-input-row" });
+    typeRow.createDiv({ text: this.plugin.t("ingestionSourceType"), cls: "suggestion-meta" });
+    const typeSelect = typeRow.createEl("select", { cls: "lti-workbench-select" });
+    for (const option of [
+      { value: "doi", label: this.plugin.t("ingestionTypeDoi") },
+      { value: "arxiv", label: this.plugin.t("ingestionTypeArxiv") },
+      { value: "pdf", label: this.plugin.t("ingestionTypePdf") }
+    ]) {
+      const el = typeSelect.createEl("option", { text: option.label });
+      el.value = option.value;
+      el.selected = option.value === this.sourceType;
+    }
+    typeSelect.addEventListener("change", () => {
+      this.sourceType = typeSelect.value as ResearchSourceType;
+      this.result = null;
+      this.inlineError = "";
+      this.render();
+    });
+
+    const sourceRow = form.createDiv({ cls: "lti-form" });
+    sourceRow.createDiv({ text: this.plugin.t("ingestionSourceValue"), cls: "suggestion-meta" });
+    const sourceInput = sourceRow.createEl("input", {
+      type: "text",
+      value: this.source,
+      placeholder: this.sourcePlaceholder()
+    });
+    sourceInput.addEventListener("input", () => {
+      this.source = sourceInput.value;
+      this.result = null;
+      this.inlineError = "";
+    });
+
+    if (this.sourceType === "pdf") {
+      const metadataGrid = form.createDiv({ cls: "lti-form" });
+      metadataGrid.createDiv({ text: this.plugin.t("ingestionMetadataHeading"), cls: "suggestion-meta" });
+
+      const metadataDoiInput = metadataGrid.createEl("input", {
+        type: "text",
+        value: this.metadataDoi,
+        placeholder: this.plugin.t("ingestionMetadataDoiPlaceholder")
+      });
+      metadataDoiInput.addEventListener("input", () => {
+        this.metadataDoi = metadataDoiInput.value;
+        this.result = null;
+        this.inlineError = "";
+      });
+
+      const metadataArxivInput = metadataGrid.createEl("input", {
+        type: "text",
+        value: this.metadataArxiv,
+        placeholder: this.plugin.t("ingestionMetadataArxivPlaceholder")
+      });
+      metadataArxivInput.addEventListener("input", () => {
+        this.metadataArxiv = metadataArxivInput.value;
+        this.result = null;
+        this.inlineError = "";
+      });
+
+      const toggleRow = metadataGrid.createDiv({ cls: "lti-input-row" });
+      toggleRow.createDiv({ text: this.plugin.t("ingestionDownloadPdf"), cls: "suggestion-meta" });
+      const downloadToggle = toggleRow.createEl("input", { type: "checkbox" });
+      downloadToggle.checked = this.downloadPdf;
+      downloadToggle.addEventListener("change", () => {
+        this.downloadPdf = downloadToggle.checked;
+        this.result = null;
+        this.inlineError = "";
+      });
+    }
+
+    const overrides = form.createDiv({ cls: "lti-form" });
+    overrides.createDiv({ text: this.plugin.t("ingestionOverrideHeading"), cls: "suggestion-meta" });
+
+    const titleInput = overrides.createEl("input", {
+      type: "text",
+      value: this.titleOverride,
+      placeholder: this.plugin.t("ingestionTitlePlaceholder")
+    });
+    titleInput.addEventListener("input", () => {
+      this.titleOverride = titleInput.value;
+      this.result = null;
+      this.inlineError = "";
+    });
+
+    const authorsInput = overrides.createEl("input", {
+      type: "text",
+      value: this.authorsOverride,
+      placeholder: this.plugin.t("ingestionAuthorsPlaceholder")
+    });
+    authorsInput.addEventListener("input", () => {
+      this.authorsOverride = authorsInput.value;
+      this.result = null;
+      this.inlineError = "";
+    });
+
+    const yearInput = overrides.createEl("input", {
+      type: "text",
+      value: this.yearOverride,
+      placeholder: this.plugin.t("ingestionYearPlaceholder")
+    });
+    yearInput.addEventListener("input", () => {
+      this.yearOverride = yearInput.value;
+      this.result = null;
+      this.inlineError = "";
+    });
+
+    if (this.activeFile) {
+      contentEl.createDiv({
+        text: this.plugin.t("ingestionContextNote", { path: this.activeFile.path }),
+        cls: "suggestion-meta"
+      });
+    }
+
+    if (this.inlineError) {
+      contentEl.createDiv({ text: this.inlineError, cls: "lti-empty" });
+    }
+
+    if (this.result) {
+      const resultCard = contentEl.createDiv({ cls: "lti-result-card" });
+      resultCard.createDiv({ text: this.result.title, cls: "suggestion-title" });
+      resultCard.createDiv({ text: this.result.notePath, cls: "suggestion-meta" });
+      resultCard.createDiv({
+        text: this.plugin.t("ingestionResultSummary", {
+          sourceType: this.result.sourceType || this.sourceType,
+          attachments: this.result.attachmentPaths.length
+        }),
+        cls: "suggestion-meta"
+      });
+
+      if (this.result.warnings.length > 0) {
+        resultCard.createDiv({ text: this.plugin.t("ingestionWarningsTitle"), cls: "suggestion-meta" });
+        for (const warning of this.result.warnings) {
+          resultCard.createDiv({ text: warning, cls: "suggestion-preview" });
+        }
+      }
+
+      const resultActions = resultCard.createDiv({ cls: "tag-manager-actions" });
+      const openButton = resultActions.createEl("button", { text: this.plugin.t("ingestionOpen"), cls: "lti-inline-button" });
+      openButton.addEventListener("click", () => this.plugin.openResolvedPath(this.result?.notePath ?? ""));
+      const insertButton = resultActions.createEl("button", { text: this.plugin.t("ingestionInsert"), cls: "lti-inline-button" });
+      insertButton.addEventListener("click", () => this.plugin.insertLinkFromPath(this.result?.notePath ?? ""));
+    }
+
+    const actions = contentEl.createDiv({ cls: "lti-modal-actions" });
+    new ButtonComponent(actions)
+      .setButtonText(this.plugin.t("ingestionRun"))
+      .setCta()
+      .onClick(() => {
+        void this.submit();
+      });
+
+    new ButtonComponent(actions)
+      .setButtonText(this.plugin.t("cancel"))
+      .onClick(() => this.close());
+  }
+
+  private sourcePlaceholder(): string {
+    if (this.sourceType === "arxiv") {
+      return this.plugin.t("ingestionArxivPlaceholder");
+    }
+    if (this.sourceType === "pdf") {
+      return this.plugin.t("ingestionPdfPlaceholder");
+    }
+    return this.plugin.t("ingestionDoiPlaceholder");
+  }
+
+  private async submit(): Promise<void> {
+    const request: ResearchIngestionRequest = {
+      sourceType: this.sourceType,
+      source: this.source.trim(),
+      metadataDoi: this.metadataDoi.trim(),
+      metadataArxiv: this.metadataArxiv.trim(),
+      title: this.titleOverride.trim(),
+      authors: this.authorsOverride.trim(),
+      year: this.yearOverride.trim(),
+      downloadPdf: this.downloadPdf
+    };
+
+    try {
+      this.result = await this.plugin.runResearchIngestion(request);
+      this.inlineError = "";
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.inlineError = this.plugin.ingestionErrorToMessage(message);
+      this.result = null;
+    }
+
+    this.render();
+  }
+}
+
 export class SemanticSearchModal extends Modal {
   private readonly plugin: LinkTagIntelligencePlugin;
   private readonly activeFile: TFile | null;
@@ -616,7 +858,7 @@ export class SemanticSearchModal extends Modal {
   constructor(plugin: LinkTagIntelligencePlugin) {
     super(plugin.app);
     this.plugin = plugin;
-    this.activeFile = plugin.getContextMarkdownFile();
+    this.activeFile = plugin.getContextNoteFile();
     this.initialQuery = plugin.getContextSelection();
   }
 
