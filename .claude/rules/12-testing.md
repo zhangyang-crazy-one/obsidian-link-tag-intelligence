@@ -1,3 +1,10 @@
+---
+paths:
+  - "**/*.test.ts"
+  - "**/*.spec.ts"
+  - "tests/**"
+---
+
 # 测试规范
 
 > 加载时机：SessionStart（会话开始时）

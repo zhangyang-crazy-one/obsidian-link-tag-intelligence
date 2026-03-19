@@ -1,3 +1,9 @@
+---
+paths:
+  - "**/*.md"
+  - "**/*.ts"
+---
+
 # Obsidian 插件开发规范
 
 > 加载时机：SessionStart（会话开始时）

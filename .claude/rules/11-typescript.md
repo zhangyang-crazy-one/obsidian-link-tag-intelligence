@@ -1,3 +1,8 @@
+---
+paths:
+  - "**/*.ts"
+---
+
 # TypeScript 代码规范
 
 > 加载时机：SessionStart（会话开始时）

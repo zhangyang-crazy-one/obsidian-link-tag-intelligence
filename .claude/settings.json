@@ -108,6 +108,33 @@
             "type": "command",
             "command": "npx prettier --write",
             "async": true
+          },
+          {
+            "type": "command",
+            "command": "npx tsc --noEmit",
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "tool == \"Bash\" && command.includes(\"npm test\")",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npm test -- --reporter=verbose",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "true",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/context-hint.sh",
+            "async": true
           }
         ]
       }
