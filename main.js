@@ -5884,12 +5884,14 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
     return this.plugin.t("viewTitle");
   }
   async onOpen() {
+    if (this.refreshTimer !== null) {
+      window.clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+    this.contentEl.empty();
     this.containerEl.addClass("link-tag-intelligence-view");
     await this.refresh();
     if (!this.plugin.getContextNoteFile()) {
-      if (this.refreshTimer !== null) {
-        window.clearTimeout(this.refreshTimer);
-      }
       this.refreshTimer = window.setTimeout(() => {
         this.refreshTimer = null;
         void this.refresh();

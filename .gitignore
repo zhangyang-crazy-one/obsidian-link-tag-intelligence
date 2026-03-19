@@ -2,3 +2,19 @@ node_modules/
 dist/
 .DS_Store
 *.log
+
+# Obsidian plugin dev
+.obsidian-plugin/
+dev/
+release/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+*.icloud
+.DS_Store
+Thumbs.db

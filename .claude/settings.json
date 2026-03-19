@@ -1,33 +1,9 @@
 {
   "language": "chinese",
   "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "tool == \"Edit\" || tool == \"Write\" || tool == \"MultiEdit\"",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/.claude/hooks/pre-tool-guard.sh"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/.claude/hooks/session-complete.sh"
-          },
-          {
-            "type": "command",
-            "command": "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/.claude/hooks/planning-save.sh"
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
+        "matcher": "true",
         "hooks": [
           {
             "type": "command",
@@ -35,11 +11,31 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "matcher": "true",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/.claude/hooks/session-complete.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "tool == \"Bash\" && command.startsWith(\"git commit\")",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/.claude/hooks/pre-commit-msg.sh"
+          }
+        ]
+      }
     ]
   },
-  "enabledPlugins": {
-    "context7@claude-plugins-official": true,
-    "claude-md-management@claude-plugins-official": true,
-    "skill-creator@claude-plugins-official": true
+  "env": {
+    "OBSIDIAN_PLUGIN_DEV": "1"
   }
 }
