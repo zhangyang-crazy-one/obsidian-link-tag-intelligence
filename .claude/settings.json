@@ -1,5 +1,37 @@
 {
-  "language": "chinese",
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(npm test)",
+      "Bash(npm run dev)",
+      "Bash(npm run build)",
+      "Bash(npm run lint)",
+      "Bash(tsc --noEmit)",
+      "Bash(git status)",
+      "Bash(git diff)",
+      "Edit(src/**)",
+      "Read(src/**)",
+      "Read(tests/**)",
+      "Read(manifest.json)",
+      "WebSearch",
+      "WebFetch(domain:zsviczian.github.io)",
+      "WebFetch(domain:docs.obsidian.md)",
+      "WebFetch(domain:github.com)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(rm -rf .git)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)",
+      "Read(./credentials.json)",
+      "Edit(.env)",
+      "Edit(secrets/**)"
+    ],
+    "additionalDirectories": [
+      "../test-vault/.obsidian/plugins/obsidian-link-tag-intelligence/"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -7,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/.claude/hooks/session-init.sh"
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-init.sh"
           }
         ]
       }
@@ -18,7 +50,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/.claude/hooks/session-complete.sh"
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-complete.sh"
+          },
+          {
+            "type": "command",
+            "command": "npx eslint src/ --ext .ts"
           }
         ]
       }
@@ -29,7 +65,49 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/.claude/hooks/pre-commit-msg.sh"
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-commit-msg.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "tool == \"Bash\" && (command.includes(\"npm run build\") || command.includes(\"npm run lint\"))",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/type-check.sh",
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/detect-console-log.sh",
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "tool == \"Bash\" && command.includes(\"npm\")",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npm audit --audit-level=moderate",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx prettier --write",
+            "async": true
           }
         ]
       }

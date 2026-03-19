@@ -123,7 +123,7 @@ class ReferenceWidget extends WidgetType {
     return false;
   }
 
-  toDOM(_view: EditorView): HTMLElement {
+  toDOM(): HTMLElement {
     const chip = document.createElement("span");
     chip.className = `cm-lti-ref-chip cm-lti-ref-chip-${this.reference.kind}`;
     chip.dataset.ltiRefKind = this.reference.kind;

@@ -1,0 +1,39 @@
+{
+  // 本地覆盖配置示例
+  // 复制此文件为 settings.local.json 并修改其中的值
+  // 此文件不应提交到版本控制
+
+  "permissions": {
+    "allow": [
+      // 开发命令
+      "Bash(npm test)",
+      "Bash(npm run build)",
+      "Bash(npm run dev)",
+      "Bash(npm run lint)",
+
+      // Obsidian 相关
+      "Read(/path/to/your/dev-vault/**)",
+      "Edit(/path/to/your/dev-vault/.obsidian/plugins/link-tag-intelligence/**)",
+
+      // 测试
+      "Bash(vitest)",
+      "Bash(tsc --noEmit)"
+    ],
+    "deny": [
+      // 安全相关
+      "Bash(rm -rf /)",
+      "Edit(.env)",
+      "Edit(secrets/**)"
+    ]
+  },
+
+  // MCP 服务器配置
+  "enabledMcpjsonServers": [
+    "chrome-devtools",
+    "playwright"
+  ],
+
+  // 模型配置（可选）
+  "model": "sonnet",
+  "effortLevel": "high"
+}

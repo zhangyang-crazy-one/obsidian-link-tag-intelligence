@@ -1,4 +1,5 @@
 {
+  "$schema": "https://json.schemastore.org/schemastore-vscode-mcp.json",
   "mcpServers": {
     "MiniMax": {
       "command": "uvx",
@@ -7,6 +8,17 @@
         "MINIMAX_API_KEY": "sk-cp-20ztK_oBN7-yN5bpTFfKzQ2SY7Ov8mhsy4Urg2yZArcPECfwI8_3TaSdtbIJXHCDcCQbdvwt_j6hsGTPzJHgOr_dFYCqWesrQ-d1Z5pGANr5w7S_PUqKPuw",
         "MINIMAX_API_HOST": "https://api.minimaxi.com"
       }
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      }
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "context7-mcp-server"]
     }
   }
 }
