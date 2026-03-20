@@ -55,6 +55,12 @@
           {
             "type": "command",
             "command": "npx eslint src/ --ext .ts"
+          },
+          {
+            "matcher": "tool == \"Bash\" && command.includes(\"git commit\")",
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/sync-notebooklm.sh",
+            "async": true
           }
         ]
       }
