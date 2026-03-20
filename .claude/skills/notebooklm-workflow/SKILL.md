@@ -16,6 +16,35 @@ trigger: notebooklm nlm-local research import notebook query 去重 清理来源
 - 用户直接提到：`NotebookLM`、`notebooklm`、`nlm-local`、`research import`、`notebook query`、`conversation_id`、`选择性导入`、`研究日志`、`决策笔记`。
 - **来源去重**：用户提到"删除重复"、"去重"、"清理来源"、"清理重复引用"时。
 
+## ⚠️ MCP 认证失败处理
+
+**症状**：`No authentication found` 或 MCP 工具调用失败
+
+**解决方案**：立即切换到 CLI，不重试 MCP
+
+```bash
+# 检查 MCP 认证状态
+nlm login --check
+
+# 如果 MCP 失败，使用 CLI 替代所有命令
+./tools/notebooklm-mcp-cli/nlm-local.sh notebook list
+./tools/notebooklm-mcp-cli/nlm-local.sh research start "<query>" --mode deep --notebook-id <id>
+./tools/notebooklm-mcp-cli/nlm-local.sh research status <id> --task-id <task_id> --max-wait 300 --compact
+```
+
+**CLI 与 MCP 命令对照表**：
+
+| 操作 | MCP 工具 | CLI 命令 |
+|------|----------|----------|
+| 列表 notebooks | `notebook_list` | `nlm-local.sh notebook list` |
+| 创建 notebook | `notebook_create` | `nlm-local.sh notebook create "<title>"` |
+| 获取 notebook | `notebook_get` | `nlm-local.sh notebook get <id>` |
+| Query | `notebook_query` | `nlm-local.sh notebook query <id> "<question>" --json` |
+| 研究启动 | `research_start` | `nlm-local.sh research start "<query>" --mode deep` |
+| 研究状态 | `research_status` | `nlm-local.sh research status <id> --task-id <tid>` |
+| 导入来源 | `research_import` | `nlm-local.sh research import <id> <task_id> --indices 1,2` |
+| 创建 note | `note_create` | `nlm-local.sh note create <notebook_id> "<content>" --title "<title>"` |
+
 ## ⚠️ 网络代理设置
 
 **关键规则**：NotebookLM 连接**必须关闭代理**，否则会出现 SSL 超时错误。
@@ -223,6 +252,43 @@ for i, s in enumerate(sources):
   - `note create` / `note update` 的 `content` 传入值默认就是 Markdown 正文，不要先压平成纯文本
 - 若 NotebookLM 服务波动导致 note 暂时写不进去，先把同一份 Markdown 落到 `planning/research/`，恢复后按原文补回
 - 如果没有 `note_id`，该轮默认视为没有完成知识沉积
+
+#### 7.1 Note 创建的 CLI 陷阱与解法
+
+**问题**：直接通过 Bash 传递 note 内容会导致命令替换失败，例如：
+
+```bash
+# ❌ 错误：内容中的特殊字符会被 Bash 解释
+./tools/notebooklm-mcp-cli/nlm-local.sh note create <id> "内容含 # 标题" --title "测试"
+```
+
+**解法**：先将内容写入临时文件，再读取文件传递给 CLI：
+
+```bash
+# ✅ 正确：内容写入文件，Bash 只传递文件路径
+cat > /tmp/note_content.md << 'EOF'
+# Note Title
+
+- notebook_id: xxx
+- task_id: yyy
+
+## Content
+这里是正文内容
+EOF
+
+./tools/notebooklm-mcp-cli/nlm-local.sh note create <notebook_id> "$(cat /tmp/note_content.md)" --title "<title>"
+```
+
+**适用场景**：
+- Note 内容较长（>100 字符）
+- 内容包含 Markdown 特殊字符（`#`, `*`, `` ` ``, `-`）
+- 内容包含换行符
+- 内容包含 URL（`http://`, `https://`）
+
+**工作流**：
+1. 先把 note 的 Markdown 内容写入 `planning/research/<topic>-notebooklm-YYYYMMDD.md`
+2. 同时用 `cat > /tmp/note_content.md << 'EOF'` 保存同一份内容
+3. 用 `$(cat /tmp/note_content.md)` 读取内容传给 CLI
 
 ### 8. 本地落盘
 

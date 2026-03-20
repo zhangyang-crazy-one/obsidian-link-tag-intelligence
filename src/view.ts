@@ -57,11 +57,21 @@ export class LinkTagIntelligenceView extends ItemView {
   }
 
   async refresh(options: { preserveScroll?: boolean; focusSectionId?: string } = {}): Promise<void> {
-    // Prevent concurrent refresh calls - similar to Excalidraw's guard pattern
-    if (this.refreshPromise !== null) {
-      return;
+    // Cancel any pending refresh timer
+    if (this.refreshTimer !== null) {
+      window.clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
     }
 
+    // If doRefresh is already running, wait for it to finish then trigger a fresh refresh
+    if (this.refreshPromise !== null) {
+      await this.refreshPromise;
+      // A refresh just completed - clear the now-stale timer and run a new refresh
+      // The previous refresh may have been based on outdated state
+    }
+
+    // Execute refresh immediately (no debounce) to ensure user actions like
+    // link insertion trigger a timely update
     this.refreshPromise = (async () => {
       try {
         await this.doRefresh(options);

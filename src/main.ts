@@ -1,4 +1,4 @@
-import { MarkdownView, Notice, Plugin, resolveSubpath, TFile, type HoverParent, WorkspaceLeaf } from "obsidian";
+import { FileView, MarkdownView, Notice, Plugin, resolveSubpath, TFile, type HoverParent, WorkspaceLeaf } from "obsidian";
 
 import { buildReferenceEditorExtension } from "./editor-extension";
 import { debugLog, resetDebugLog } from "./debug-log";
@@ -44,6 +44,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   private lastEditorLeaf: WorkspaceLeaf | null = null;
   private lastEditorFilePath: string | null = null;
   private lastSupportedFilePath: string | null = null;
+  private lastExcalidrawFilePath: string | null = null;
   private readonly referencePreview = new ReferencePreviewPopover();
   private referencePreviewToken = 0;
 
@@ -201,19 +202,69 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     }
 
     this.registerEvent(this.app.workspace.on("file-open", (file) => {
-      const changed = this.captureSupportedFileContext(file instanceof TFile ? file : null);
-      if (!changed && file instanceof TFile && isSupportedNoteFile(file)) {
+      debugLog(this.app, "file-open", {
+        file: file?.path ?? null,
+        isSupported: isSupportedNoteFile(file),
+        isExcalidraw: file instanceof TFile ? isExcalidrawFile(file) : false,
+        lastSupportedFilePath: this.lastSupportedFilePath,
+        lastExcalidrawFilePath: this.lastExcalidrawFilePath,
+      });
+      if (file instanceof TFile && isSupportedNoteFile(file)) {
+        this.captureSupportedFileContext(file);
         this.lastSupportedFilePath = file.path;
+        if (isExcalidrawFile(file)) {
+          this.lastExcalidrawFilePath = file.path;
+        }
       }
       this.refreshAllViews();
     }));
     this.registerEvent(this.app.metadataCache.on("changed", () => this.refreshAllViews()));
     this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => {
-      const editorChanged = this.captureEditorContext(leaf);
-      const fileChanged = this.captureSupportedFileContext(this.app.workspace.getActiveFile());
-      if (editorChanged || fileChanged) {
-        this.refreshAllViews();
-      }
+      const viewType = leaf?.view?.getViewType() ?? null;
+      const viewFile = leaf?.view instanceof FileView ? leaf.view.file?.path ?? null : null;
+      debugLog(this.app, "active-leaf-change:before-timeout", {
+        viewType,
+        viewFile,
+        lastSupportedFilePath: this.lastSupportedFilePath,
+        lastExcalidrawFilePath: this.lastExcalidrawFilePath,
+      });
+      setTimeout(() => {
+        const view = leaf?.view;
+        let leafFile: TFile | null = null;
+        let isExcalidrawViewReady = false;
+
+        if (view instanceof FileView) {
+          leafFile = view.file;
+          const isExcalidraw = view.getViewType() === "excalidraw";
+
+          if (isExcalidraw) {
+            if (leafFile instanceof TFile) {
+              this.lastExcalidrawFilePath = leafFile.path;
+              isExcalidrawViewReady = true;
+            } else if (this.lastExcalidrawFilePath) {
+              const lastFile = this.app.vault.getAbstractFileByPath(this.lastExcalidrawFilePath);
+              if (isSupportedNoteFile(lastFile as TFile | null)) {
+                leafFile = lastFile as TFile;
+                isExcalidrawViewReady = true;
+              }
+            }
+          }
+        }
+
+        debugLog(this.app, "active-leaf-change:after-timeout", {
+          viewType: view?.getViewType() ?? null,
+          leafFile: leafFile?.path ?? null,
+          isExcalidrawViewReady,
+          lastSupportedFilePath: this.lastSupportedFilePath,
+          lastExcalidrawFilePath: this.lastExcalidrawFilePath,
+        });
+
+        const fileChanged = this.captureSupportedFileContext(leafFile);
+        const editorChanged = this.captureEditorContext(leaf);
+        if (editorChanged || fileChanged || isExcalidrawViewReady) {
+          this.refreshAllViews();
+        }
+      }, 0);
     }));
     this.registerEvent(this.app.vault.on("rename", () => this.refreshAllViews()));
     this.registerMarkdownPostProcessor((el, ctx) => renderLegacyReferences(el, ctx, {
@@ -486,12 +537,44 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
   getContextNoteFile(): TFile | null {
     const activeFile = this.app.workspace.getActiveFile();
+    const activeLeaf = this.app.workspace.activeLeaf;
+    const leafViewFile = activeLeaf?.view instanceof FileView ? activeLeaf.view.file : null;
+
+    debugLog(this.app, "getContextNoteFile", {
+      getActiveFile_result: activeFile?.path ?? null,
+      leafViewFile: leafViewFile?.path ?? null,
+      isSupported_activeFile: isSupportedNoteFile(activeFile),
+      isExcalidraw_leafViewFile: leafViewFile instanceof TFile ? isExcalidrawFile(leafViewFile) : false,
+      lastSupportedFilePath: this.lastSupportedFilePath,
+      lastExcalidrawFilePath: this.lastExcalidrawFilePath,
+    });
+
     if (activeFile instanceof TFile) {
       if (isSupportedNoteFile(activeFile)) {
         this.captureSupportedFileContext(activeFile);
         return activeFile;
       }
-      return null;
+    }
+
+    // Fallback: try to get file from active leaf's view (handles ExcalidrawView)
+    if (activeLeaf?.view instanceof FileView) {
+      const leafFile = activeLeaf.view.file;
+      if (leafFile instanceof TFile && isSupportedNoteFile(leafFile)) {
+        this.captureSupportedFileContext(leafFile);
+        // Track excalidraw file path separately
+        if (isExcalidrawFile(leafFile)) {
+          this.lastExcalidrawFilePath = leafFile.path;
+        }
+        return leafFile;
+      }
+
+      // If ExcalidrawView but file not yet loaded, use lastExcalidrawFilePath as fallback
+      if (!leafFile && activeLeaf.view.getViewType() === "excalidraw" && this.lastExcalidrawFilePath) {
+        const lastFile = this.app.vault.getAbstractFileByPath(this.lastExcalidrawFilePath);
+        if (isSupportedNoteFile(lastFile as TFile | null)) {
+          return lastFile as TFile;
+        }
+      }
     }
 
     const view = this.getContextEditorView();
@@ -504,7 +587,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     }
 
     const file = this.app.vault.getAbstractFileByPath(this.lastSupportedFilePath);
-    return isSupportedNoteFile(file) ? file : null;
+    return isSupportedNoteFile(file as TFile | null) ? file as TFile : null;
   }
 
   getContextMarkdownFile(): TFile | null {
@@ -551,8 +634,14 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   }
 
   refreshAllViews(): void {
-    for (const leaf of this.app.workspace.getLeavesOfType(LINK_TAG_INTELLIGENCE_VIEW)) {
+    const leaves = this.app.workspace.getLeavesOfType(LINK_TAG_INTELLIGENCE_VIEW);
+    debugLog(this.app, "refreshAllViews", { leafCount: leaves.length });
+    for (const leaf of leaves) {
       const view = leaf.view;
+      debugLog(this.app, "refreshAllViews:viewCheck", {
+        viewType: view?.constructor.name,
+        isLTIView: view instanceof LinkTagIntelligenceView
+      });
       if (view instanceof LinkTagIntelligenceView) {
         void view.refresh();
       }
@@ -611,6 +700,60 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       ? `[[${file.basename}|${normalizedAlias}]]`
       : `[[${file.basename}]]`;
 
+    const targetFile = this.getContextNoteFile();
+
+    debugLog(this.app, "insertLinkIntoEditor", {
+      targetFile: targetFile?.path ?? null,
+      isExcalidrawTarget: targetFile ? isExcalidrawFile(targetFile) : false,
+    });
+
+    // 如果当前文件是 Excalidraw 文件，使用 Excalidraw API
+    if (targetFile && isExcalidrawFile(targetFile)) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const plugins = (this.app as any).plugins?.plugins as Record<string, { ea?: unknown }> | undefined;
+      const excalidrawPlugin = plugins?.["obsidian-excalidraw-plugin"];
+      debugLog(this.app, "insertLinkIntoEditor:excalidraw", {
+        hasPlugins: !!plugins,
+        hasExcalidrawPlugin: !!excalidrawPlugin,
+        hasEa: !!excalidrawPlugin?.ea,
+      });
+      if (excalidrawPlugin?.ea) {
+        // Find the ExcalidrawView that has the target file open
+        const excalidrawLeaves = this.app.workspace.getLeavesOfType("excalidraw");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const targetView = excalidrawLeaves.find((leaf: any) => leaf.view?.file?.path === targetFile.path);
+        debugLog(this.app, "insertLinkIntoEditor:excalidraw:view", {
+          excalidrawLeafCount: excalidrawLeaves.length,
+          foundTargetView: !!targetView,
+        });
+
+        const ea = excalidrawPlugin.ea as {
+          setView: (view: unknown, show?: boolean) => boolean;
+          clear: () => void;
+          addEmbeddable: (topX: number, topY: number, width: number, height: number, url?: string, file?: TFile, embeddableCustomData?: unknown) => string;
+          addElementsToView: (commitToHistory?: boolean, select?: boolean) => Promise<void>;
+        };
+
+        // If we found the target view, set it as the target (don't show, don't steal focus)
+        if (targetView) {
+          ea.setView(targetView.view, false);
+        }
+
+        // Clear workbench to avoid artifacts
+        ea.clear();
+        // 添加嵌入元素（在画布中心位置添加一个小元素作为链接）
+        // addEmbeddable(topX, topY, width, height, url, file, embeddableCustomData)
+        ea.addEmbeddable(100, 100, 200, 50, undefined, file, undefined);
+        // addElementsToView(commitToHistory, select)
+        await ea.addElementsToView(true, true);
+        this.pushRecentTarget(file.path);
+        new Notice(this.t("insertedLink", { title: file.basename }));
+        this.refreshAllViews();
+        return;
+      }
+    }
+
+    // 否则使用原有的文本追加方式
     if (await this.insertTextIntoFile(linkText)) {
       this.pushRecentTarget(file.path);
       new Notice(this.t("insertedLink", { title: file.basename }));
