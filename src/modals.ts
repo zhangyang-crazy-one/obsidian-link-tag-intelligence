@@ -659,7 +659,7 @@ export class ResearchIngestionModal extends Modal {
 
     const form = contentEl.createDiv({ cls: "lti-form" });
 
-    const typeRow = form.createDiv({ cls: "lti-input-row" });
+    const typeRow = form.createDiv({ cls: "lti-input-row lti-input-row-2col" });
     typeRow.createDiv({ text: this.plugin.t("ingestionSourceType"), cls: "suggestion-meta" });
     const typeSelect = typeRow.createEl("select", { cls: "lti-workbench-select" });
     for (const option of [

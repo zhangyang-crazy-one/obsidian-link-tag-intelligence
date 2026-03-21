@@ -1,4 +1,7 @@
-import { FileView, MarkdownView, Notice, Plugin, resolveSubpath, TFile, type HoverParent, WorkspaceLeaf } from "obsidian";
+import { App, FileView, MarkdownView, Notice, Plugin, resolveSubpath, TFile, type HoverParent, WorkspaceLeaf } from "obsidian";
+
+// Internal Obsidian app interface for accessing plugins (not part of public API)
+type InternalApp = App & { plugins?: { plugins?: Record<string, { ea?: unknown }> } };
 
 import { buildReferenceEditorExtension } from "./editor-extension";
 import { debugLog, resetDebugLog } from "./debug-log";
@@ -537,8 +540,8 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
   getContextNoteFile(): TFile | null {
     const activeFile = this.app.workspace.getActiveFile();
-    const activeLeaf = this.app.workspace.activeLeaf;
-    const leafViewFile = activeLeaf?.view instanceof FileView ? activeLeaf.view.file : null;
+    const activeView = this.app.workspace.getActiveViewOfType(FileView);
+    const leafViewFile = activeView?.file ?? null;
 
     debugLog(this.app, "getContextNoteFile", {
       getActiveFile_result: activeFile?.path ?? null,
@@ -556,9 +559,9 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       }
     }
 
-    // Fallback: try to get file from active leaf's view (handles ExcalidrawView)
-    if (activeLeaf?.view instanceof FileView) {
-      const leafFile = activeLeaf.view.file;
+    // Fallback: try to get file from active view (handles ExcalidrawView)
+    if (activeView) {
+      const leafFile = activeView.file;
       if (leafFile instanceof TFile && isSupportedNoteFile(leafFile)) {
         this.captureSupportedFileContext(leafFile);
         // Track excalidraw file path separately
@@ -569,7 +572,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       }
 
       // If ExcalidrawView but file not yet loaded, use lastExcalidrawFilePath as fallback
-      if (!leafFile && activeLeaf.view.getViewType() === "excalidraw" && this.lastExcalidrawFilePath) {
+      if (!leafFile && activeView.getViewType() === "excalidraw" && this.lastExcalidrawFilePath) {
         const lastFile = this.app.vault.getAbstractFileByPath(this.lastExcalidrawFilePath);
         if (isSupportedNoteFile(lastFile as TFile | null)) {
           return lastFile as TFile;
@@ -599,7 +602,8 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   }
 
   private getNavigationLeaf(): WorkspaceLeaf {
-    const activeLeaf = this.app.workspace.activeLeaf;
+    // Note: activeLeaf is deprecated, but getMostRecentLeaf provides equivalent functionality
+    const activeLeaf = this.app.workspace.getMostRecentLeaf();
     const activeFile = this.getActiveSupportedFile();
     if (activeLeaf && activeFile) {
       this.captureSupportedFileContext(activeFile);
@@ -709,8 +713,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
     // 如果当前文件是 Excalidraw 文件，使用 Excalidraw API
     if (targetFile && isExcalidrawFile(targetFile)) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const plugins = (this.app as any).plugins?.plugins as Record<string, { ea?: unknown }> | undefined;
+      const plugins = (this.app as InternalApp).plugins?.plugins;
       const excalidrawPlugin = plugins?.["obsidian-excalidraw-plugin"];
       debugLog(this.app, "insertLinkIntoEditor:excalidraw", {
         hasPlugins: !!plugins,

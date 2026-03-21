@@ -237,8 +237,9 @@ class LegacyReadingHoverController extends MarkdownRenderChild implements Readin
     const gap = 8;
     const margin = 12;
     const rect = anchor.getBoundingClientRect();
-    el.style.position = "fixed";
-    el.style.zIndex = "var(--layer-popover, 300)";
+
+    // max-width uses dynamic margin calculation, cannot be in CSS class
+    el.style.maxWidth = `min(28rem, calc(100vw - ${margin * 2}px))`;
 
     const elRect = el.getBoundingClientRect();
     const left = Math.min(rect.left, doc.documentElement.clientWidth - elRect.width - margin);
@@ -249,7 +250,6 @@ class LegacyReadingHoverController extends MarkdownRenderChild implements Readin
 
     el.style.left = `${Math.max(margin, left)}px`;
     el.style.top = `${Math.max(margin, top)}px`;
-    el.style.maxWidth = `min(28rem, calc(100vw - ${margin * 2}px))`;
   }
 
   private destroyFallbackPopover(): void {
