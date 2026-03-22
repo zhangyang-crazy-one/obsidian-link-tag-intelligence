@@ -1,5 +1,5 @@
 import { RangeSetBuilder } from "@codemirror/state";
-import { Decoration, type DecorationSet, EditorView, hoverTooltip, ViewPlugin, type ViewUpdate, WidgetType, type Tooltip } from "@codemirror/view";
+import { Decoration, type DecorationSet, EditorView, hoverTooltip, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
 import { editorInfoField, type MarkdownFileInfo } from "obsidian";
 
 import type LinkTagIntelligencePlugin from "./main";
