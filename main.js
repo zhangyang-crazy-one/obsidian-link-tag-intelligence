@@ -1886,7 +1886,7 @@ async function getOutgoingExactReferences(app, file) {
       order: reference.position.start
     });
   }
-  return collected.sort((left, right) => left.order - right.order).map(({ order: _order, ...reference }) => reference);
+  return collected.sort((left, right) => left.order - right.order).map(({ order, ...reference }) => reference);
 }
 async function getIncomingExactReferences(app, file) {
   const collected = [];
@@ -1944,7 +1944,7 @@ async function getIncomingExactReferences(app, file) {
   }
   return collected.sort(
     (left, right) => left.sourceFile.basename.localeCompare(right.sourceFile.basename, "zh-Hans-CN") || left.order - right.order
-  ).map(({ order: _order, ...reference }) => reference);
+  ).map(({ order, ...reference }) => reference);
 }
 function containsMention(text, term) {
   if (!term.trim()) {

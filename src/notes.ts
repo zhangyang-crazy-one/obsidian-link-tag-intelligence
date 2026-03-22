@@ -498,7 +498,8 @@ export async function getOutgoingExactReferences(app: App, file: TFile): Promise
 
   return collected
     .sort((left, right) => left.order - right.order)
-    .map(({ order: _order, ...reference }) => reference);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    .map(({ order, ...reference }) => reference);
 }
 
 export async function getIncomingExactReferences(app: App, file: TFile): Promise<ExactReference[]> {
@@ -566,7 +567,8 @@ export async function getIncomingExactReferences(app: App, file: TFile): Promise
     .sort((left, right) =>
       left.sourceFile.basename.localeCompare(right.sourceFile.basename, "zh-Hans-CN") || left.order - right.order
     )
-    .map(({ order: _order, ...reference }) => reference);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    .map(({ order, ...reference }) => reference);
 }
 
 function containsMention(text: string, term: string): number {
