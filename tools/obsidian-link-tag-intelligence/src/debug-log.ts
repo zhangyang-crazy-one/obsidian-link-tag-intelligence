@@ -1,6 +1,4 @@
 import { FileSystemAdapter, type App } from "obsidian";
-import { appendFileSync, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
-import path from "node:path";
 
 const MAX_LOG_BYTES = 512 * 1024;
 
@@ -9,6 +7,9 @@ function resolveLogPath(app: App): string | null {
   if (!(adapter instanceof FileSystemAdapter)) {
     return null;
   }
+
+  const fs = require("fs");
+  const path = require("path");
 
   return path.join(
     adapter.getBasePath(),
@@ -25,8 +26,11 @@ export function resetDebugLog(app: App): string | null {
     return null;
   }
 
-  mkdirSync(path.dirname(logPath), { recursive: true });
-  writeFileSync(logPath, "", "utf8");
+  const fs = require("fs");
+  const path = require("path");
+
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  fs.writeFileSync(logPath, "", "utf8");
   return logPath;
 }
 
@@ -36,10 +40,13 @@ export function debugLog(app: App, scope: string, details: Record<string, unknow
     return;
   }
 
+  const fs = require("fs");
+  const path = require("path");
+
   try {
-    mkdirSync(path.dirname(logPath), { recursive: true });
-    if (existsSync(logPath) && statSync(logPath).size > MAX_LOG_BYTES) {
-      writeFileSync(logPath, "", "utf8");
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    if (fs.existsSync(logPath) && fs.statSync(logPath).size > MAX_LOG_BYTES) {
+      fs.writeFileSync(logPath, "", "utf8");
     }
 
     const payload = {
@@ -48,7 +55,7 @@ export function debugLog(app: App, scope: string, details: Record<string, unknow
       ...details
     };
 
-    appendFileSync(logPath, `${JSON.stringify(payload)}\n`, "utf8");
+    fs.appendFileSync(logPath, `${JSON.stringify(payload)}\n`, "utf8");
   } catch (error) {
     console.error("[lti-debug-log] failed to write log", error);
   }

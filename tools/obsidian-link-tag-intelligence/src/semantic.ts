@@ -88,10 +88,10 @@ export async function runSemanticSearch(
     selection
   });
 
-  const { exec } = await import("node:child_process");
+  const { exec } = require("child_process");
 
   const stdout = await new Promise<string>((resolve, reject) => {
-    exec(command, { timeout: settings.semanticTimeoutMs, cwd: getVaultBasePath(app) || undefined }, (error, resultStdout, stderr) => {
+    exec(command, { timeout: settings.semanticTimeoutMs, cwd: getVaultBasePath(app) || undefined }, (error: Error | null, resultStdout: string, stderr: string) => {
       if (error) {
         reject(new Error(stderr?.trim() || error.message));
         return;
