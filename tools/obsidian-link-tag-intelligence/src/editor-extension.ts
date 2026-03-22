@@ -330,7 +330,7 @@ export function buildReferenceEditorExtension(plugin: LinkTagIntelligencePlugin)
     }
   );
 
-  const hover = hoverTooltip(async (view, pos): Promise<Tooltip | null> => {
+  const hover = hoverTooltip(async (view, pos) => {
     const reference = getLineReferenceAtPosition(view, pos);
     if (!reference) {
       return null;
