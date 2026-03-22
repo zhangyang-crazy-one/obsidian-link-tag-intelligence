@@ -494,6 +494,7 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
 
     const hero = containerEl.createDiv({ cls: "lti-workbench-hero" });
     const top = hero.createDiv({ cls: "lti-workbench-hero-top" });
+
     const copy = top.createDiv({ cls: "lti-workbench-hero-copy" });
     copy.createDiv({
       text: this.plugin.t("settingsWorkbenchEyebrow"),
@@ -528,7 +529,7 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
       this.plugin.t(this.plugin.settings.workflowMode === "researcher" ? "workflowModeResearcher" : "workflowModeGeneral")
     );
 
-    const stats = hero.createDiv({ cls: "lti-workbench-stat-strip" });
+    const stats = side.createDiv({ cls: "lti-workbench-stat-strip" });
     this.renderStat(stats, this.plugin.t("settingsWorkbenchStatReady"), `${readyCompanions}/${requiredCompanions}`);
     this.renderStat(
       stats,

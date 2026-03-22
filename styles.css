@@ -2557,10 +2557,16 @@
   padding-top: 0.2rem;
 }
 
-.lti-workbench-summary-list,
-.lti-workbench-plugin-list {
+.lti-workbench-summary-list {
   display: grid;
   gap: 0.58rem;
+}
+
+.lti-workbench-plugin-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.72rem;
+  align-items: start;
 }
 
 .lti-workbench-summary-row {
@@ -2591,10 +2597,13 @@
 }
 
 .lti-workbench-plugin-panel {
+  display: flex;
+  flex-direction: column;
   border: 1px solid color-mix(in srgb, var(--background-modifier-border) 86%, transparent);
   border-radius: 16px;
   background: var(--lti-settings-surface-raised);
   overflow: hidden;
+  height: 100%;
 }
 
 .lti-workbench-plugin-summary {
@@ -2959,8 +2968,8 @@
 
 .lti-settings-root .lti-workbench-hero-top {
   display: grid;
-  grid-template-columns: minmax(0, 1.42fr) minmax(17rem, 0.88fr);
-  gap: 0.9rem;
+  grid-template-columns: minmax(0, 1fr) minmax(20rem, 26rem);
+  gap: 1.2rem;
   align-items: start;
 }
 
@@ -3490,15 +3499,12 @@
 @container (max-width: 46rem) {
   .lti-settings-root .lti-workbench-page-nav,
   .lti-settings-root .lti-workbench-action-group-grid,
-  .lti-settings-root .lti-workbench-module-grid,
-  .lti-settings-root .lti-workbench-hero-meta-grid,
-  .lti-settings-root .lti-workbench-hero-action-grid,
-  .lti-settings-root .lti-workbench-stat-strip {
+  .lti-settings-root .lti-workbench-module-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .lti-settings-root .lti-workbench-hero-top {
-    grid-template-columns: minmax(0, 1fr);
+  .lti-settings-root .lti-workbench-stat-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .lti-settings-root .lti-workbench-summary-row,
@@ -3527,6 +3533,14 @@
   .lti-settings-root .lti-workbench-plugin-panel {
     padding-left: 0.84rem;
     padding-right: 0.84rem;
+  }
+
+  .lti-settings-root .lti-workbench-plugin-list,
+  .lti-settings-root .lti-workbench-hero-top,
+  .lti-settings-root .lti-workbench-hero-meta-grid,
+  .lti-settings-root .lti-workbench-hero-action-grid,
+  .lti-settings-root .lti-workbench-stat-strip {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

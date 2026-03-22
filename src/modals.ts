@@ -336,9 +336,9 @@ export class ReferenceInsertModal extends Modal {
 
   private submitSelection(): void {
     if (this.mode === "block_ref") {
-      this.plugin.insertBlockReferenceIntoEditor(this.file, this.startLine, this.endLine);
+      void this.plugin.insertBlockReferenceIntoEditor(this.file, this.startLine, this.endLine);
     } else {
-      this.plugin.insertLineReferenceIntoEditor(this.file, this.startLine, this.endLine);
+      void this.plugin.insertLineReferenceIntoEditor(this.file, this.startLine, this.endLine);
     }
 
     this.close();
@@ -796,9 +796,13 @@ export class ResearchIngestionModal extends Modal {
 
       const resultActions = resultCard.createDiv({ cls: "tag-manager-actions" });
       const openButton = resultActions.createEl("button", { text: this.plugin.t("ingestionOpen"), cls: "lti-inline-button" });
-      openButton.addEventListener("click", () => this.plugin.openResolvedPath(this.result?.notePath ?? ""));
+      openButton.addEventListener("click", () => {
+        void this.plugin.openResolvedPath(this.result?.notePath ?? "");
+      });
       const insertButton = resultActions.createEl("button", { text: this.plugin.t("ingestionInsert"), cls: "lti-inline-button" });
-      insertButton.addEventListener("click", () => this.plugin.insertLinkFromPath(this.result?.notePath ?? ""));
+      insertButton.addEventListener("click", () => {
+        void this.plugin.insertLinkFromPath(this.result?.notePath ?? "");
+      });
     }
 
     const actions = contentEl.createDiv({ cls: "lti-modal-actions" });
@@ -937,9 +941,13 @@ export class SemanticSearchModal extends Modal {
       }
       const actions = card.createDiv({ cls: "tag-manager-actions" });
       const openButton = actions.createEl("button", { text: this.plugin.t("semanticOpen"), cls: "lti-inline-button" });
-      openButton.addEventListener("click", () => this.plugin.openResolvedPath(result.path));
+      openButton.addEventListener("click", () => {
+        void this.plugin.openResolvedPath(result.path);
+      });
       const insertButton = actions.createEl("button", { text: this.plugin.t("semanticInsert"), cls: "lti-inline-button" });
-      insertButton.addEventListener("click", () => this.plugin.insertLinkFromPath(result.path));
+      insertButton.addEventListener("click", () => {
+        void this.plugin.insertLinkFromPath(result.path);
+      });
     }
   }
 }

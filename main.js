@@ -1805,7 +1805,7 @@ async function getOutgoingLinkFiles(app, file) {
       resolved.push(target);
     }
   }
-  return resolved;
+  return resolved.sort((left, right) => left.basename.localeCompare(right.basename, "zh-Hans-CN"));
 }
 async function getBacklinkFiles(app, file) {
   const resolvedLinks = app.metadataCache.resolvedLinks;
@@ -3111,9 +3111,9 @@ var ReferenceInsertModal = class extends import_obsidian7.Modal {
   }
   submitSelection() {
     if (this.mode === "block_ref") {
-      this.plugin.insertBlockReferenceIntoEditor(this.file, this.startLine, this.endLine);
+      void this.plugin.insertBlockReferenceIntoEditor(this.file, this.startLine, this.endLine);
     } else {
-      this.plugin.insertLineReferenceIntoEditor(this.file, this.startLine, this.endLine);
+      void this.plugin.insertLineReferenceIntoEditor(this.file, this.startLine, this.endLine);
     }
     this.close();
   }
@@ -3504,9 +3504,13 @@ var ResearchIngestionModal = class extends import_obsidian7.Modal {
       }
       const resultActions = resultCard.createDiv({ cls: "tag-manager-actions" });
       const openButton = resultActions.createEl("button", { text: this.plugin.t("ingestionOpen"), cls: "lti-inline-button" });
-      openButton.addEventListener("click", () => this.plugin.openResolvedPath(this.result?.notePath ?? ""));
+      openButton.addEventListener("click", () => {
+        void this.plugin.openResolvedPath(this.result?.notePath ?? "");
+      });
       const insertButton = resultActions.createEl("button", { text: this.plugin.t("ingestionInsert"), cls: "lti-inline-button" });
-      insertButton.addEventListener("click", () => this.plugin.insertLinkFromPath(this.result?.notePath ?? ""));
+      insertButton.addEventListener("click", () => {
+        void this.plugin.insertLinkFromPath(this.result?.notePath ?? "");
+      });
     }
     const actions = contentEl.createDiv({ cls: "lti-modal-actions" });
     new import_obsidian7.ButtonComponent(actions).setButtonText(this.plugin.t("ingestionRun")).setCta().onClick(() => {
@@ -3623,9 +3627,13 @@ var SemanticSearchModal = class extends import_obsidian7.Modal {
       }
       const actions = card.createDiv({ cls: "tag-manager-actions" });
       const openButton = actions.createEl("button", { text: this.plugin.t("semanticOpen"), cls: "lti-inline-button" });
-      openButton.addEventListener("click", () => this.plugin.openResolvedPath(result.path));
+      openButton.addEventListener("click", () => {
+        void this.plugin.openResolvedPath(result.path);
+      });
       const insertButton = actions.createEl("button", { text: this.plugin.t("semanticInsert"), cls: "lti-inline-button" });
-      insertButton.addEventListener("click", () => this.plugin.insertLinkFromPath(result.path));
+      insertButton.addEventListener("click", () => {
+        void this.plugin.insertLinkFromPath(result.path);
+      });
     }
   }
 };
@@ -4025,15 +4033,22 @@ async function readResearchWorkbenchState(app, profile) {
     mismatches: diffSmartConnectionsConfig(smartConfig, profile),
     actual: extractSmartActual(smartConfig)
   };
+  const companions = [
+    zoteroStatus,
+    pdfStatus,
+    smartStatus,
+    buildSemanticStatus(profile)
+  ];
+  companions.sort((left, right) => {
+    if (left.optional !== right.optional) {
+      return left.optional ? 1 : -1;
+    }
+    return left.id.localeCompare(right.id);
+  });
   return {
     profile,
     enabledPluginIds,
-    companions: [
-      zoteroStatus,
-      pdfStatus,
-      smartStatus,
-      buildSemanticStatus(profile)
-    ]
+    companions
   };
 }
 async function applyCompanionPresetToVault(app, id, profile) {
@@ -4949,7 +4964,7 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSetting
       this.plugin.t("settingsWorkflowMode"),
       this.plugin.t(this.plugin.settings.workflowMode === "researcher" ? "workflowModeResearcher" : "workflowModeGeneral")
     );
-    const stats = hero.createDiv({ cls: "lti-workbench-stat-strip" });
+    const stats = side.createDiv({ cls: "lti-workbench-stat-strip" });
     this.renderStat(stats, this.plugin.t("settingsWorkbenchStatReady"), `${readyCompanions}/${requiredCompanions}`);
     this.renderStat(
       stats,
@@ -6479,7 +6494,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
               isExcalidrawViewReady = true;
             } else if (this.lastExcalidrawFilePath) {
               const lastFile = this.app.vault.getAbstractFileByPath(this.lastExcalidrawFilePath);
-              if (isSupportedNoteFile(lastFile)) {
+              if (lastFile instanceof import_obsidian11.TFile && isSupportedNoteFile(lastFile)) {
                 leafFile = lastFile;
                 isExcalidrawViewReady = true;
               }
@@ -6515,7 +6530,6 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
     this.registerEditorExtension(buildReferenceEditorExtension(this));
   }
   onunload() {
-    this.app.workspace.detachLeavesOfType(LINK_TAG_INTELLIGENCE_VIEW);
     this.referencePreview.destroy();
   }
   async loadSettings() {
@@ -6751,7 +6765,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
       }
       if (!leafFile && activeView.getViewType() === "excalidraw" && this.lastExcalidrawFilePath) {
         const lastFile = this.app.vault.getAbstractFileByPath(this.lastExcalidrawFilePath);
-        if (isSupportedNoteFile(lastFile)) {
+        if (lastFile instanceof import_obsidian11.TFile && isSupportedNoteFile(lastFile)) {
           return lastFile;
         }
       }
@@ -6764,7 +6778,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
       return null;
     }
     const file = this.app.vault.getAbstractFileByPath(this.lastSupportedFilePath);
-    return isSupportedNoteFile(file) ? file : null;
+    return file instanceof import_obsidian11.TFile && isSupportedNoteFile(file) ? file : null;
   }
   getContextMarkdownFile() {
     return this.getContextNoteFile();
@@ -6877,7 +6891,10 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
       });
       if (excalidrawPlugin?.ea) {
         const excalidrawLeaves = this.app.workspace.getLeavesOfType("excalidraw");
-        const targetView = excalidrawLeaves.find((leaf) => leaf.view?.file?.path === targetFile.path);
+        const targetView = excalidrawLeaves.find((leaf) => {
+          const view = leaf.view;
+          return view.file?.path === targetFile.path;
+        });
         debugLog(this.app, "insertLinkIntoEditor:excalidraw:view", {
           excalidrawLeafCount: excalidrawLeaves.length,
           foundTargetView: !!targetView

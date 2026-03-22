@@ -246,8 +246,8 @@ export default class LinkTagIntelligencePlugin extends Plugin {
               isExcalidrawViewReady = true;
             } else if (this.lastExcalidrawFilePath) {
               const lastFile = this.app.vault.getAbstractFileByPath(this.lastExcalidrawFilePath);
-              if (isSupportedNoteFile(lastFile as TFile | null)) {
-                leafFile = lastFile as TFile;
+              if (lastFile instanceof TFile && isSupportedNoteFile(lastFile)) {
+                leafFile = lastFile;
                 isExcalidrawViewReady = true;
               }
             }
@@ -285,7 +285,6 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   }
 
   onunload(): void {
-    this.app.workspace.detachLeavesOfType(LINK_TAG_INTELLIGENCE_VIEW);
     this.referencePreview.destroy();
   }
 
@@ -574,8 +573,8 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       // If ExcalidrawView but file not yet loaded, use lastExcalidrawFilePath as fallback
       if (!leafFile && activeView.getViewType() === "excalidraw" && this.lastExcalidrawFilePath) {
         const lastFile = this.app.vault.getAbstractFileByPath(this.lastExcalidrawFilePath);
-        if (isSupportedNoteFile(lastFile as TFile | null)) {
-          return lastFile as TFile;
+        if (lastFile instanceof TFile && isSupportedNoteFile(lastFile)) {
+          return lastFile;
         }
       }
     }
@@ -590,7 +589,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     }
 
     const file = this.app.vault.getAbstractFileByPath(this.lastSupportedFilePath);
-    return isSupportedNoteFile(file as TFile | null) ? file as TFile : null;
+    return (file instanceof TFile && isSupportedNoteFile(file)) ? file : null;
   }
 
   getContextMarkdownFile(): TFile | null {
@@ -723,8 +722,10 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       if (excalidrawPlugin?.ea) {
         // Find the ExcalidrawView that has the target file open
         const excalidrawLeaves = this.app.workspace.getLeavesOfType("excalidraw");
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const targetView = excalidrawLeaves.find((leaf: any) => leaf.view?.file?.path === targetFile.path);
+        const targetView = excalidrawLeaves.find((leaf) => {
+          const view = leaf.view as { file?: { path?: string } };
+          return view.file?.path === targetFile.path;
+        });
         debugLog(this.app, "insertLinkIntoEditor:excalidraw:view", {
           excalidrawLeafCount: excalidrawLeaves.length,
           foundTargetView: !!targetView,
