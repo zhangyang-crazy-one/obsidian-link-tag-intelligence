@@ -60,7 +60,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "open-link-tag-intelligence",
+      id: "open-panel",
       name: this.t("openPanel"),
       callback: async () => {
         await this.openIntelligencePanel();
@@ -147,7 +147,8 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       defaultMod: false
     });
 
-    this.captureMarkdownContext(this.app.workspace.activeLeaf);
+    const activeLeaf = this.app.workspace.getLeaf(false);
+    this.captureMarkdownContext(activeLeaf);
     if (!this.lastMarkdownLeaf) {
       this.captureMarkdownContext(this.app.workspace.getLeavesOfType("markdown")[0] ?? null);
     }
@@ -181,7 +182,6 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
   onunload(): void {
     this.referencePreview.destroy();
-    this.app.workspace.detachLeavesOfType(LINK_TAG_INTELLIGENCE_VIEW);
   }
 
   async loadSettings(): Promise<void> {
@@ -303,7 +303,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   }
 
   getContextMarkdownView(): MarkdownView | null {
-    const activeLeaf = this.app.workspace.activeLeaf;
+    const activeLeaf = this.app.workspace.getLeaf(false);
     const activeView = activeLeaf?.view;
     if (activeView instanceof MarkdownView && activeView.file instanceof TFile) {
       this.captureMarkdownContext(activeLeaf);
@@ -349,7 +349,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   }
 
   private getNavigationLeaf(): WorkspaceLeaf {
-    const activeLeaf = this.app.workspace.activeLeaf;
+    const activeLeaf = this.app.workspace.getLeaf(false);
     if (activeLeaf?.view instanceof MarkdownView) {
       this.captureMarkdownContext(activeLeaf);
       return activeLeaf;
@@ -376,7 +376,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     }
     await leaf.setViewState({ type: LINK_TAG_INTELLIGENCE_VIEW, active: true });
     this.app.workspace.revealLeaf(leaf);
-    await this.refreshAllViews();
+    this.refreshAllViews();
   }
 
   refreshAllViews(): void {
@@ -396,7 +396,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     new LinkInsertModal(
       this,
       "wikilink",
-      async (candidate) => {
+      (candidate) => {
         new ReferenceInsertModal(this, candidate.file, "block_ref").open();
       },
       { placeholder: this.t("pickBlockRefTarget") }
@@ -407,7 +407,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     new LinkInsertModal(
       this,
       "wikilink",
-      async (candidate) => {
+      (candidate) => {
         new ReferenceInsertModal(this, candidate.file, "line_ref").open();
       },
       { placeholder: this.t("pickLineRefTarget") }
@@ -426,7 +426,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     return true;
   }
 
-  async insertLinkIntoEditor(file: TFile, alias = ""): Promise<void> {
+  insertLinkIntoEditor(file: TFile, alias = ""): void {
     const view = this.getContextMarkdownView();
     const editor = view?.editor;
     if (!editor) {
@@ -650,7 +650,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     void this.saveSettings();
   }
 
-  async openRelationFlow(): Promise<void> {
+  openRelationFlow(): void {
     const currentFile = this.getContextMarkdownFile();
     if (!(currentFile instanceof TFile)) {
       return;
