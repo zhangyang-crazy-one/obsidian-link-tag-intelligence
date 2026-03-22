@@ -3649,3 +3649,332 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ============================================
+   Phase 2: Enhanced Form Inputs & Controls
+   ============================================ */
+
+/* Input focus glow effect */
+.lti-form input:focus,
+.lti-form textarea:focus,
+.lti-form select:focus,
+.lti-number-input:focus {
+  border-color: var(--interactive-accent);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--interactive-accent) 18%, transparent),
+    inset 0 1px 2px color-mix(in srgb, var(--interactive-accent) 8%, transparent);
+  outline: none;
+  transition:
+    border-color 200ms ease-in-out,
+    box-shadow 200ms ease-in-out;
+}
+
+/* Enhanced toggle switch with accent glow */
+.lti-workbench-switch input:checked + .lti-workbench-switch-slider {
+  background: var(--interactive-accent);
+  box-shadow:
+    0 0 12px color-mix(in srgb, var(--interactive-accent) 40%, transparent);
+}
+
+.lti-workbench-switch-slider::after {
+  box-shadow:
+    0 2px 8px -2px rgba(0, 0, 0, 0.35),
+    0 0 4px color-mix(in srgb, var(--interactive-accent) 20%, transparent);
+}
+
+.lti-workbench-switch input:checked:focus-visible + .lti-workbench-switch-slider {
+  outline: 2px solid var(--interactive-accent) !important;
+  outline-offset: 2px;
+}
+
+/* Enhanced select dropdown arrow */
+.lti-workbench-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23#{hex(var(--text-muted))}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  padding-right: 2.25rem;
+}
+
+/* ============================================
+   Phase 2: Enhanced Buttons
+   ============================================ */
+
+/* Button press effect */
+.lti-workbench-button:active,
+.lti-workbench-action-tile:active,
+.lti-toolbar button:active {
+  transform: scale(0.97);
+  transition: transform 100ms ease-out;
+}
+
+/* Primary button accent glow */
+.lti-workbench-button.is-primary,
+button[lvl="primary"] {
+  background: var(--interactive-accent) !important;
+  color: var(--text-on-accent) !important;
+  border-color: var(--interactive-accent) !important;
+  box-shadow:
+    0 4px 12px -4px color-mix(in srgb, var(--interactive-accent) 45%, transparent);
+}
+
+.lti-workbench-button.is-primary:hover,
+button[lvl="primary"]:hover {
+  box-shadow:
+    0 6px 16px -4px color-mix(in srgb, var(--interactive-accent) 55%, transparent);
+  transform: translateY(-1px);
+}
+
+/* ============================================
+   Phase 2: Enhanced Scrollbar
+   ============================================ */
+
+.link-tag-intelligence-view ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.link-tag-intelligence-view ::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 4px;
+}
+
+.link-tag-intelligence-view ::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 35%, transparent);
+  border-radius: 4px;
+  transition: background 200ms ease;
+}
+
+.link-tag-intelligence-view ::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text-muted) 55%, transparent);
+}
+
+/* Firefox scrollbar */
+.link-tag-intelligence-view {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 35%, transparent) transparent;
+}
+
+/* ============================================
+   Phase 2: Loading Skeleton Animation
+   ============================================ */
+
+@keyframes lti-skeleton-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.lti-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--background-secondary) 0%,
+    color-mix(in srgb, var(--background-secondary) 70%, var(--background-primary)) 50%,
+    var(--background-secondary) 100%
+  );
+  background-size: 200% 100%;
+  animation: lti-skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+.lti-skeleton-text {
+  height: 0.85em;
+  margin-bottom: 0.35em;
+}
+
+.lti-skeleton-title {
+  height: 1.1em;
+  width: 60%;
+  margin-bottom: 0.5em;
+}
+
+.lti-skeleton-card {
+  height: 4.5rem;
+  border-radius: 11px;
+}
+
+/* ============================================
+   Phase 2: Enhanced Empty States
+   ============================================ */
+
+.lti-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+.lti-empty-state-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
+  color: var(--text-muted);
+  font-size: 1.5rem;
+}
+
+.lti-empty-state-title {
+  color: var(--text-normal);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.lti-empty-state-description {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  max-width: 28ch;
+}
+
+/* ============================================
+   Phase 2: Badge & Tag Enhancements
+   ============================================ */
+
+/* Pill badge with accent */
+.lti-badge-accent {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.52rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 25%, transparent);
+  color: var(--text-accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+/* Status indicators */
+.lti-status-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.lti-status-dot.is-success {
+  background: var(--color-green);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--color-green) 50%, transparent);
+}
+
+.lti-status-dot.is-warning {
+  background: var(--color-orange);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--color-orange) 50%, transparent);
+}
+
+.lti-status-dot.is-error {
+  background: var(--color-red);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--color-red) 50%, transparent);
+}
+
+/* ============================================
+   Phase 2: Notice/Toast Styling
+   ============================================ */
+
+.lti-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid var(--lti-border);
+  background: var(--background-primary);
+  box-shadow: var(--lti-shadow-panel);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.lti-notice.is-info {
+  border-color: color-mix(in srgb, var(--interactive-accent) 25%, var(--lti-border));
+  background: color-mix(in srgb, var(--interactive-accent) 5%, var(--background-primary));
+}
+
+.lti-notice.is-success {
+  border-color: color-mix(in srgb, var(--color-green) 25%, var(--lti-border));
+  background: color-mix(in srgb, var(--color-green) 5%, var(--background-primary));
+}
+
+.lti-notice.is-warning {
+  border-color: color-mix(in srgb, var(--color-orange) 25%, var(--lti-border));
+  background: color-mix(in srgb, var(--color-orange) 5%, var(--background-primary));
+}
+
+.lti-notice.is-error {
+  border-color: color-mix(in srgb, var(--color-red) 25%, var(--lti-border));
+  background: color-mix(in srgb, var(--color-red) 5%, var(--background-primary));
+}
+
+/* ============================================
+   Phase 2: CodeMirror Enhancements
+   ============================================ */
+
+.cm-lti-ref-chip {
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.cm-lti-ref-chip:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    var(--shadow-s, none),
+    0 4px 12px -4px color-mix(in srgb, var(--interactive-accent) 30%, transparent);
+}
+
+/* Inline reference with accent line */
+.lti-inline-ref {
+  border-left: 2px solid var(--interactive-accent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--interactive-accent) 4%, transparent),
+    transparent
+  );
+}
+
+.lti-inline-ref:hover {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--interactive-accent) 8%, transparent),
+    transparent
+  );
+}
+
+/* ============================================
+   Phase 2: Divider & Separator
+   ============================================ */
+
+.lti-divider {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--lti-border) 20%,
+    var(--lti-border) 80%,
+    transparent
+  );
+  margin: 0.75rem 0;
+}
+
+.lti-divider-vertical {
+  width: 1px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    var(--lti-border) 20%,
+    var(--lti-border) 80%,
+    transparent
+  );
+  margin: 0 0.5rem;
+  align-self: stretch;
+}
