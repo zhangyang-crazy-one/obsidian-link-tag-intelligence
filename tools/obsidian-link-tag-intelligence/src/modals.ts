@@ -82,14 +82,14 @@ export class TextPromptModal extends Modal {
 
     input.focus();
     input.select();
-    input.addEventListener("keydown", async (event) => {
+    input.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
         const value = input.value.trim();
         if (!value) {
           return;
         }
-        await this.onSubmit(value);
+        void this.onSubmit(value);
         this.close();
       }
     });
@@ -380,11 +380,13 @@ export class TagManagerModal extends Modal {
       });
 
       const deleteButton = actions.createEl("button", { text: this.plugin.t("delete"), cls: "lti-inline-button" });
-      deleteButton.addEventListener("click", async () => {
-        const updated = await deleteTagAcrossVault(this.plugin.app, stat.tag);
-        new Notice(`${this.plugin.t("tagsUpdated")} (${updated})`);
-        this.render();
-        this.plugin.refreshAllViews();
+      deleteButton.addEventListener("click", () => {
+        void (async () => {
+          const updated = await deleteTagAcrossVault(this.plugin.app, stat.tag);
+          new Notice(`${this.plugin.t("tagsUpdated")} (${updated})`);
+          this.render();
+          this.plugin.refreshAllViews();
+        })();
       });
     }
   }
@@ -610,24 +612,26 @@ export class SemanticSearchModal extends Modal {
     });
 
     const searchButton = form.createEl("button", { text: this.plugin.t("semanticSearch"), cls: "lti-action-button" });
-    searchButton.addEventListener("click", async () => {
-      try {
-        this.results = await runSemanticSearch(
-          this.plugin.app,
-          this.plugin.settings,
-          input.value.trim(),
-          this.activeFile,
-          this.plugin.getContextSelection()
-        );
-        if (this.results.length === 0) {
-          this.render(this.plugin.t("semanticNoResults"));
-          return;
+    searchButton.addEventListener("click", () => {
+      void (async () => {
+        try {
+          this.results = await runSemanticSearch(
+            this.plugin.app,
+            this.plugin.settings,
+            input.value.trim(),
+            this.activeFile,
+            this.plugin.getContextSelection()
+          );
+          if (this.results.length === 0) {
+            this.render(this.plugin.t("semanticNoResults"));
+            return;
+          }
+          this.render();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.render(this.plugin.semanticErrorToMessage(message));
         }
-        this.render();
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.render(this.plugin.semanticErrorToMessage(message));
-      }
+      })();
     });
 
     if (resultsError) {
