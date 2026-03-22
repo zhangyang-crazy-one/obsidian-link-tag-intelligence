@@ -404,7 +404,7 @@ export async function getOutgoingLinkFiles(app: App, file: TFile): Promise<TFile
     }
   }
 
-  return resolved;
+  return resolved.sort((left, right) => left.basename.localeCompare(right.basename, "zh-Hans-CN"));
 }
 
 export async function getBacklinkFiles(app: App, file: TFile): Promise<TFile[]> {
