@@ -538,15 +538,25 @@ export async function readResearchWorkbenchState(
     actual: extractSmartActual(smartConfig)
   };
 
+  const companions: CompanionPluginStatus[] = [
+    zoteroStatus,
+    pdfStatus,
+    smartStatus,
+    buildSemanticStatus(profile)
+  ];
+
+  // Sort: required plugins first (optional: false), then optional, then by id
+  companions.sort((left, right) => {
+    if (left.optional !== right.optional) {
+      return left.optional ? 1 : -1;
+    }
+    return left.id.localeCompare(right.id);
+  });
+
   return {
     profile,
     enabledPluginIds,
-    companions: [
-      zoteroStatus,
-      pdfStatus,
-      smartStatus,
-      buildSemanticStatus(profile)
-    ]
+    companions
   };
 }
 
