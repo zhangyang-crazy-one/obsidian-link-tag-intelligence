@@ -201,8 +201,8 @@ export class LinkInsertModal extends SuggestModal<LinkCandidate> {
     }
   }
 
-  async onChooseSuggestion(candidate: LinkCandidate): Promise<void> {
-    await this.onChoose(candidate);
+  onChooseSuggestion(candidate: LinkCandidate): void {
+    void this.onChoose(candidate);
   }
 }
 

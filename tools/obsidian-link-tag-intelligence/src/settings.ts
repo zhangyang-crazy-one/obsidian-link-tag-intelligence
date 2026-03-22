@@ -165,7 +165,9 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: this.plugin.t("pluginName") });
+    new Setting(containerEl)
+      .setHeading()
+      .setName(this.plugin.t("pluginName"));
 
     new Setting(containerEl)
       .setName(this.plugin.t("settingsLanguage"))
@@ -300,11 +302,10 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
 
   private renderResearchGuide(containerEl: HTMLElement): void {
     const guide = containerEl.createDiv({ cls: "lti-settings-guide" });
-    guide.createEl("h3", { text: this.plugin.t("settingsResearchGuideTitle"), cls: "lti-settings-guide-title" });
-    guide.createDiv({
-      text: this.plugin.t("settingsResearchGuideDescription"),
-      cls: "setting-item-description lti-settings-guide-description"
-    });
+    new Setting(guide)
+      .setHeading()
+      .setName(this.plugin.t("settingsResearchGuideTitle"))
+      .setDesc(this.plugin.t("settingsResearchGuideDescription"));
 
     const setup = guide.createEl("ol", { cls: "lti-settings-guide-list" });
     for (const key of ["settingsResearchGuideStep1", "settingsResearchGuideStep2", "settingsResearchGuideStep3"] as const) {
@@ -314,12 +315,9 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
       });
     }
 
-    const companionTitle = guide.createDiv({
-      text: this.plugin.t("settingsCompanionPluginsTitle"),
-      cls: "lti-settings-guide-subtitle"
-    });
-    companionTitle.setAttribute("role", "heading");
-    companionTitle.setAttribute("aria-level", "4");
+    new Setting(guide)
+      .setHeading()
+      .setName(this.plugin.t("settingsCompanionPluginsTitle"));
 
     const list = guide.createEl("ul", { cls: "lti-settings-guide-list" });
     for (const companion of COMPANION_PLUGINS) {

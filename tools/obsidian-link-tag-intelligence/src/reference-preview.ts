@@ -174,10 +174,10 @@ export class ReferencePreviewPopover {
     const margin = 12;
     const safeTop = 20;
     const anchorRect = anchor.getBoundingClientRect();
-    this.rootEl.style.left = "0px";
-    this.rootEl.style.top = "0px";
-    this.rootEl.style.maxWidth = `min(28rem, calc(100vw - ${margin * 2}px))`;
-    this.rootEl.style.maxHeight = `calc(100vh - ${margin * 2}px)`;
+    this.rootEl.style.setProperty("left", "0px");
+    this.rootEl.style.setProperty("top", "0px");
+    this.rootEl.style.setProperty("max-width", `min(28rem, calc(100vw - ${margin * 2}px))`);
+    this.rootEl.style.setProperty("max-height", `calc(100vh - ${margin * 2}px)`);
 
     const previewRect = this.rootEl.getBoundingClientRect();
     const left = clamp(anchorRect.left, margin, window.innerWidth - previewRect.width - margin);
@@ -202,7 +202,7 @@ export class ReferencePreviewPopover {
 
     top = clamp(top, safeTop, window.innerHeight - previewHeight - margin);
 
-    this.rootEl.style.left = `${left}px`;
-    this.rootEl.style.top = `${top}px`;
+    this.rootEl.style.setProperty("left", `${left}px`);
+    this.rootEl.style.setProperty("top", `${top}px`);
   }
 }
