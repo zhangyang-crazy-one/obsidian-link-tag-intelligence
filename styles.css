@@ -3978,3 +3978,389 @@ button[lvl="primary"]:hover {
   margin: 0 0.5rem;
   align-self: stretch;
 }
+
+/* ============================================
+   Phase 3: Modal Dialog Enhancements
+   ============================================ */
+
+/* Modal container with backdrop blur */
+.modal-container {
+  overflow: visible;
+}
+
+.modal {
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow:
+    0 25px 50px -12px rgba(0, 0, 0, 0.35),
+    0 0 0 1px var(--lti-border);
+}
+
+.modal-content {
+  padding: 1.25rem 1.5rem;
+}
+
+/* Modal backdrop with enhanced blur */
+.modal-bg {
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* SuggestModal list item hover */
+.suggestion-item {
+  border-radius: 10px;
+  margin: 2px 4px;
+  padding: 0.6rem 0.75rem;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
+.suggestion-item:hover {
+  background: var(--interactive-hover);
+}
+
+.suggestion-item.is-selected {
+  background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+  border-left: 2px solid var(--interactive-accent);
+}
+
+/* ============================================
+   Phase 3: Tooltip & Popover
+   ============================================ */
+
+/* Tooltip with accent border */
+.tooltip {
+  border-radius: 8px;
+  padding: 0.4rem 0.65rem;
+  font-size: 0.75rem;
+  box-shadow:
+    0 4px 12px -4px rgba(0, 0, 0, 0.25),
+    0 0 0 1px var(--lti-border);
+  border-left: 2px solid var(--interactive-accent);
+  max-width: 280px;
+  word-wrap: break-word;
+}
+
+/* Popover enhancements */
+.popover.hover-popover {
+  border-radius: 14px;
+  box-shadow:
+    0 12px 28px -8px rgba(0, 0, 0, 0.3),
+    0 0 0 1px var(--lti-border);
+  border: 1px solid var(--lti-border);
+}
+
+.popover.hover-popover .popover-content {
+  padding: 0.85rem;
+}
+
+/* ============================================
+   Phase 3: Icon Button Enhancements
+   ============================================ */
+
+.lti-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    transform 100ms ease;
+}
+
+.lti-icon-button:hover {
+  background: var(--interactive-hover);
+  color: var(--text-normal);
+  border-color: var(--lti-border);
+}
+
+.lti-icon-button:active {
+  transform: scale(0.92);
+}
+
+.lti-icon-button.is-active {
+  background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+  color: var(--text-accent);
+  border-color: color-mix(in srgb, var(--interactive-accent) 25%, transparent);
+}
+
+.lti-icon-button:focus-visible {
+  outline: 2px solid var(--interactive-accent) !important;
+  outline-offset: 2px;
+}
+
+/* ============================================
+   Phase 3: Progress & Loading Indicators
+   ============================================ */
+
+.lti-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--background-secondary);
+  overflow: hidden;
+}
+
+.lti-progress-bar {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--interactive-accent);
+  transition: width 300ms ease-out;
+}
+
+.lti-progress-bar.is-indeterminate {
+  width: 30%;
+  animation: lti-progress-indeterminate 1.5s ease-in-out infinite;
+}
+
+@keyframes lti-progress-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+/* Inline loading dots */
+.lti-loading-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lti-loading-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: lti-loading-bounce 1.2s ease-in-out infinite;
+}
+
+.lti-loading-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.lti-loading-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes lti-loading-bounce {
+  0%, 80%, 100% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  40% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+}
+
+/* ============================================
+   Phase 3: Keyboard Shortcut Hints
+   ============================================ */
+
+.lti-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4rem;
+  height: 1.4rem;
+  padding: 0 0.35rem;
+  border-radius: 5px;
+  border: 1px solid var(--lti-border);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-family: var(--font-monospace, monospace);
+  font-size: 0.68rem;
+  line-height: 1;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.1) inset,
+    0 -1px 0 rgba(255, 255, 255, 0.05) inset;
+}
+
+.lti-kbd-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* ============================================
+   Phase 3: Staggered Reveal Animation
+   ============================================ */
+
+@keyframes lti-fade-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.lti-animate-in {
+  animation: lti-fade-slide-up 300ms ease-out both;
+}
+
+/* Stagger delays for list items */
+.lti-animate-in:nth-child(1) { animation-delay: 0ms; }
+.lti-animate-in:nth-child(2) { animation-delay: 50ms; }
+.lti-animate-in:nth-child(3) { animation-delay: 100ms; }
+.lti-animate-in:nth-child(4) { animation-delay: 150ms; }
+.lti-animate-in:nth-child(5) { animation-delay: 200ms; }
+.lti-animate-in:nth-child(6) { animation-delay: 250ms; }
+.lti-animate-in:nth-child(7) { animation-delay: 300ms; }
+.lti-animate-in:nth-child(8) { animation-delay: 350ms; }
+
+/* ============================================
+   Phase 3: Color Utility Classes
+   ============================================ */
+
+.lti-text-accent { color: var(--text-accent); }
+.lti-text-muted { color: var(--text-muted); }
+.lti-text-success { color: var(--color-green); }
+.lti-text-warning { color: var(--color-orange); }
+.lti-text-error { color: var(--color-red); }
+
+.lti-bg-accent { background-color: color-mix(in srgb, var(--interactive-accent) 10%, transparent); }
+.lti-bg-success { background-color: color-mix(in srgb, var(--color-green) 10%, transparent); }
+.lti-bg-warning { background-color: color-mix(in srgb, var(--color-orange) 10%, transparent); }
+.lti-bg-error { background-color: color-mix(in srgb, var(--color-red) 10%, transparent); }
+
+/* ============================================
+   Phase 3: Breadcrumb & Navigation
+   ============================================ */
+
+.lti-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.lti-breadcrumb-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: color 150ms ease;
+}
+
+.lti-breadcrumb-item:hover {
+  color: var(--text-normal);
+  cursor: pointer;
+}
+
+.lti-breadcrumb-separator {
+  color: var(--text-faint, var(--text-muted));
+  font-size: 0.7rem;
+}
+
+/* ============================================
+   Phase 3: Tab Navigation
+   ============================================ */
+
+.lti-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.lti-tab-list {
+  display: flex;
+  border-bottom: 1px solid var(--lti-border);
+  gap: 0;
+}
+
+.lti-tab {
+  padding: 0.6rem 1rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  position: relative;
+  transition: color 150ms ease;
+}
+
+.lti-tab:hover {
+  color: var(--text-normal);
+}
+
+.lti-tab.is-active {
+  color: var(--text-accent);
+}
+
+.lti-tab.is-active::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--interactive-accent);
+  border-radius: 2px 2px 0 0;
+}
+
+.lti-tab:focus-visible {
+  outline: 2px solid var(--interactive-accent) !important;
+  outline-offset: -2px;
+}
+
+.lti-tab-panel {
+  padding: 1rem 0;
+}
+
+/* ============================================
+   Phase 3: Context Menu Enhancements
+   ============================================ */
+
+.context-menu {
+  border-radius: 10px;
+  padding: 0.35rem;
+  box-shadow:
+    0 8px 24px -8px rgba(0, 0, 0, 0.3),
+    0 0 0 1px var(--lti-border);
+  min-width: 180px;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: var(--text-normal);
+  cursor: pointer;
+  transition:
+    background-color 100ms ease,
+    color 100ms ease;
+}
+
+.context-menu-item:hover {
+  background: var(--interactive-hover);
+}
+
+.context-menu-item.is-danger:hover {
+  background: color-mix(in srgb, var(--color-red) 12%, transparent);
+  color: var(--color-red);
+}
+
+.context-menu-separator {
+  height: 1px;
+  background: var(--lti-border);
+  margin: 0.3rem 0;
+}
