@@ -16,7 +16,7 @@
   --lti-border-hover: var(--background-modifier-border-hover, var(--interactive-accent));
   --lti-text-soft: var(--text-muted);
   --lti-text-faint: var(--text-faint, var(--text-muted));
-  --lti-transition: var(--lti-transition);
+  --lti-transition: 200ms ease-in-out;
   --lti-transition-fast: 80ms ease;
   --lti-shadow-soft: 0 10px 22px -20px color-mix(in srgb, var(--interactive-accent) 24%, transparent);
   --lti-shadow-panel:
@@ -32,6 +32,22 @@
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--interactive-accent) 3%, transparent), transparent 18%),
     var(--background-primary);
+}
+
+/* Light theme refinements */
+.theme-light .link-tag-intelligence-view {
+  --lti-surface-raised: color-mix(in srgb, var(--background-secondary) 92%, var(--background-primary));
+  --lti-surface-muted: color-mix(in srgb, var(--background-secondary) 72%, var(--background-primary));
+}
+
+/* Dark theme refinements */
+.theme-dark .link-tag-intelligence-view {
+  --lti-surface-raised: color-mix(in srgb, var(--background-secondary) 82%, var(--background-primary));
+  --lti-surface-muted: color-mix(in srgb, var(--background-secondary) 52%, var(--background-primary));
+  --lti-shadow-soft: 0 10px 22px -20px color-mix(in srgb, var(--interactive-accent) 32%, transparent);
+  --lti-shadow-panel:
+    0 10px 24px -22px color-mix(in srgb, var(--interactive-accent) 28%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--background-modifier-border-hover) 16%, transparent);
 }
 
 /* Text utilities */
@@ -152,7 +168,7 @@
   border-color: var(--lti-border-hover);
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--interactive-accent) 4%, transparent), transparent 100%),
-    var(--background-modifier-hover);
+    var(--interactive-hover);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--background-primary) 60%, transparent);
 }
 
@@ -168,7 +184,7 @@
 .lti-inline-button:focus-visible,
 .lti-suggestion-card:focus-visible,
 .lti-note-link:focus-visible {
-  outline: 2px solid var(--lti-accent);
+  outline: 2px solid var(--interactive-accent) !important;
   outline-offset: 2px;
 }
 
@@ -310,7 +326,7 @@
 }
 
 .link-tag-intelligence-view .lti-section-toggle:focus-visible {
-  outline: 2px solid var(--lti-accent);
+  outline: 2px solid var(--interactive-accent) !important;
   outline-offset: -3px;
 }
 
@@ -963,6 +979,22 @@
   background: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-secondary));
 }
 
+/* Active/selected item states */
+.lti-item.is-active,
+.lti-list-row.is-active {
+  border-color: var(--interactive-accent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--interactive-accent) 6%, transparent), transparent 100%),
+    var(--interactive-hover);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--background-primary) 55%, transparent);
+}
+
+.lti-item.is-active:focus-visible,
+.lti-list-row.is-active:focus-visible {
+  outline: 2px solid var(--interactive-accent) !important;
+  outline-offset: 2px;
+}
+
 .lti-tag-suggestion-shell .modal-content,
 .lti-tag-suggestion-modal {
   display: flex;
@@ -1089,7 +1121,7 @@
 }
 
 .lti-tag-card:focus-visible {
-  outline: 2px solid var(--lti-accent);
+  outline: 2px solid var(--interactive-accent) !important;
   outline-offset: 2px;
 }
 
@@ -3505,4 +3537,115 @@
 
 .lti-input-row-2col {
   grid-template-columns: auto 1fr !important;
+}
+
+/* Modal enhancements */
+.modal-bg {
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  animation: lti-modal-fade-in 200ms ease-out;
+}
+
+@keyframes lti-modal-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.modal-content {
+  animation: lti-modal-slide-in 200ms ease-out;
+}
+
+@keyframes lti-modal-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Modal dropdown overflow fix */
+.modal .ltk-tag-select,
+.modal select {
+  overflow: visible !important;
+}
+
+/* Ensure modal content doesn't clip dropdowns */
+.modal-container {
+  overflow: visible !important;
+}
+
+/* Spinner animation for async operations */
+.lti-spinner {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  border: 2px solid color-mix(in srgb, var(--interactive-accent) 30%, transparent);
+  border-right-color: var(--interactive-accent);
+  border-radius: 50%;
+  animation: lti-spinner-rotate 600ms linear infinite;
+}
+
+@keyframes lti-spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Theme-aware spinner for dark/light modes */
+.theme-light .lti-spinner {
+  border-color: color-mix(in srgb, var(--interactive-accent) 25%, transparent);
+  border-right-color: var(--interactive-accent);
+}
+
+.theme-dark .lti-spinner {
+  border-color: color-mix(in srgb, var(--interactive-accent) 40%, transparent);
+  border-right-color: var(--interactive-accent);
+}
+
+/* Enhanced card hover lift effect */
+.lti-tag-card:hover,
+.lti-suggestion-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--lti-shadow-soft);
+}
+
+.lti-tag-card:active,
+.lti-suggestion-card:active {
+  transform: translateY(0);
+}
+
+/* Smooth color transitions for theme switching */
+.lti-tag-card,
+.lti-suggestion-card,
+.lti-item,
+.lti-list-row,
+.lti-workbench-button,
+.lti-workbench-action-tile,
+.lti-workbench-action-item {
+  transition:
+    border-color var(--lti-transition),
+    background-color var(--lti-transition),
+    box-shadow var(--lti-transition),
+    color var(--lti-transition),
+    transform var(--lti-transition-fast);
+}
+
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .lti-tag-card,
+  .lti-suggestion-card,
+  .lti-section-body,
+  .lti-section-chevron,
+  .modal-content,
+  .modal-bg {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
 }

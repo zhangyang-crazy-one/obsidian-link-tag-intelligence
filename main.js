@@ -3381,7 +3381,7 @@ var ResearchIngestionModal = class extends import_obsidian7.Modal {
     contentEl.empty();
     renderModalHeader(contentEl, this.plugin.t("ingestionCapture"), this.plugin.t("modalIngestionDescription"));
     const form = contentEl.createDiv({ cls: "lti-form" });
-    const typeRow = form.createDiv({ cls: "lti-input-row" });
+    const typeRow = form.createDiv({ cls: "lti-input-row lti-input-row-2col" });
     typeRow.createDiv({ text: this.plugin.t("ingestionSourceType"), cls: "suggestion-meta" });
     const typeSelect = typeRow.createEl("select", { cls: "lti-workbench-select" });
     for (const option of [
@@ -4466,15 +4466,13 @@ var LegacyReadingHoverController = class extends import_obsidian8.MarkdownRender
     const gap = 8;
     const margin = 12;
     const rect = anchor.getBoundingClientRect();
-    el.style.position = "fixed";
-    el.style.zIndex = "var(--layer-popover, 300)";
+    el.style.maxWidth = `min(28rem, calc(100vw - ${margin * 2}px))`;
     const elRect = el.getBoundingClientRect();
     const left = Math.min(rect.left, doc.documentElement.clientWidth - elRect.width - margin);
     const spaceBelow = doc.documentElement.clientHeight - rect.bottom - margin;
     const top = spaceBelow >= elRect.height + gap ? rect.bottom + gap : rect.top - elRect.height - gap;
     el.style.left = `${Math.max(margin, left)}px`;
     el.style.top = `${Math.max(margin, top)}px`;
-    el.style.maxWidth = `min(28rem, calc(100vw - ${margin * 2}px))`;
   }
   destroyFallbackPopover() {
     if (!this.fallbackEl) {
@@ -5875,6 +5873,7 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
     this.sectionState = /* @__PURE__ */ new Map();
     this.refreshTimer = null;
     this.refreshPromise = null;
+    this.isRefreshing = false;
     this.plugin = plugin;
   }
   getViewType() {
@@ -5888,6 +5887,7 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
       window.clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
     }
+    this.sectionState.clear();
     this.contentEl.empty();
     this.containerEl.addClass("link-tag-intelligence-view");
     await this.refresh();
@@ -5916,83 +5916,91 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
     return this.refreshPromise;
   }
   async doRefresh(options = {}) {
-    const scrollContainer = this.getScrollContainer();
-    const previousScrollTop = options.preserveScroll ? scrollContainer.scrollTop : null;
-    const content = this.contentEl;
-    content.empty();
-    content.addClass("link-tag-intelligence-view");
-    const toolbar = content.createDiv({ cls: "lti-toolbar" });
-    const hasContext = Boolean(this.plugin.getContextNoteFile());
-    const fileRequiredKeys = /* @__PURE__ */ new Set(["insertLink", "insertBlockRef", "insertLineRef", "quickLink"]);
-    const buttons = [
-      ["ingestionCapture", () => this.plugin.openResearchIngestion()],
-      ["insertLink", () => this.plugin.openLinkInsertModal("wikilink")],
-      ["insertBlockRef", () => this.plugin.openBlockReferenceFlow()],
-      ["insertLineRef", () => this.plugin.openLineReferenceFlow()],
-      ["quickLink", () => this.plugin.openLinkInsertModal("quick_link")],
-      ["addRelation", () => this.plugin.openRelationFlow()],
-      ["manageTags", () => this.plugin.openTagManager()],
-      ["suggestTags", () => this.plugin.openTagSuggestion()],
-      ["semanticSearch", () => this.plugin.openSemanticSearch()]
-    ];
-    for (const [key, handler] of buttons) {
-      const needsFile = fileRequiredKeys.has(key);
-      const disabled = needsFile && !hasContext;
-      const button = toolbar.createEl("button", {
-        text: this.plugin.t(key),
-        cls: "lti-toolbar-button"
-      });
-      button.dataset.action = key;
-      if (disabled) {
-        button.disabled = true;
-        button.title = this.plugin.t("noActiveNote");
-        button.addClass("lti-toolbar-button-disabled");
-      } else {
-        button.addEventListener("click", handler);
-      }
-    }
-    const activeFile = this.plugin.getContextNoteFile();
-    if (!(activeFile instanceof import_obsidian10.TFile)) {
-      content.createDiv({ text: this.plugin.t("noActiveNote"), cls: "lti-empty" });
+    if (this.isRefreshing) {
       return;
     }
-    const currentSection = this.createSection(content, "current-note", this.plugin.t("currentNote"), void 0, true, true);
-    if (currentSection) {
-      const noteCard = currentSection.createDiv({ cls: "lti-item lti-item-compact lti-current-note-card" });
-      const currentHeader = noteCard.createDiv({ cls: "lti-item-topline" });
-      const currentLink = currentHeader.createEl("button", {
-        text: activeFile.basename,
-        cls: "lti-note-link lti-note-title",
-        attr: { type: "button" }
-      });
-      currentLink.addEventListener("click", (event) => {
-        event.preventDefault();
-        this.plugin.openFile(activeFile);
-      });
-      noteCard.createSpan({ text: activeFile.path, cls: "lti-item-meta lti-item-path" });
-      this.renderMetadataPills(noteCard, getResearchSourceMetadataForFile(this.app, activeFile));
-    }
-    this.renderFileSection(content, "outgoing-links", this.plugin.t("outgoingLinks"), await getOutgoingLinkFiles(this.app, activeFile), true);
-    this.renderFileSection(content, "backlinks", this.plugin.t("backlinks"), await getBacklinkFiles(this.app, activeFile), false);
-    if (!isExcalidrawFile(activeFile)) {
-      this.renderExactReferenceSection(content, "outgoing-references", this.plugin.t("outgoingReferences"), await getOutgoingExactReferences(this.app, activeFile), "outgoing", true);
-      this.renderExactReferenceSection(content, "incoming-references", this.plugin.t("incomingReferences"), await getIncomingExactReferences(this.app, activeFile), "incoming", false);
-    }
-    this.renderRelationSection(content, activeFile);
-    this.renderTagSection(content, activeFile);
-    await this.renderMentionsSection(content, activeFile);
-    this.renderCaptureSection(content);
-    this.renderSemanticSection(content);
-    if (previousScrollTop !== null || options.focusSectionId) {
-      window.requestAnimationFrame(() => {
-        if (previousScrollTop !== null) {
-          scrollContainer.scrollTop = previousScrollTop;
+    this.isRefreshing = true;
+    try {
+      const scrollContainer = this.getScrollContainer();
+      const previousScrollTop = options.preserveScroll ? scrollContainer.scrollTop : null;
+      const content = this.contentEl;
+      content.empty();
+      content.addClass("link-tag-intelligence-view");
+      const toolbar = content.createDiv({ cls: "lti-toolbar" });
+      const hasContext = Boolean(this.plugin.getContextNoteFile());
+      const fileRequiredKeys = /* @__PURE__ */ new Set(["insertLink", "insertBlockRef", "insertLineRef", "quickLink"]);
+      const buttons = [
+        ["ingestionCapture", () => this.plugin.openResearchIngestion()],
+        ["insertLink", () => this.plugin.openLinkInsertModal("wikilink")],
+        ["insertBlockRef", () => this.plugin.openBlockReferenceFlow()],
+        ["insertLineRef", () => this.plugin.openLineReferenceFlow()],
+        ["quickLink", () => this.plugin.openLinkInsertModal("quick_link")],
+        ["addRelation", () => this.plugin.openRelationFlow()],
+        ["manageTags", () => this.plugin.openTagManager()],
+        ["suggestTags", () => this.plugin.openTagSuggestion()],
+        ["semanticSearch", () => this.plugin.openSemanticSearch()]
+      ];
+      for (const [key, handler] of buttons) {
+        const needsFile = fileRequiredKeys.has(key);
+        const disabled = needsFile && !hasContext;
+        const button = toolbar.createEl("button", {
+          text: this.plugin.t(key),
+          cls: "lti-toolbar-button"
+        });
+        button.dataset.action = key;
+        if (disabled) {
+          button.disabled = true;
+          button.title = this.plugin.t("noActiveNote");
+          button.addClass("lti-toolbar-button-disabled");
+        } else {
+          button.addEventListener("click", handler);
         }
-        if (options.focusSectionId) {
-          const toggle = this.contentEl.querySelector(`.lti-section-toggle[data-section-id="${options.focusSectionId}"]`);
-          toggle?.focus({ preventScroll: true });
-        }
-      });
+      }
+      const activeFile = this.plugin.getContextNoteFile();
+      if (!(activeFile instanceof import_obsidian10.TFile)) {
+        content.createDiv({ text: this.plugin.t("noActiveNote"), cls: "lti-empty" });
+        return;
+      }
+      const currentSection = this.createSection(content, "current-note", this.plugin.t("currentNote"), void 0, true, true);
+      if (currentSection) {
+        const noteCard = currentSection.createDiv({ cls: "lti-item lti-item-compact lti-current-note-card" });
+        const currentHeader = noteCard.createDiv({ cls: "lti-item-topline" });
+        const currentLink = currentHeader.createEl("button", {
+          text: activeFile.basename,
+          cls: "lti-note-link lti-note-title",
+          attr: { type: "button" }
+        });
+        currentLink.addEventListener("click", (event) => {
+          event.preventDefault();
+          this.plugin.openFile(activeFile);
+        });
+        noteCard.createSpan({ text: activeFile.path, cls: "lti-item-meta lti-item-path" });
+        this.renderMetadataPills(noteCard, getResearchSourceMetadataForFile(this.app, activeFile));
+      }
+      this.renderFileSection(content, "outgoing-links", this.plugin.t("outgoingLinks"), await getOutgoingLinkFiles(this.app, activeFile), true);
+      this.renderFileSection(content, "backlinks", this.plugin.t("backlinks"), await getBacklinkFiles(this.app, activeFile), false);
+      if (!isExcalidrawFile(activeFile)) {
+        this.renderExactReferenceSection(content, "outgoing-references", this.plugin.t("outgoingReferences"), await getOutgoingExactReferences(this.app, activeFile), "outgoing", true);
+        this.renderExactReferenceSection(content, "incoming-references", this.plugin.t("incomingReferences"), await getIncomingExactReferences(this.app, activeFile), "incoming", false);
+      }
+      this.renderRelationSection(content, activeFile);
+      this.renderTagSection(content, activeFile);
+      await this.renderMentionsSection(content, activeFile);
+      this.renderCaptureSection(content);
+      this.renderSemanticSection(content);
+      if (previousScrollTop !== null || options.focusSectionId) {
+        window.requestAnimationFrame(() => {
+          if (previousScrollTop !== null) {
+            scrollContainer.scrollTop = previousScrollTop;
+          }
+          if (options.focusSectionId) {
+            const toggle = this.contentEl.querySelector(`.lti-section-toggle[data-section-id="${options.focusSectionId}"]`);
+            toggle?.focus({ preventScroll: true });
+          }
+        });
+      }
+    } finally {
+      this.isRefreshing = false;
     }
   }
   renderFileSection(parent, id, title, files, defaultExpanded) {
@@ -6716,8 +6724,8 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
   }
   getContextNoteFile() {
     const activeFile = this.app.workspace.getActiveFile();
-    const activeLeaf = this.app.workspace.activeLeaf;
-    const leafViewFile = activeLeaf?.view instanceof import_obsidian11.FileView ? activeLeaf.view.file : null;
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian11.FileView);
+    const leafViewFile = activeView?.file ?? null;
     debugLog(this.app, "getContextNoteFile", {
       getActiveFile_result: activeFile?.path ?? null,
       leafViewFile: leafViewFile?.path ?? null,
@@ -6732,8 +6740,8 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
         return activeFile;
       }
     }
-    if (activeLeaf?.view instanceof import_obsidian11.FileView) {
-      const leafFile = activeLeaf.view.file;
+    if (activeView) {
+      const leafFile = activeView.file;
       if (leafFile instanceof import_obsidian11.TFile && isSupportedNoteFile(leafFile)) {
         this.captureSupportedFileContext(leafFile);
         if (isExcalidrawFile(leafFile)) {
@@ -6741,7 +6749,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
         }
         return leafFile;
       }
-      if (!leafFile && activeLeaf.view.getViewType() === "excalidraw" && this.lastExcalidrawFilePath) {
+      if (!leafFile && activeView.getViewType() === "excalidraw" && this.lastExcalidrawFilePath) {
         const lastFile = this.app.vault.getAbstractFileByPath(this.lastExcalidrawFilePath);
         if (isSupportedNoteFile(lastFile)) {
           return lastFile;
@@ -6765,7 +6773,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
     return this.getContextEditorView()?.editor?.getSelection() ?? "";
   }
   getNavigationLeaf() {
-    const activeLeaf = this.app.workspace.activeLeaf;
+    const activeLeaf = this.app.workspace.getMostRecentLeaf();
     const activeFile = this.getActiveSupportedFile();
     if (activeLeaf && activeFile) {
       this.captureSupportedFileContext(activeFile);

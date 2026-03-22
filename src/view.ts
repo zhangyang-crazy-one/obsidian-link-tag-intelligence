@@ -23,6 +23,7 @@ export class LinkTagIntelligenceView extends ItemView {
   private readonly sectionState = new Map<string, boolean>();
   private refreshTimer: number | null = null;
   private refreshPromise: Promise<void> | null = null;
+  private isRefreshing = false;
 
   constructor(leaf: WorkspaceLeaf, plugin: LinkTagIntelligencePlugin) {
     super(leaf);
@@ -45,6 +46,7 @@ export class LinkTagIntelligenceView extends ItemView {
       window.clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
     }
+    this.sectionState.clear();
     this.contentEl.empty();
     this.containerEl.addClass("link-tag-intelligence-view");
     await this.refresh();
@@ -84,90 +86,100 @@ export class LinkTagIntelligenceView extends ItemView {
   }
 
   private async doRefresh(options: { preserveScroll?: boolean; focusSectionId?: string } = {}): Promise<void> {
-    const scrollContainer = this.getScrollContainer();
-    const previousScrollTop = options.preserveScroll ? scrollContainer.scrollTop : null;
-    const content = this.contentEl;
-    content.empty();
-    content.addClass("link-tag-intelligence-view");
-
-    const toolbar = content.createDiv({ cls: "lti-toolbar" });
-    const hasContext = Boolean(this.plugin.getContextNoteFile());
-    const fileRequiredKeys = new Set(["insertLink", "insertBlockRef", "insertLineRef", "quickLink"]);
-    const buttons: Array<[string, () => void]> = [
-      ["ingestionCapture", () => this.plugin.openResearchIngestion()],
-      ["insertLink", () => this.plugin.openLinkInsertModal("wikilink")],
-      ["insertBlockRef", () => this.plugin.openBlockReferenceFlow()],
-      ["insertLineRef", () => this.plugin.openLineReferenceFlow()],
-      ["quickLink", () => this.plugin.openLinkInsertModal("quick_link")],
-      ["addRelation", () => this.plugin.openRelationFlow()],
-      ["manageTags", () => this.plugin.openTagManager()],
-      ["suggestTags", () => this.plugin.openTagSuggestion()],
-      ["semanticSearch", () => this.plugin.openSemanticSearch()]
-    ];
-
-    for (const [key, handler] of buttons) {
-      const needsFile = fileRequiredKeys.has(key);
-      const disabled = needsFile && !hasContext;
-      const button = toolbar.createEl("button", {
-        text: this.plugin.t(key as never),
-        cls: "lti-toolbar-button"
-      });
-      button.dataset.action = key;
-      if (disabled) {
-        button.disabled = true;
-        button.title = this.plugin.t("noActiveNote");
-        button.addClass("lti-toolbar-button-disabled");
-      } else {
-        button.addEventListener("click", handler);
-      }
-    }
-
-    const activeFile = this.plugin.getContextNoteFile();
-    if (!(activeFile instanceof TFile)) {
-      content.createDiv({ text: this.plugin.t("noActiveNote"), cls: "lti-empty" });
+    // Prevent concurrent execution
+    if (this.isRefreshing) {
       return;
     }
+    this.isRefreshing = true;
 
-    const currentSection = this.createSection(content, "current-note", this.plugin.t("currentNote"), undefined, true, true);
-    if (currentSection) {
-      const noteCard = currentSection.createDiv({ cls: "lti-item lti-item-compact lti-current-note-card" });
-      const currentHeader = noteCard.createDiv({ cls: "lti-item-topline" });
-      const currentLink = currentHeader.createEl("button", {
-        text: activeFile.basename,
-        cls: "lti-note-link lti-note-title",
-        attr: { type: "button" }
-      });
-      currentLink.addEventListener("click", (event) => {
-        event.preventDefault();
-        this.plugin.openFile(activeFile);
-      });
-      noteCard.createSpan({ text: activeFile.path, cls: "lti-item-meta lti-item-path" });
-      this.renderMetadataPills(noteCard, getResearchSourceMetadataForFile(this.app, activeFile));
-    }
+    try {
+      const scrollContainer = this.getScrollContainer();
+      const previousScrollTop = options.preserveScroll ? scrollContainer.scrollTop : null;
+      const content = this.contentEl;
+      content.empty();
+      content.addClass("link-tag-intelligence-view");
 
-    this.renderFileSection(content, "outgoing-links", this.plugin.t("outgoingLinks"), await getOutgoingLinkFiles(this.app, activeFile), true);
-    this.renderFileSection(content, "backlinks", this.plugin.t("backlinks"), await getBacklinkFiles(this.app, activeFile), false);
-    if (!isExcalidrawFile(activeFile)) {
-      this.renderExactReferenceSection(content, "outgoing-references", this.plugin.t("outgoingReferences"), await getOutgoingExactReferences(this.app, activeFile), "outgoing", true);
-      this.renderExactReferenceSection(content, "incoming-references", this.plugin.t("incomingReferences"), await getIncomingExactReferences(this.app, activeFile), "incoming", false);
-    }
-    this.renderRelationSection(content, activeFile);
-    this.renderTagSection(content, activeFile);
-    await this.renderMentionsSection(content, activeFile);
-    this.renderCaptureSection(content);
-    this.renderSemanticSection(content);
+      const toolbar = content.createDiv({ cls: "lti-toolbar" });
+      const hasContext = Boolean(this.plugin.getContextNoteFile());
+      const fileRequiredKeys = new Set(["insertLink", "insertBlockRef", "insertLineRef", "quickLink"]);
+      const buttons: Array<[string, () => void]> = [
+        ["ingestionCapture", () => this.plugin.openResearchIngestion()],
+        ["insertLink", () => this.plugin.openLinkInsertModal("wikilink")],
+        ["insertBlockRef", () => this.plugin.openBlockReferenceFlow()],
+        ["insertLineRef", () => this.plugin.openLineReferenceFlow()],
+        ["quickLink", () => this.plugin.openLinkInsertModal("quick_link")],
+        ["addRelation", () => this.plugin.openRelationFlow()],
+        ["manageTags", () => this.plugin.openTagManager()],
+        ["suggestTags", () => this.plugin.openTagSuggestion()],
+        ["semanticSearch", () => this.plugin.openSemanticSearch()]
+      ];
 
-    if (previousScrollTop !== null || options.focusSectionId) {
-      window.requestAnimationFrame(() => {
-        if (previousScrollTop !== null) {
-          scrollContainer.scrollTop = previousScrollTop;
+      for (const [key, handler] of buttons) {
+        const needsFile = fileRequiredKeys.has(key);
+        const disabled = needsFile && !hasContext;
+        const button = toolbar.createEl("button", {
+          text: this.plugin.t(key as never),
+          cls: "lti-toolbar-button"
+        });
+        button.dataset.action = key;
+        if (disabled) {
+          button.disabled = true;
+          button.title = this.plugin.t("noActiveNote");
+          button.addClass("lti-toolbar-button-disabled");
+        } else {
+          button.addEventListener("click", handler);
         }
+      }
 
-        if (options.focusSectionId) {
-          const toggle = this.contentEl.querySelector<HTMLElement>(`.lti-section-toggle[data-section-id="${options.focusSectionId}"]`);
-          toggle?.focus({ preventScroll: true });
-        }
-      });
+      const activeFile = this.plugin.getContextNoteFile();
+      if (!(activeFile instanceof TFile)) {
+        content.createDiv({ text: this.plugin.t("noActiveNote"), cls: "lti-empty" });
+        return;
+      }
+
+      const currentSection = this.createSection(content, "current-note", this.plugin.t("currentNote"), undefined, true, true);
+      if (currentSection) {
+        const noteCard = currentSection.createDiv({ cls: "lti-item lti-item-compact lti-current-note-card" });
+        const currentHeader = noteCard.createDiv({ cls: "lti-item-topline" });
+        const currentLink = currentHeader.createEl("button", {
+          text: activeFile.basename,
+          cls: "lti-note-link lti-note-title",
+          attr: { type: "button" }
+        });
+        currentLink.addEventListener("click", (event) => {
+          event.preventDefault();
+          this.plugin.openFile(activeFile);
+        });
+        noteCard.createSpan({ text: activeFile.path, cls: "lti-item-meta lti-item-path" });
+        this.renderMetadataPills(noteCard, getResearchSourceMetadataForFile(this.app, activeFile));
+      }
+
+      this.renderFileSection(content, "outgoing-links", this.plugin.t("outgoingLinks"), await getOutgoingLinkFiles(this.app, activeFile), true);
+      this.renderFileSection(content, "backlinks", this.plugin.t("backlinks"), await getBacklinkFiles(this.app, activeFile), false);
+      if (!isExcalidrawFile(activeFile)) {
+        this.renderExactReferenceSection(content, "outgoing-references", this.plugin.t("outgoingReferences"), await getOutgoingExactReferences(this.app, activeFile), "outgoing", true);
+        this.renderExactReferenceSection(content, "incoming-references", this.plugin.t("incomingReferences"), await getIncomingExactReferences(this.app, activeFile), "incoming", false);
+      }
+      this.renderRelationSection(content, activeFile);
+      this.renderTagSection(content, activeFile);
+      await this.renderMentionsSection(content, activeFile);
+      this.renderCaptureSection(content);
+      this.renderSemanticSection(content);
+
+      if (previousScrollTop !== null || options.focusSectionId) {
+        window.requestAnimationFrame(() => {
+          if (previousScrollTop !== null) {
+            scrollContainer.scrollTop = previousScrollTop;
+          }
+
+          if (options.focusSectionId) {
+            const toggle = this.contentEl.querySelector<HTMLElement>(`.lti-section-toggle[data-section-id="${options.focusSectionId}"]`);
+            toggle?.focus({ preventScroll: true });
+          }
+        });
+      }
+    } finally {
+      this.isRefreshing = false;
     }
   }
 
