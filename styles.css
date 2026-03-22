@@ -4364,3 +4364,533 @@ button[lvl="primary"]:hover {
   background: var(--lti-border);
   margin: 0.3rem 0;
 }
+
+/* ============================================
+   Phase 4: Advanced Animations & Effects
+   ============================================ */
+
+/* Pulse animation for notifications */
+@keyframes lti-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.lti-pulse {
+  animation: lti-pulse 2s ease-in-out infinite;
+}
+
+/* Ripple effect on click */
+@keyframes lti-ripple {
+  0% {
+    transform: scale(0);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+
+.lti-ripple {
+  position: relative;
+  overflow: hidden;
+}
+
+.lti-ripple::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--interactive-accent) 30%, transparent) 0%,
+    transparent 70%
+  );
+  transform: scale(0);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.lti-ripple.is-active::after {
+  animation: lti-ripple 500ms ease-out;
+}
+
+/* Glow effect for accent elements */
+.lti-glow {
+  box-shadow:
+    0 0 12px color-mix(in srgb, var(--interactive-accent) 35%, transparent),
+    0 0 24px color-mix(in srgb, var(--interactive-accent) 20%, transparent);
+}
+
+.lti-glow-subtle {
+  box-shadow: 0 0 8px color-mix(in srgb, var(--interactive-accent) 20%, transparent);
+}
+
+/* Float animation for floating elements */
+@keyframes lti-float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.lti-float {
+  animation: lti-float 3s ease-in-out infinite;
+}
+
+/* Shake animation for errors */
+@keyframes lti-shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  10%, 30%, 50%, 70%, 90% {
+    transform: translateX(-4px);
+  }
+  20%, 40%, 60%, 80% {
+    transform: translateX(4px);
+  }
+}
+
+.lti-shake {
+  animation: lti-shake 500ms ease-in-out;
+}
+
+/* ============================================
+   Phase 4: Drag & Drop Styling
+   ============================================ */
+
+.lti-draggable {
+  cursor: grab;
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.lti-draggable:active {
+  cursor: grabbing;
+}
+
+.lti-draggable.is-dragging {
+  opacity: 0.7;
+  transform: scale(1.02);
+  box-shadow: var(--lti-shadow-panel);
+  z-index: 100;
+}
+
+.lti-drop-zone {
+  border: 2px dashed var(--lti-border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-align: center;
+  transition:
+    border-color 200ms ease,
+    background-color 200ms ease;
+}
+
+.lti-drop-zone.is-hover {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 5%, transparent);
+}
+
+.lti-drop-zone.is-accept {
+  border-color: var(--color-green);
+  background: color-mix(in srgb, var(--color-green) 5%, transparent);
+}
+
+.lti-drop-zone.is-reject {
+  border-color: var(--color-red);
+  background: color-mix(in srgb, var(--color-red) 5%, transparent);
+}
+
+/* ============================================
+   Phase 4: Selection & Highlight
+   ============================================ */
+
+::selection,
+.link-tag-intelligence-view ::selection {
+  background: color-mix(in srgb, var(--interactive-accent) 25%, transparent);
+  color: var(--text-normal);
+}
+
+/* Text highlight */
+.lti-highlight {
+  background: color-mix(in srgb, var(--interactive-accent) 20%, transparent);
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+.lti-highlight-success {
+  background: color-mix(in srgb, var(--color-green) 20%, transparent);
+}
+
+.lti-highlight-warning {
+  background: color-mix(in srgb, var(--color-orange) 20%, transparent);
+}
+
+.lti-highlight-error {
+  background: color-mix(in srgb, var(--color-red) 20%, transparent);
+}
+
+/* Search match highlight */
+.lti-search-match {
+  background: color-mix(in srgb, var(--interactive-accent) 30%, transparent);
+  border-bottom: 2px solid var(--interactive-accent);
+  font-weight: 700;
+}
+
+/* ============================================
+   Phase 4: Expand/Collapse Panel
+   ============================================ */
+
+.lti-panel {
+  border: 1px solid var(--lti-border);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--lti-surface);
+}
+
+.lti-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+  background: var(--lti-surface-raised);
+  transition: background-color 150ms ease;
+}
+
+.lti-panel-header:hover {
+  background: color-mix(in srgb, var(--background-secondary) 85%, var(--lti-surface-raised));
+}
+
+.lti-panel-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-normal);
+}
+
+.lti-panel-chevron {
+  transition: transform 200ms ease;
+}
+
+.lti-panel.is-expanded .lti-panel-chevron {
+  transform: rotate(180deg);
+}
+
+.lti-panel-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 250ms ease-out;
+}
+
+.lti-panel.is-expanded .lti-panel-body {
+  grid-template-rows: 1fr;
+}
+
+.lti-panel-content {
+  overflow: hidden;
+  padding: 0 1rem;
+  opacity: 0;
+  transition: opacity 200ms ease-out;
+}
+
+.lti-panel.is-expanded .lti-panel-content {
+  padding: 1rem;
+  opacity: 1;
+}
+
+/* ============================================
+   Phase 4: Stepper & Wizard
+   ============================================ */
+
+.lti-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.lti-step {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.lti-step-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  border: 2px solid var(--lti-border);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  transition:
+    border-color 200ms ease,
+    background-color 200ms ease,
+    color 200ms ease;
+}
+
+.lti-step.is-active .lti-step-number {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.lti-step.is-completed .lti-step-number {
+  border-color: var(--color-green);
+  background: var(--color-green);
+  color: white;
+}
+
+.lti-step-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  transition: color 200ms ease;
+}
+
+.lti-step.is-active .lti-step-label {
+  color: var(--text-normal);
+  font-weight: 600;
+}
+
+.lti-step-connector {
+  flex: 1;
+  height: 2px;
+  background: var(--lti-border);
+  margin: 0 0.5rem;
+  min-width: 1.5rem;
+}
+
+.lti-step-connector.is-completed {
+  background: var(--color-green);
+}
+
+/* ============================================
+   Phase 4: Avatar & Thumbnail
+   ============================================ */
+
+.lti-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--interactive-accent) 15%, transparent);
+  color: var(--text-accent);
+  font-size: 0.85rem;
+  font-weight: 700;
+  overflow: hidden;
+}
+
+.lti-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lti-avatar.is-sm {
+  width: 1.5rem;
+  height: 1.5rem;
+  font-size: 0.65rem;
+}
+
+.lti-avatar.is-lg {
+  width: 3rem;
+  height: 3rem;
+  font-size: 1.1rem;
+}
+
+.lti-thumbnail {
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--background-secondary);
+  width: 4rem;
+  height: 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lti-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ============================================
+   Phase 4: Chip & Tag Variants
+   ============================================ */
+
+.lti-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border: 1px solid var(--lti-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
+}
+
+.lti-chip:hover {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
+}
+
+.lti-chip.is-removable {
+  padding-right: 0.35rem;
+}
+
+.lti-chip-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background-color 100ms ease,
+    color 100ms ease;
+}
+
+.lti-chip-remove:hover {
+  background: color-mix(in srgb, var(--color-red) 15%, transparent);
+  color: var(--color-red);
+}
+
+/* ============================================
+   Phase 4: Data Table Styling
+   ============================================ */
+
+.lti-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.lti-table th,
+.lti-table td {
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--lti-border);
+}
+
+.lti-table th {
+  font-weight: 700;
+  color: var(--text-normal);
+  background: var(--background-secondary);
+}
+
+.lti-table tr:hover td {
+  background: var(--interactive-hover);
+}
+
+.lti-table tr.is-selected td {
+  background: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+}
+
+/* ============================================
+   Phase 4: Callout & Quote
+   ============================================ */
+
+.lti-callout {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  border-radius: 10px;
+  border: 1px solid var(--lti-border);
+  background: var(--background-secondary);
+}
+
+.lti-callout-icon {
+  flex-shrink: 0;
+  font-size: 1.1rem;
+}
+
+.lti-callout-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.lti-callout-title {
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+
+.lti-callout.is-info {
+  border-color: color-mix(in srgb, var(--interactive-accent) 25%, var(--lti-border));
+  background: color-mix(in srgb, var(--interactive-accent) 5%, var(--background-secondary));
+}
+
+.lti-callout.is-tip {
+  border-color: color-mix(in srgb, var(--color-green) 25%, var(--lti-border));
+  background: color-mix(in srgb, var(--color-green) 5%, var(--background-secondary));
+}
+
+.lti-callout.is-warning {
+  border-color: color-mix(in srgb, var(--color-orange) 25%, var(--lti-border));
+  background: color-mix(in srgb, var(--color-orange) 5%, var(--background-secondary));
+}
+
+.lti-callout.is-danger {
+  border-color: color-mix(in srgb, var(--color-red) 25%, var(--lti-border));
+  background: color-mix(in srgb, var(--color-red) 5%, var(--background-secondary));
+}
+
+/* ============================================
+   Phase 4: Fuzzy Search Highlight
+   ============================================ */
+
+.lti-fuzzy-match {
+  color: var(--text-muted);
+}
+
+.lti-fuzzy-match strong {
+  color: var(--text-accent);
+  font-weight: 700;
+}
+
+/* ============================================
+   Phase 4: Theme Gradient Backgrounds
+   ============================================ */
+
+.lti-gradient-accent {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--interactive-accent) 8%, transparent) 0%,
+    transparent 50%,
+    color-mix(in srgb, var(--interactive-accent) 4%, transparent) 100%
+  );
+}
+
+.lti-gradient-dark {
+  background: linear-gradient(
+    180deg,
+    var(--background-secondary) 0%,
+    var(--background-primary) 100%
+  );
+}
+
+.lti-gradient-surface {
+  background: linear-gradient(
+    145deg,
+    var(--lti-surface-raised) 0%,
+    var(--lti-surface) 100%
+  );
+}
