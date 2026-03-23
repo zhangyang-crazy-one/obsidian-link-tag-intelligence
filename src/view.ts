@@ -512,12 +512,11 @@ export class LinkTagIntelligenceView extends ItemView {
     this.plugin.openFile(reference.sourceFile);
   }
 
-  onClose(): Promise<void> {
+  async onClose(): Promise<void> {
     if (this.refreshTimer !== null) {
       window.clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
     }
     this.contentEl.empty();
-    return Promise.resolve();
   }
 }

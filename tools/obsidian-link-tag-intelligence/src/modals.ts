@@ -67,13 +67,17 @@ export class TextPromptModal extends Modal {
     new ButtonComponent(actions)
       .setButtonText("OK")
       .setCta()
-      .onClick(async () => {
+      .onClick(() => {
         const value = input.value.trim();
         if (!value) {
           return;
         }
-        await this.onSubmit(value);
-        this.close();
+        const result = this.onSubmit(value);
+        if (result instanceof Promise) {
+          void result.then(() => this.close());
+        } else {
+          this.close();
+        }
       });
 
     new ButtonComponent(actions)
@@ -295,11 +299,11 @@ export class ReferenceInsertModal extends Modal {
     new ButtonComponent(actions)
       .setButtonText(this.plugin.t(this.mode === "block_ref" ? "insertBlockRef" : "insertLineRef"))
       .setCta()
-      .onClick(async () => {
+      .onClick(() => {
         if (this.mode === "block_ref") {
-          await this.plugin.insertBlockReferenceIntoEditor(this.file, this.startLine, this.endLine);
+          this.plugin.insertBlockReferenceIntoEditor(this.file, this.startLine, this.endLine);
         } else {
-          await this.plugin.insertLineReferenceIntoEditor(this.file, this.startLine, this.endLine);
+          this.plugin.insertLineReferenceIntoEditor(this.file, this.startLine, this.endLine);
         }
         this.close();
       });
@@ -459,11 +463,12 @@ export class TagSuggestionModal extends Modal {
     new ButtonComponent(actions)
       .setButtonText(this.plugin.t("apply"))
       .setCta()
-      .onClick(async () => {
-        await appendTagsToFrontmatter(this.plugin.app, this.file, [...this.selected]);
-        new Notice(this.plugin.t("createdFrontmatterTag"));
-        this.plugin.refreshAllViews();
-        this.close();
+      .onClick(() => {
+        void appendTagsToFrontmatter(this.plugin.app, this.file, [...this.selected]).then(() => {
+          new Notice(this.plugin.t("createdFrontmatterTag"));
+          this.plugin.refreshAllViews();
+          this.close();
+        });
       });
 
     new ButtonComponent(actions)

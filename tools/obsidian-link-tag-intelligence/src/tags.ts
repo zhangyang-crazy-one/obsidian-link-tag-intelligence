@@ -236,7 +236,7 @@ function getNaturalLanguageBody(content: string): string {
 
 function splitCandidateTerms(input: string): string[] {
   return input
-    .split(/[\/_|()[\]{}:：,，。.!?？、\-\s]+/)
+    .split(/[/_|()[\]{}:：,，。.!?？、\-\s]+/)
     .map((item) => item.trim())
     .filter(Boolean);
 }
@@ -342,10 +342,10 @@ function isNoisyToken(token: string): boolean {
   return false;
 }
 
-async function collectReferencedContextTerms(app: App, file: TFile, content: string): Promise<{
+function collectReferencedContextTerms(app: App, file: TFile, content: string): {
   terms: string[];
   tags: string[];
-}> {
+} {
   const cache = app.metadataCache.getFileCache(file);
   const linkTargets = [
     ...(cache?.links ?? []),
@@ -680,7 +680,7 @@ export async function suggestTagsForFile(app: App, file: TFile, aliasMapText: st
   })();
   const titleTerms = extractTagTermCandidates(file.basename);
   const headings = (cache?.headings ?? []).map((heading) => heading.heading).flatMap(extractTagTermCandidates);
-  const referencedContext = await collectReferencedContextTerms(app, file, content);
+  const referencedContext = collectReferencedContextTerms(app, file, content);
   const directReferenceTerms = collectReferenceTargetTerms(content);
   const naturalBody = getNaturalLanguageBody(content);
   const noteAliases = getAliasesFromCache(cache);

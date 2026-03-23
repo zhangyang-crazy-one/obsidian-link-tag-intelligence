@@ -55,15 +55,15 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       (leaf) => new LinkTagIntelligenceView(leaf, this)
     );
 
-    this.addRibbonIcon("links-coming-in", this.t("openPanel"), async () => {
-      await this.openIntelligencePanel();
+    this.addRibbonIcon("links-coming-in", this.t("openPanel"), () => {
+      void this.openIntelligencePanel();
     });
 
     this.addCommand({
       id: "open-panel",
       name: this.t("openPanel"),
-      callback: async () => {
-        await this.openIntelligencePanel();
+      callback: () => {
+        void this.openIntelligencePanel();
       }
     });
 
@@ -147,8 +147,8 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       defaultMod: false
     });
 
-    const activeLeaf = this.app.workspace.getLeaf(false);
-    this.captureMarkdownContext(activeLeaf);
+    const currentLeaf = this.app.workspace.getLeaf(false);
+    this.captureMarkdownContext(currentLeaf);
     if (!this.lastMarkdownLeaf) {
       this.captureMarkdownContext(this.app.workspace.getLeavesOfType("markdown")[0] ?? null);
     }
@@ -303,10 +303,10 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   }
 
   getContextMarkdownView(): MarkdownView | null {
-    const activeLeaf = this.app.workspace.getLeaf(false);
-    const activeView = activeLeaf?.view;
+    const currentLeaf = this.app.workspace.getLeaf(false);
+    const activeView = currentLeaf?.view;
     if (activeView instanceof MarkdownView && activeView.file instanceof TFile) {
-      this.captureMarkdownContext(activeLeaf);
+      this.captureMarkdownContext(currentLeaf);
       return activeView;
     }
 
@@ -349,10 +349,10 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   }
 
   private getNavigationLeaf(): WorkspaceLeaf {
-    const activeLeaf = this.app.workspace.getLeaf(false);
-    if (activeLeaf?.view instanceof MarkdownView) {
-      this.captureMarkdownContext(activeLeaf);
-      return activeLeaf;
+    const currentLeaf = this.app.workspace.getLeaf(false);
+    if (currentLeaf?.view instanceof MarkdownView) {
+      this.captureMarkdownContext(currentLeaf);
+      return currentLeaf;
     }
 
     if (this.lastMarkdownLeaf) {
@@ -414,7 +414,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     ).open();
   }
 
-  private async insertTextIntoContextEditor(text: string): Promise<boolean> {
+  private insertTextIntoContextEditor(text: string): boolean {
     const view = this.getContextMarkdownView();
     const editor = view?.editor;
     if (!editor) {
@@ -449,25 +449,25 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     this.refreshAllViews();
   }
 
-  async insertBlockReferenceIntoEditor(file: TFile, startLine: number, endLine?: number): Promise<void> {
+  insertBlockReferenceIntoEditor(file: TFile, startLine: number, endLine?: number): void {
     const sourcePath = this.getContextMarkdownFile()?.path ?? "";
     const target = sourcePath
       ? this.app.metadataCache.fileToLinktext(file, sourcePath, true)
       : file.basename;
     const text = formatLegacyBlockReference(target, startLine, endLine);
-    if (await this.insertTextIntoContextEditor(text)) {
+    if (this.insertTextIntoContextEditor(text)) {
       this.pushRecentTarget(file.path);
       new Notice(this.t("blockRefInserted", { title: file.basename }));
     }
   }
 
-  async insertLineReferenceIntoEditor(file: TFile, startLine: number, endLine?: number): Promise<void> {
+  insertLineReferenceIntoEditor(file: TFile, startLine: number, endLine?: number): void {
     const sourcePath = this.getContextMarkdownFile()?.path ?? "";
     const target = sourcePath
       ? this.app.metadataCache.fileToLinktext(file, sourcePath, true)
       : file.basename;
     const text = formatLegacyLineReference(target, startLine, endLine);
-    if (await this.insertTextIntoContextEditor(text)) {
+    if (this.insertTextIntoContextEditor(text)) {
       this.pushRecentTarget(file.path);
       new Notice(this.t("lineRefInserted", { title: file.basename }));
     }

@@ -298,7 +298,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     await this.saveData(this.settings);
   }
 
-  async getResearchWorkbenchState(): Promise<ResearchWorkbenchState> {
+  getResearchWorkbenchState(): Promise<ResearchWorkbenchState> {
     return readResearchWorkbenchState(
       this.app,
       buildResearchWorkbenchProfile(this.settings, this.currentLanguage())
@@ -350,14 +350,14 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     return true;
   }
 
-  async importZoteroNotes(): Promise<boolean> {
+  importZoteroNotes(): Promise<boolean> {
     return this.executeCommandByCandidates([
       "obsidian-zotero-desktop-connector:zdc-import-notes",
       "zdc-import-notes"
     ]);
   }
 
-  async openSmartConnectionsView(): Promise<boolean> {
+  openSmartConnectionsView(): Promise<boolean> {
     return this.executeCommandByCandidates([
       "smart-connections:smart-connections-view",
       "smart-connections-view"
@@ -601,14 +601,13 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   }
 
   private getNavigationLeaf(): WorkspaceLeaf {
-    // Note: activeLeaf is deprecated, but getMostRecentLeaf provides equivalent functionality
-    const activeLeaf = this.app.workspace.getMostRecentLeaf();
+    const mostRecentLeaf = this.app.workspace.getMostRecentLeaf();
     const activeFile = this.getActiveSupportedFile();
-    if (activeLeaf && activeFile) {
+    if (mostRecentLeaf && activeFile) {
       this.captureSupportedFileContext(activeFile);
-      if (activeLeaf.view instanceof MarkdownView) {
-        this.captureEditorContext(activeLeaf);
-        return activeLeaf;
+      if (mostRecentLeaf.view instanceof MarkdownView) {
+        this.captureEditorContext(mostRecentLeaf);
+        return mostRecentLeaf;
       }
     }
 
