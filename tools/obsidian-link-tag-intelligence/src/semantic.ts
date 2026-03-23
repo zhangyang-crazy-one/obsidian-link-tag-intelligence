@@ -1,4 +1,4 @@
-import { App, Platform, TFile } from "obsidian";
+import { App, FileSystemAdapter, Platform, TFile } from "obsidian";
 
 import type { LinkTagIntelligenceSettings } from "./settings";
 import { buildSemanticCommand } from "./shared";
@@ -24,7 +24,40 @@ export function isSemanticBridgeConfigured(settings: LinkTagIntelligenceSettings
 }
 
 function getVaultBasePath(app: App): string {
-  return (app.vault.adapter as { basePath?: string }).basePath ?? "";
+  const adapter = app.vault.adapter;
+  return adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
+}
+
+type ExecFunction = (
+  command: string,
+  options: { timeout?: number; cwd?: string },
+  callback: (error: Error | null, stdout: string, stderr: string) => void
+) => void;
+
+type ChildProcessModule = {
+  exec?: ExecFunction;
+};
+
+function getDesktopRequire(): ((moduleName: string) => unknown) | null {
+  const desktopRequire = (globalThis as typeof globalThis & {
+    require?: (moduleName: string) => unknown;
+  }).require;
+
+  return typeof desktopRequire === "function" ? desktopRequire : null;
+}
+
+function getExecFunction(): ExecFunction {
+  const desktopRequire = getDesktopRequire();
+  if (!desktopRequire) {
+    throw new Error("desktop-shell-unavailable");
+  }
+
+  const childProcess = desktopRequire("child_process") as ChildProcessModule | undefined;
+  if (typeof childProcess?.exec !== "function") {
+    throw new Error("desktop-shell-unavailable");
+  }
+
+  return childProcess.exec;
 }
 
 function readOptionalString(value: unknown): string | undefined {
@@ -88,10 +121,10 @@ export async function runSemanticSearch(
     selection
   });
 
-  const { exec } = require("child_process");
+  const exec = getExecFunction();
 
   const stdout = await new Promise<string>((resolve, reject) => {
-    exec(command, { timeout: settings.semanticTimeoutMs, cwd: getVaultBasePath(app) || undefined }, (error: Error | null, resultStdout: string, stderr: string) => {
+    exec(command, { timeout: settings.semanticTimeoutMs, cwd: getVaultBasePath(app) || undefined }, (error, resultStdout, stderr) => {
       if (error) {
         reject(new Error(stderr?.trim() || error.message));
         return;

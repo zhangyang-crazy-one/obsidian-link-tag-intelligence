@@ -427,7 +427,8 @@ export class LinkTagIntelligenceView extends ItemView {
     this.plugin.openFile(reference.sourceFile);
   }
 
-  onClose(): void {
+  onClose(): Promise<void> {
     this.contentEl.empty();
+    return Promise.resolve();
   }
 }
