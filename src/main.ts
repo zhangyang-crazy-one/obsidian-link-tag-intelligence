@@ -6,6 +6,7 @@ type InternalApp = App & { plugins?: { plugins?: Record<string, { ea?: unknown }
 import { buildReferenceEditorExtension } from "./editor-extension";
 import { debugLog, resetDebugLog } from "./debug-log";
 import { runIngestionCommand, type ResearchIngestionRequest } from "./ingestion";
+import { LINK_TAG_INTELLIGENCE_ICON_ID } from "./icons";
 import { relationKeyLabel, tr, resolveLanguage, type UILanguage } from "./i18n";
 import { LinkInsertModal, ReferenceInsertModal, RelationKeyModal, ResearchIngestionModal, SemanticSearchModal, TagManagerModal, TagSuggestionModal } from "./modals";
 import {
@@ -41,6 +42,7 @@ import {
   type LinkTagIntelligenceSettings
 } from "./settings";
 import { LINK_TAG_INTELLIGENCE_VIEW, LinkTagIntelligenceView } from "./view";
+import type { ViewRefreshRequest } from "./view-refresh";
 
 export default class LinkTagIntelligencePlugin extends Plugin {
   settings: LinkTagIntelligenceSettings = DEFAULT_SETTINGS;
@@ -73,7 +75,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       (leaf) => new LinkTagIntelligenceView(leaf, this)
     );
 
-    this.addRibbonIcon("links-coming-in", this.t("openPanel"), () => {
+    this.addRibbonIcon(LINK_TAG_INTELLIGENCE_ICON_ID, this.t("openPanel"), () => {
       void this.openIntelligencePanel();
     });
 
@@ -219,9 +221,23 @@ export default class LinkTagIntelligencePlugin extends Plugin {
           this.lastExcalidrawFilePath = file.path;
         }
       }
-      this.refreshAllViews();
+      this.refreshAllViews({
+        reason: "context",
+        force: true,
+        changedPaths: file instanceof TFile ? [file.path] : undefined
+      });
     }));
-    this.registerEvent(this.app.metadataCache.on("changed", () => this.refreshAllViews()));
+    this.registerEvent(this.app.metadataCache.on("changed", (file) => {
+      const currentFile = this.getContextNoteFile();
+      if (!(file instanceof TFile) || !(currentFile instanceof TFile) || file.path !== currentFile.path) {
+        return;
+      }
+
+      this.refreshAllViews({
+        reason: "metadata",
+        changedPaths: [file.path]
+      });
+    }));
     this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => {
       const viewType = leaf?.view?.getViewType() ?? null;
       const viewFile = leaf?.view instanceof FileView ? leaf.view.file?.path ?? null : null;
@@ -265,11 +281,24 @@ export default class LinkTagIntelligencePlugin extends Plugin {
         const fileChanged = this.captureSupportedFileContext(leafFile);
         const editorChanged = this.captureEditorContext(leaf);
         if (editorChanged || fileChanged || isExcalidrawViewReady) {
-          this.refreshAllViews();
+          this.refreshAllViews({
+            reason: "context",
+            force: true,
+            changedPaths: leafFile instanceof TFile ? [leafFile.path] : undefined
+          });
         }
       }, 0);
     }));
-    this.registerEvent(this.app.vault.on("rename", () => this.refreshAllViews()));
+    this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+      if (!(file instanceof TFile)) {
+        return;
+      }
+
+      this.refreshAllViews({
+        reason: "metadata",
+        changedPaths: [file.path, oldPath].filter((path): path is string => typeof path === "string" && path.length > 0)
+      });
+    }));
     this.registerMarkdownPostProcessor((el, ctx) => renderLegacyReferences(el, ctx, {
       app: this.app,
       resolveTarget: (target, sourcePath) => resolveNoteTarget(this.app, target, sourcePath),
@@ -632,12 +661,12 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     }
     await leaf.setViewState({ type: LINK_TAG_INTELLIGENCE_VIEW, active: true });
     await this.app.workspace.revealLeaf(leaf);
-    this.refreshAllViews();
+    this.refreshAllViews({ reason: "context", force: true });
   }
 
-  refreshAllViews(): void {
+  refreshAllViews(request: ViewRefreshRequest = { reason: "mutation" }): void {
     const leaves = this.app.workspace.getLeavesOfType(LINK_TAG_INTELLIGENCE_VIEW);
-    debugLog(this.app, "refreshAllViews", { leafCount: leaves.length });
+    debugLog(this.app, "refreshAllViews", { leafCount: leaves.length, reason: request.reason, changedPaths: request.changedPaths ?? [] });
     for (const leaf of leaves) {
       const view = leaf.view;
       debugLog(this.app, "refreshAllViews:viewCheck", {
@@ -645,7 +674,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
         isLTIView: view instanceof LinkTagIntelligenceView
       });
       if (view instanceof LinkTagIntelligenceView) {
-        void view.refresh();
+        view.requestRefresh(request);
       }
     }
   }

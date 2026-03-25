@@ -1,9 +1,7 @@
 "use strict";
-var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __export = (target, all) => {
   for (var name in all)
@@ -17,14 +15,6 @@ var __copyProps = (to, from, except, desc) => {
   }
   return to;
 };
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/main.ts
@@ -182,7 +172,7 @@ function formatReferenceTitle(target) {
   const strippedPath = target.split("/").pop() ?? target;
   return strippedPath.replace(/\.md$/i, "");
 }
-async function renderLegacyReferences(el, ctx, helpers) {
+function renderLegacyReferences(el, ctx, helpers) {
   const hoverController = helpers.getReadingHoverController(el, ctx);
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
   const textNodes = [];
@@ -568,51 +558,72 @@ function buildReferenceEditorExtension(plugin) {
 
 // src/debug-log.ts
 var import_obsidian2 = require("obsidian");
-var import_node_fs = require("node:fs");
-var import_node_path = __toESM(require("node:path"), 1);
 var MAX_LOG_BYTES = 512 * 1024;
-function resolveLogPath(app) {
+var writeQueues = /* @__PURE__ */ new WeakMap();
+function getLogRelativePath(app) {
+  return (0, import_obsidian2.normalizePath)(`${app.vault.configDir}/plugins/link-tag-intelligence/debug-runtime.log`);
+}
+function getParentPath(normalizedPath) {
+  const lastSlash = normalizedPath.lastIndexOf("/");
+  return lastSlash >= 0 ? normalizedPath.slice(0, lastSlash) : "";
+}
+function resolveDisplayPath(app, relativePath) {
   const adapter = app.vault.adapter;
-  if (!(adapter instanceof import_obsidian2.FileSystemAdapter)) {
-    return null;
+  if (adapter instanceof import_obsidian2.FileSystemAdapter) {
+    return `${adapter.getBasePath()}/${relativePath}`;
   }
-  return import_node_path.default.join(
-    adapter.getBasePath(),
-    app.vault.configDir,
-    "plugins",
-    "link-tag-intelligence",
-    "debug-runtime.log"
-  );
+  return relativePath;
 }
-function resetDebugLog(app) {
-  const logPath = resolveLogPath(app);
-  if (!logPath) {
-    return null;
-  }
-  (0, import_node_fs.mkdirSync)(import_node_path.default.dirname(logPath), { recursive: true });
-  (0, import_node_fs.writeFileSync)(logPath, "", "utf8");
-  return logPath;
-}
-function debugLog(app, scope, details = {}) {
-  const logPath = resolveLogPath(app);
-  if (!logPath) {
+async function ensureDirectory(adapter, filePath) {
+  const directory = getParentPath(filePath);
+  if (!directory) {
     return;
   }
-  try {
-    (0, import_node_fs.mkdirSync)(import_node_path.default.dirname(logPath), { recursive: true });
-    if ((0, import_node_fs.existsSync)(logPath) && (0, import_node_fs.statSync)(logPath).size > MAX_LOG_BYTES) {
-      (0, import_node_fs.writeFileSync)(logPath, "", "utf8");
-    }
-    const payload = {
-      ts: (/* @__PURE__ */ new Date()).toISOString(),
-      scope,
-      ...details
-    };
-    (0, import_node_fs.appendFileSync)(logPath, `${JSON.stringify(payload)}
-`, "utf8");
-  } catch (error) {
-    console.error("[lti-debug-log] failed to write log", error);
+  if (!await adapter.exists(directory)) {
+    await adapter.mkdir(directory);
   }
+}
+function queueWrite(app, writer) {
+  const next = (writeQueues.get(app) ?? Promise.resolve()).catch(() => void 0).then(writer).catch((error) => {
+    console.error("[lti-debug-log] failed to write log", error);
+  });
+  writeQueues.set(app, next);
+}
+function resetDebugLog(app) {
+  const adapter = app.vault.adapter;
+  const logPath = getLogRelativePath(app);
+  const displayPath = resolveDisplayPath(app, logPath);
+  queueWrite(app, async () => {
+    try {
+      await ensureDirectory(adapter, logPath);
+      await adapter.write(logPath, "", {});
+    } catch (error) {
+      console.error("[lti-debug-log] failed to reset log", error);
+    }
+  });
+  return displayPath;
+}
+function debugLog(app, scope, details = {}) {
+  const adapter = app.vault.adapter;
+  const logPath = getLogRelativePath(app);
+  const payload = {
+    ts: (/* @__PURE__ */ new Date()).toISOString(),
+    scope,
+    ...details
+  };
+  queueWrite(app, async () => {
+    try {
+      await ensureDirectory(adapter, logPath);
+      const stat = await adapter.stat(logPath);
+      if (stat && stat.size > MAX_LOG_BYTES) {
+        await adapter.write(logPath, "", {});
+      }
+      await adapter.append(logPath, `${JSON.stringify(payload)}
+`, {});
+    } catch (error) {
+      console.error("[lti-debug-log] failed to write log", error);
+    }
+  });
 }
 
 // src/i18n.ts
@@ -1275,7 +1286,7 @@ async function getOutgoingExactReferences(app, file) {
       order: reference.position.start
     });
   }
-  return collected.sort((left, right) => left.order - right.order).map(({ order, ...reference }) => reference);
+  return collected.sort((left, right) => left.order - right.order).map(({ order: _order, ...reference }) => reference);
 }
 async function getIncomingExactReferences(app, file) {
   const collected = [];
@@ -1333,7 +1344,7 @@ async function getIncomingExactReferences(app, file) {
   }
   return collected.sort(
     (left, right) => left.sourceFile.basename.localeCompare(right.sourceFile.basename, "zh-Hans-CN") || left.order - right.order
-  ).map(({ order, ...reference }) => reference);
+  ).map(({ order: _order, ...reference }) => reference);
 }
 function containsMention(text, term) {
   if (!term.trim()) {
@@ -1471,7 +1482,23 @@ function isSemanticBridgeConfigured(settings) {
   return settings.semanticBridgeEnabled && Boolean(settings.semanticCommand.trim());
 }
 function getVaultBasePath(app) {
-  return app.vault.adapter.basePath ?? "";
+  const adapter = app.vault.adapter;
+  return adapter instanceof import_obsidian4.FileSystemAdapter ? adapter.getBasePath() : "";
+}
+function getDesktopRequire() {
+  const desktopRequire = globalThis.require;
+  return typeof desktopRequire === "function" ? desktopRequire : null;
+}
+function getExecFunction() {
+  const desktopRequire = getDesktopRequire();
+  if (!desktopRequire) {
+    throw new Error("desktop-shell-unavailable");
+  }
+  const childProcess = desktopRequire("child_process");
+  if (typeof childProcess?.exec !== "function") {
+    throw new Error("desktop-shell-unavailable");
+  }
+  return childProcess.exec;
 }
 function readOptionalString(value) {
   if (typeof value === "string" && value.trim()) {
@@ -1520,7 +1547,7 @@ async function runSemanticSearch(app, settings, query, activeFile, selection) {
     filePath: activeFile?.path ?? "",
     selection
   });
-  const { exec } = await import("node:child_process");
+  const exec = getExecFunction();
   const stdout = await new Promise((resolve, reject) => {
     exec(command, { timeout: settings.semanticTimeoutMs, cwd: getVaultBasePath(app) || void 0 }, (error, resultStdout, stderr) => {
       if (error) {
@@ -1839,7 +1866,7 @@ function getNaturalLanguageBody(content) {
   return stripFrontmatter(content).split("\n").map((line) => line.trim()).filter(looksLikeNaturalLanguageLine).join("\n");
 }
 function splitCandidateTerms(input) {
-  return input.split(/[\/_|()[\]{}:：,，。.!?？、\-\s]+/).map((item) => item.trim()).filter(Boolean);
+  return input.split(/[/_|()[\]{}:：,，。.!?？、\-\s]+/).map((item) => item.trim()).filter(Boolean);
 }
 function splitCjkBlock(block) {
   const parts = block.split(/[的是在与和及并或对从将把为等由以其让使所而到于中上下内外前后再各就也很更最可能需要已未被向给按]/).map((item) => item.trim()).filter((item) => item.length >= 2);
@@ -1917,7 +1944,7 @@ function isNoisyToken(token) {
   }
   return false;
 }
-async function collectReferencedContextTerms(app, file, content) {
+function collectReferencedContextTerms(app, file, content) {
   const cache = app.metadataCache.getFileCache(file);
   const linkTargets = [
     ...cache?.links ?? [],
@@ -2166,7 +2193,7 @@ async function suggestTagsForFile(app, file, aliasMapText, facetMapText = "") {
   })();
   const titleTerms = extractTagTermCandidates(file.basename);
   const headings = (cache?.headings ?? []).map((heading) => heading.heading).flatMap(extractTagTermCandidates);
-  const referencedContext = await collectReferencedContextTerms(app, file, content);
+  const referencedContext = collectReferencedContextTerms(app, file, content);
   const directReferenceTerms = collectReferenceTargetTerms(content);
   const naturalBody = getNaturalLanguageBody(content);
   const noteAliases = getAliasesFromCache(cache);
@@ -2344,25 +2371,29 @@ var TextPromptModal = class extends import_obsidian6.Modal {
       placeholder: this.placeholder
     });
     const actions = contentEl.createDiv({ cls: "lti-modal-actions" });
-    new import_obsidian6.ButtonComponent(actions).setButtonText("OK").setCta().onClick(async () => {
+    new import_obsidian6.ButtonComponent(actions).setButtonText("OK").setCta().onClick(() => {
       const value = input.value.trim();
       if (!value) {
         return;
       }
-      await this.onSubmit(value);
-      this.close();
+      const result = this.onSubmit(value);
+      if (result instanceof Promise) {
+        void result.then(() => this.close());
+      } else {
+        this.close();
+      }
     });
     new import_obsidian6.ButtonComponent(actions).setButtonText("Cancel").onClick(() => this.close());
     input.focus();
     input.select();
-    input.addEventListener("keydown", async (event) => {
+    input.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
         const value = input.value.trim();
         if (!value) {
           return;
         }
-        await this.onSubmit(value);
+        void this.onSubmit(value);
         this.close();
       }
     });
@@ -2446,8 +2477,8 @@ var LinkInsertModal = class extends import_obsidian6.SuggestModal {
       container.createDiv({ text: candidate.excerpt, cls: "suggestion-preview" });
     }
   }
-  async onChooseSuggestion(candidate) {
-    await this.onChoose(candidate);
+  onChooseSuggestion(candidate) {
+    void this.onChoose(candidate);
   }
 };
 var ReferenceInsertModal = class extends import_obsidian6.Modal {
@@ -2523,11 +2554,11 @@ var ReferenceInsertModal = class extends import_obsidian6.Modal {
       cls: "lti-ref-preview"
     });
     const actions = contentEl.createDiv({ cls: "lti-modal-actions" });
-    new import_obsidian6.ButtonComponent(actions).setButtonText(this.plugin.t(this.mode === "block_ref" ? "insertBlockRef" : "insertLineRef")).setCta().onClick(async () => {
+    new import_obsidian6.ButtonComponent(actions).setButtonText(this.plugin.t(this.mode === "block_ref" ? "insertBlockRef" : "insertLineRef")).setCta().onClick(() => {
       if (this.mode === "block_ref") {
-        await this.plugin.insertBlockReferenceIntoEditor(this.file, this.startLine, this.endLine);
+        this.plugin.insertBlockReferenceIntoEditor(this.file, this.startLine, this.endLine);
       } else {
-        await this.plugin.insertLineReferenceIntoEditor(this.file, this.startLine, this.endLine);
+        this.plugin.insertLineReferenceIntoEditor(this.file, this.startLine, this.endLine);
       }
       this.close();
     });
@@ -2593,11 +2624,13 @@ var TagManagerModal = class extends import_obsidian6.Modal {
         }).open();
       });
       const deleteButton = actions.createEl("button", { text: this.plugin.t("delete"), cls: "lti-inline-button" });
-      deleteButton.addEventListener("click", async () => {
-        const updated = await deleteTagAcrossVault(this.plugin.app, stat.tag);
-        new import_obsidian6.Notice(`${this.plugin.t("tagsUpdated")} (${updated})`);
-        this.render();
-        this.plugin.refreshAllViews();
+      deleteButton.addEventListener("click", () => {
+        void (async () => {
+          const updated = await deleteTagAcrossVault(this.plugin.app, stat.tag);
+          new import_obsidian6.Notice(`${this.plugin.t("tagsUpdated")} (${updated})`);
+          this.render();
+          this.plugin.refreshAllViews();
+        })();
       });
     }
   }
@@ -2653,11 +2686,12 @@ var TagSuggestionModal = class extends import_obsidian6.Modal {
       this.renderSuggestionGroup(contentEl, this.plugin.t("tagSuggestionSecondaryGroup"), secondary);
     }
     const actions = contentEl.createDiv({ cls: "lti-modal-actions" });
-    new import_obsidian6.ButtonComponent(actions).setButtonText(this.plugin.t("apply")).setCta().onClick(async () => {
-      await appendTagsToFrontmatter(this.plugin.app, this.file, [...this.selected]);
-      new import_obsidian6.Notice(this.plugin.t("createdFrontmatterTag"));
-      this.plugin.refreshAllViews();
-      this.close();
+    new import_obsidian6.ButtonComponent(actions).setButtonText(this.plugin.t("apply")).setCta().onClick(() => {
+      void appendTagsToFrontmatter(this.plugin.app, this.file, [...this.selected]).then(() => {
+        new import_obsidian6.Notice(this.plugin.t("createdFrontmatterTag"));
+        this.plugin.refreshAllViews();
+        this.close();
+      });
     });
     new import_obsidian6.ButtonComponent(actions).setButtonText(this.plugin.t("cancel")).onClick(() => this.close());
   }
@@ -2783,24 +2817,26 @@ var SemanticSearchModal = class extends import_obsidian6.Modal {
       placeholder: this.plugin.t("query")
     });
     const searchButton = form.createEl("button", { text: this.plugin.t("semanticSearch"), cls: "lti-action-button" });
-    searchButton.addEventListener("click", async () => {
-      try {
-        this.results = await runSemanticSearch(
-          this.plugin.app,
-          this.plugin.settings,
-          input.value.trim(),
-          this.activeFile,
-          this.plugin.getContextSelection()
-        );
-        if (this.results.length === 0) {
-          this.render(this.plugin.t("semanticNoResults"));
-          return;
+    searchButton.addEventListener("click", () => {
+      void (async () => {
+        try {
+          this.results = await runSemanticSearch(
+            this.plugin.app,
+            this.plugin.settings,
+            input.value.trim(),
+            this.activeFile,
+            this.plugin.getContextSelection()
+          );
+          if (this.results.length === 0) {
+            this.render(this.plugin.t("semanticNoResults"));
+            return;
+          }
+          this.render();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.render(this.plugin.semanticErrorToMessage(message));
         }
-        this.render();
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.render(this.plugin.semanticErrorToMessage(message));
-      }
+      })();
     });
     if (resultsError) {
       contentEl.createDiv({ text: resultsError, cls: "lti-empty" });
@@ -2954,11 +2990,11 @@ var _ReferencePreviewPopover = class _ReferencePreviewPopover {
     head.append(location);
     const title = document.createElement("div");
     title.className = "lti-hover-preview-title";
-    const path2 = document.createElement("div");
-    path2.className = "lti-hover-preview-path";
+    const path = document.createElement("div");
+    path.className = "lti-hover-preview-path";
     const snippet = document.createElement("pre");
     snippet.className = "lti-hover-preview-snippet";
-    root.append(head, title, path2, snippet);
+    root.append(head, title, path, snippet);
     root.addEventListener("mouseenter", () => this.cancelHide());
     root.addEventListener("mouseleave", () => this.scheduleHide());
     document.body.appendChild(root);
@@ -2966,7 +3002,7 @@ var _ReferencePreviewPopover = class _ReferencePreviewPopover {
     this.kindEl = kind;
     this.locationEl = location;
     this.titleEl = title;
-    this.pathEl = path2;
+    this.pathEl = path;
     this.snippetEl = snippet;
   }
   cleanupDuplicateRoots() {
@@ -2984,10 +3020,10 @@ var _ReferencePreviewPopover = class _ReferencePreviewPopover {
     const margin = 12;
     const safeTop = 20;
     const anchorRect = anchor.getBoundingClientRect();
-    this.rootEl.style.left = "0px";
-    this.rootEl.style.top = "0px";
-    this.rootEl.style.maxWidth = `min(28rem, calc(100vw - ${margin * 2}px))`;
-    this.rootEl.style.maxHeight = `calc(100vh - ${margin * 2}px)`;
+    this.rootEl.style.setProperty("left", "0px");
+    this.rootEl.style.setProperty("top", "0px");
+    this.rootEl.style.setProperty("max-width", `min(28rem, calc(100vw - ${margin * 2}px))`);
+    this.rootEl.style.setProperty("max-height", `calc(100vh - ${margin * 2}px)`);
     const previewRect = this.rootEl.getBoundingClientRect();
     const left = clamp2(anchorRect.left, margin, window.innerWidth - previewRect.width - margin);
     const availableHeight = Math.max(160, window.innerHeight - margin * 2);
@@ -3007,8 +3043,8 @@ var _ReferencePreviewPopover = class _ReferencePreviewPopover {
       top = anchorRect.top - previewHeight - gap;
     }
     top = clamp2(top, safeTop, window.innerHeight - previewHeight - margin);
-    this.rootEl.style.left = `${left}px`;
-    this.rootEl.style.top = `${top}px`;
+    this.rootEl.style.setProperty("left", `${left}px`);
+    this.rootEl.style.setProperty("top", `${top}px`);
   }
 };
 _ReferencePreviewPopover.ROOT_SELECTOR = ".lti-hover-preview";
@@ -3032,10 +3068,10 @@ function buildReadingHoverContent(doc, data) {
   title.textContent = data.title;
   root.append(title);
   if (data.path) {
-    const path2 = doc.createElement("div");
-    path2.className = "lti-reading-hover-path";
-    path2.textContent = data.path;
-    root.append(path2);
+    const path = doc.createElement("div");
+    path.className = "lti-reading-hover-path";
+    path.textContent = data.path;
+    root.append(path);
   }
   const snippet = doc.createElement("pre");
   snippet.className = "lti-reading-hover-snippet";
@@ -3349,7 +3385,7 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian8.PluginSetting
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: this.plugin.t("pluginName") });
+    new import_obsidian8.Setting(containerEl).setHeading().setName(this.plugin.t("pluginName"));
     new import_obsidian8.Setting(containerEl).setName(this.plugin.t("settingsLanguage")).addDropdown(
       (dropdown) => dropdown.addOption("system", "System").addOption("en", "English").addOption("zh", "\u4E2D\u6587").setValue(this.plugin.settings.language).onChange(async (value) => {
         this.plugin.settings.language = value;
@@ -3422,11 +3458,7 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian8.PluginSetting
   }
   renderResearchGuide(containerEl) {
     const guide = containerEl.createDiv({ cls: "lti-settings-guide" });
-    guide.createEl("h3", { text: this.plugin.t("settingsResearchGuideTitle"), cls: "lti-settings-guide-title" });
-    guide.createDiv({
-      text: this.plugin.t("settingsResearchGuideDescription"),
-      cls: "setting-item-description lti-settings-guide-description"
-    });
+    new import_obsidian8.Setting(guide).setHeading().setName(this.plugin.t("settingsResearchGuideTitle")).setDesc(this.plugin.t("settingsResearchGuideDescription"));
     const setup = guide.createEl("ol", { cls: "lti-settings-guide-list" });
     for (const key of ["settingsResearchGuideStep1", "settingsResearchGuideStep2", "settingsResearchGuideStep3"]) {
       setup.createEl("li", {
@@ -3434,12 +3466,7 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian8.PluginSetting
         cls: "setting-item-description"
       });
     }
-    const companionTitle = guide.createDiv({
-      text: this.plugin.t("settingsCompanionPluginsTitle"),
-      cls: "lti-settings-guide-subtitle"
-    });
-    companionTitle.setAttribute("role", "heading");
-    companionTitle.setAttribute("aria-level", "4");
+    new import_obsidian8.Setting(guide).setHeading().setName(this.plugin.t("settingsCompanionPluginsTitle"));
     const list = guide.createEl("ul", { cls: "lti-settings-guide-list" });
     for (const companion of COMPANION_PLUGINS) {
       const item = list.createEl("li", { cls: "setting-item-description" });
@@ -3805,7 +3832,7 @@ var LinkTagIntelligenceView = class extends import_obsidian9.ItemView {
     }
     this.plugin.openFile(reference.sourceFile);
   }
-  async onClose() {
+  onClose() {
     this.contentEl.empty();
   }
 };
@@ -3839,14 +3866,14 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
       LINK_TAG_INTELLIGENCE_VIEW,
       (leaf) => new LinkTagIntelligenceView(leaf, this)
     );
-    this.addRibbonIcon("links-coming-in", this.t("openPanel"), async () => {
-      await this.openIntelligencePanel();
+    this.addRibbonIcon("links-coming-in", this.t("openPanel"), () => {
+      void this.openIntelligencePanel();
     });
     this.addCommand({
-      id: "open-link-tag-intelligence",
+      id: "open-panel",
       name: this.t("openPanel"),
-      callback: async () => {
-        await this.openIntelligencePanel();
+      callback: () => {
+        void this.openIntelligencePanel();
       }
     });
     this.addCommand({
@@ -3920,7 +3947,8 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
       display: this.t("pluginName"),
       defaultMod: false
     });
-    this.captureMarkdownContext(this.app.workspace.activeLeaf);
+    const currentLeaf = this.app.workspace.getLeaf(false);
+    this.captureMarkdownContext(currentLeaf);
     if (!this.lastMarkdownLeaf) {
       this.captureMarkdownContext(this.app.workspace.getLeavesOfType("markdown")[0] ?? null);
     }
@@ -3952,7 +3980,6 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
   }
   onunload() {
     this.referencePreview.destroy();
-    this.app.workspace.detachLeavesOfType(LINK_TAG_INTELLIGENCE_VIEW);
   }
   async loadSettings() {
     this.settings = normalizeLoadedSettings(await this.loadData());
@@ -4048,10 +4075,10 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     return changed;
   }
   getContextMarkdownView() {
-    const activeLeaf = this.app.workspace.activeLeaf;
-    const activeView = activeLeaf?.view;
+    const currentLeaf = this.app.workspace.getLeaf(false);
+    const activeView = currentLeaf?.view;
     if (activeView instanceof import_obsidian10.MarkdownView && activeView.file instanceof import_obsidian10.TFile) {
-      this.captureMarkdownContext(activeLeaf);
+      this.captureMarkdownContext(currentLeaf);
       return activeView;
     }
     const rememberedView = this.lastMarkdownLeaf?.view;
@@ -4086,10 +4113,10 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     return this.getContextMarkdownView()?.editor?.getSelection() ?? "";
   }
   getNavigationLeaf() {
-    const activeLeaf = this.app.workspace.activeLeaf;
-    if (activeLeaf?.view instanceof import_obsidian10.MarkdownView) {
-      this.captureMarkdownContext(activeLeaf);
-      return activeLeaf;
+    const currentLeaf = this.app.workspace.getLeaf(false);
+    if (currentLeaf?.view instanceof import_obsidian10.MarkdownView) {
+      this.captureMarkdownContext(currentLeaf);
+      return currentLeaf;
     }
     if (this.lastMarkdownLeaf) {
       return this.lastMarkdownLeaf;
@@ -4109,7 +4136,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     }
     await leaf.setViewState({ type: LINK_TAG_INTELLIGENCE_VIEW, active: true });
     this.app.workspace.revealLeaf(leaf);
-    await this.refreshAllViews();
+    this.refreshAllViews();
   }
   refreshAllViews() {
     for (const leaf of this.app.workspace.getLeavesOfType(LINK_TAG_INTELLIGENCE_VIEW)) {
@@ -4126,7 +4153,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     new LinkInsertModal(
       this,
       "wikilink",
-      async (candidate) => {
+      (candidate) => {
         new ReferenceInsertModal(this, candidate.file, "block_ref").open();
       },
       { placeholder: this.t("pickBlockRefTarget") }
@@ -4136,13 +4163,13 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     new LinkInsertModal(
       this,
       "wikilink",
-      async (candidate) => {
+      (candidate) => {
         new ReferenceInsertModal(this, candidate.file, "line_ref").open();
       },
       { placeholder: this.t("pickLineRefTarget") }
     ).open();
   }
-  async insertTextIntoContextEditor(text) {
+  insertTextIntoContextEditor(text) {
     const view = this.getContextMarkdownView();
     const editor = view?.editor;
     if (!editor) {
@@ -4153,7 +4180,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     this.refreshAllViews();
     return true;
   }
-  async insertLinkIntoEditor(file, alias = "") {
+  insertLinkIntoEditor(file, alias = "") {
     const view = this.getContextMarkdownView();
     const editor = view?.editor;
     if (!editor) {
@@ -4171,20 +4198,20 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     new import_obsidian10.Notice(this.t("insertedLink", { title: file.basename }));
     this.refreshAllViews();
   }
-  async insertBlockReferenceIntoEditor(file, startLine, endLine) {
+  insertBlockReferenceIntoEditor(file, startLine, endLine) {
     const sourcePath = this.getContextMarkdownFile()?.path ?? "";
     const target = sourcePath ? this.app.metadataCache.fileToLinktext(file, sourcePath, true) : file.basename;
     const text = formatLegacyBlockReference(target, startLine, endLine);
-    if (await this.insertTextIntoContextEditor(text)) {
+    if (this.insertTextIntoContextEditor(text)) {
       this.pushRecentTarget(file.path);
       new import_obsidian10.Notice(this.t("blockRefInserted", { title: file.basename }));
     }
   }
-  async insertLineReferenceIntoEditor(file, startLine, endLine) {
+  insertLineReferenceIntoEditor(file, startLine, endLine) {
     const sourcePath = this.getContextMarkdownFile()?.path ?? "";
     const target = sourcePath ? this.app.metadataCache.fileToLinktext(file, sourcePath, true) : file.basename;
     const text = formatLegacyLineReference(target, startLine, endLine);
-    if (await this.insertTextIntoContextEditor(text)) {
+    if (this.insertTextIntoContextEditor(text)) {
       this.pushRecentTarget(file.path);
       new import_obsidian10.Notice(this.t("lineRefInserted", { title: file.basename }));
     }
@@ -4304,14 +4331,14 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     });
     this.referencePreview.hide(true);
   }
-  pushRecentTarget(path2) {
-    this.settings.recentLinkTargets = [path2, ...this.settings.recentLinkTargets.filter((item) => item !== path2)].slice(
+  pushRecentTarget(path) {
+    this.settings.recentLinkTargets = [path, ...this.settings.recentLinkTargets.filter((item) => item !== path)].slice(
       0,
       this.settings.recentLinkMemorySize
     );
     void this.saveSettings();
   }
-  async openRelationFlow() {
+  openRelationFlow() {
     const currentFile = this.getContextMarkdownFile();
     if (!(currentFile instanceof import_obsidian10.TFile)) {
       return;
@@ -4397,13 +4424,13 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
       this.app.workspace.setActiveLeaf(leaf, { focus: true });
     });
   }
-  openResolvedPath(path2) {
-    const file = resolveNoteTarget(this.app, path2);
+  openResolvedPath(path) {
+    const file = resolveNoteTarget(this.app, path);
     if (file) {
       this.openFile(file);
       return;
     }
-    new import_obsidian10.Notice(path2);
+    new import_obsidian10.Notice(path);
   }
   openResolvedLineReference(target, sourcePath, startLine, endLine) {
     const file = resolveNoteTarget(this.app, target, sourcePath);
@@ -4421,8 +4448,8 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
     }
     new import_obsidian10.Notice(target);
   }
-  insertLinkFromPath(path2) {
-    const file = resolveNoteTarget(this.app, path2);
+  insertLinkFromPath(path) {
+    const file = resolveNoteTarget(this.app, path);
     if (!file) {
       return;
     }

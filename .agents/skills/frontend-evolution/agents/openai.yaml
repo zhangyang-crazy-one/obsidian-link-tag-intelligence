@@ -1,0 +1,7 @@
+interface:
+  display_name: "Frontend Evolution"
+  short_description: "将样稿、Pencil 设计和 UI 需求迭代成前端实现的工作流技能"
+  default_prompt: "Use $frontend-evolution to turn a design brief or mockup into production-ready frontend code."
+
+policy:
+  allow_implicit_invocation: true

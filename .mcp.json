@@ -19,6 +19,14 @@
     "context7": {
       "command": "npx",
       "args": ["-y", "context7-mcp-server"]
+    },
+    "pencil": {
+      "command": "/home/zhangyangrui/.vscode/extensions/highagency.pencildev-0.6.35/out/mcp-server-linux-x64",
+      "args": [
+        "--app",
+        "visual_studio_code"
+      ],
+      "env": {}
     }
   }
 }

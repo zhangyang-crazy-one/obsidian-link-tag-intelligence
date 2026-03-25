@@ -810,6 +810,9 @@ async function runIngestionCommand(app, settings, request, activeFile, selection
   return normalizeResult(parsed);
 }
 
+// src/icons.ts
+var LINK_TAG_INTELLIGENCE_ICON_ID = "share-2";
+
 // src/i18n.ts
 var TRANSLATIONS = {
   en: {
@@ -1886,7 +1889,7 @@ async function getOutgoingExactReferences(app, file) {
       order: reference.position.start
     });
   }
-  return collected.sort((left, right) => left.order - right.order).map(({ order, ...reference }) => reference);
+  return collected.sort((left, right) => left.order - right.order).map(({ order: _order, ...reference }) => reference);
 }
 async function getIncomingExactReferences(app, file) {
   const collected = [];
@@ -1944,7 +1947,7 @@ async function getIncomingExactReferences(app, file) {
   }
   return collected.sort(
     (left, right) => left.sourceFile.basename.localeCompare(right.sourceFile.basename, "zh-Hans-CN") || left.order - right.order
-  ).map(({ order, ...reference }) => reference);
+  ).map(({ order: _order, ...reference }) => reference);
 }
 function containsMention(text, term) {
   if (!term.trim()) {
@@ -4481,13 +4484,13 @@ var LegacyReadingHoverController = class extends import_obsidian8.MarkdownRender
     const gap = 8;
     const margin = 12;
     const rect = anchor.getBoundingClientRect();
-    el.style.maxWidth = `min(28rem, calc(100vw - ${margin * 2}px))`;
+    el.style.setProperty("max-width", `min(28rem, calc(100vw - ${margin * 2}px))`);
     const elRect = el.getBoundingClientRect();
     const left = Math.min(rect.left, doc.documentElement.clientWidth - elRect.width - margin);
     const spaceBelow = doc.documentElement.clientHeight - rect.bottom - margin;
     const top = spaceBelow >= elRect.height + gap ? rect.bottom + gap : rect.top - elRect.height - gap;
-    el.style.left = `${Math.max(margin, left)}px`;
-    el.style.top = `${Math.max(margin, top)}px`;
+    el.style.setProperty("left", `${Math.max(margin, left)}px`);
+    el.style.setProperty("top", `${Math.max(margin, top)}px`);
   }
   destroyFallbackPopover() {
     if (!this.fallbackEl) {
@@ -5881,14 +5884,86 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSetting
 
 // src/view.ts
 var import_obsidian10 = require("obsidian");
+
+// src/view-refresh.ts
+var REFRESH_REASON_PRIORITY = {
+  metadata: 0,
+  mutation: 1,
+  context: 2,
+  settings: 3
+};
+function dedupePaths(paths) {
+  if (!paths || paths.length === 0) {
+    return void 0;
+  }
+  const unique = [...new Set(paths.filter((path) => path.length > 0))];
+  return unique.length > 0 ? unique : void 0;
+}
+function mergeViewRefreshRequests(current, next) {
+  if (!current) {
+    return {
+      ...next,
+      changedPaths: dedupePaths(next.changedPaths)
+    };
+  }
+  const reason = REFRESH_REASON_PRIORITY[next.reason] >= REFRESH_REASON_PRIORITY[current.reason] ? next.reason : current.reason;
+  return {
+    reason,
+    changedPaths: dedupePaths([...current.changedPaths ?? [], ...next.changedPaths ?? []]),
+    focusSectionId: next.focusSectionId ?? current.focusSectionId,
+    force: Boolean(current.force || next.force),
+    preserveScroll: Boolean(current.preserveScroll || next.preserveScroll)
+  };
+}
+function shouldHandleViewRefresh(request, dependencyPaths) {
+  if (request.force || request.reason !== "metadata") {
+    return true;
+  }
+  if (!request.changedPaths || request.changedPaths.length === 0) {
+    return true;
+  }
+  const dependencies = new Set(dependencyPaths);
+  if (dependencies.size === 0) {
+    return true;
+  }
+  return request.changedPaths.some((path) => dependencies.has(path));
+}
+
+// src/view.ts
 var LINK_TAG_INTELLIGENCE_VIEW = "link-tag-intelligence-view";
+var SECTION_DEFINITIONS = [
+  { id: "current-note", titleKey: "currentNote", defaultExpanded: true, emphasized: true },
+  { id: "outgoing-links", titleKey: "outgoingLinks", defaultExpanded: true },
+  { id: "backlinks", titleKey: "backlinks", defaultExpanded: false },
+  { id: "outgoing-references", titleKey: "outgoingReferences", defaultExpanded: true },
+  { id: "incoming-references", titleKey: "incomingReferences", defaultExpanded: false },
+  { id: "relations", titleKey: "relations", defaultExpanded: false },
+  { id: "tags", titleKey: "tags", defaultExpanded: true },
+  { id: "mentions", titleKey: "unlinkedMentions", defaultExpanded: false },
+  { id: "capture", titleKey: "ingestionCapture", defaultExpanded: false },
+  { id: "semantic", titleKey: "semanticBridge", defaultExpanded: false }
+];
+var FILE_REQUIRED_ACTIONS = /* @__PURE__ */ new Set([
+  "insertLink",
+  "insertBlockRef",
+  "insertLineRef",
+  "quickLink"
+]);
+function serializeSnapshot(value) {
+  return JSON.stringify(value);
+}
 var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.sectionState = /* @__PURE__ */ new Map();
-    this.refreshTimer = null;
+    this.sectionShells = /* @__PURE__ */ new Map();
+    this.toolbarButtons = /* @__PURE__ */ new Map();
     this.refreshPromise = null;
-    this.isRefreshing = false;
+    this.pendingRefresh = null;
+    this.refreshFrame = null;
+    this.dependencyPaths = /* @__PURE__ */ new Set();
+    this.toolbarSignature = null;
+    this.sectionsContainerEl = null;
     this.plugin = plugin;
   }
   getViewType() {
@@ -5897,228 +5972,300 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
   getDisplayText() {
     return this.plugin.t("viewTitle");
   }
+  getIcon() {
+    return LINK_TAG_INTELLIGENCE_ICON_ID;
+  }
   async onOpen() {
-    if (this.refreshTimer !== null) {
-      window.clearTimeout(this.refreshTimer);
-      this.refreshTimer = null;
+    if (this.refreshFrame !== null) {
+      window.cancelAnimationFrame(this.refreshFrame);
+      this.refreshFrame = null;
     }
+    this.pendingRefresh = null;
+    this.refreshPromise = null;
     this.sectionState.clear();
+    this.sectionShells.clear();
+    this.toolbarButtons.clear();
+    this.dependencyPaths.clear();
+    this.toolbarSignature = null;
+    this.sectionsContainerEl = null;
     this.contentEl.empty();
+    this.contentEl.addClass("link-tag-intelligence-view");
     this.containerEl.addClass("link-tag-intelligence-view");
-    await this.refresh();
-    if (!this.plugin.getContextNoteFile()) {
-      this.refreshTimer = window.setTimeout(() => {
-        this.refreshTimer = null;
-        void this.refresh();
-      }, 500);
-    }
+    this.buildShell();
+    await this.performRefresh({ reason: "context", force: true });
   }
-  async refresh(options = {}) {
-    if (this.refreshTimer !== null) {
-      window.clearTimeout(this.refreshTimer);
-      this.refreshTimer = null;
+  refresh(options = {}) {
+    return this.performRefresh({ reason: "mutation", force: true, ...options });
+  }
+  requestRefresh(request) {
+    if (!shouldHandleViewRefresh(request, this.dependencyPaths)) {
+      return;
     }
+    this.pendingRefresh = mergeViewRefreshRequests(this.pendingRefresh, request);
+    this.scheduleRefresh();
+  }
+  scheduleRefresh() {
+    if (this.refreshPromise !== null || this.refreshFrame !== null) {
+      return;
+    }
+    this.refreshFrame = window.requestAnimationFrame(() => {
+      this.refreshFrame = null;
+      void this.flushPendingRefresh();
+    });
+  }
+  async flushPendingRefresh() {
     if (this.refreshPromise !== null) {
-      await this.refreshPromise;
-    }
-    this.refreshPromise = (async () => {
-      try {
-        await this.doRefresh(options);
-      } finally {
-        this.refreshPromise = null;
-      }
-    })();
-    return this.refreshPromise;
-  }
-  async doRefresh(options = {}) {
-    if (this.isRefreshing) {
       return;
     }
-    this.isRefreshing = true;
+    const request = this.pendingRefresh ?? { reason: "mutation" };
+    this.pendingRefresh = null;
+    this.refreshPromise = this.performRefresh(request);
     try {
-      const scrollContainer = this.getScrollContainer();
-      const previousScrollTop = options.preserveScroll ? scrollContainer.scrollTop : null;
-      const content = this.contentEl;
-      content.empty();
-      content.addClass("link-tag-intelligence-view");
-      const toolbar = content.createDiv({ cls: "lti-toolbar" });
-      const hasContext = Boolean(this.plugin.getContextNoteFile());
-      const fileRequiredKeys = /* @__PURE__ */ new Set(["insertLink", "insertBlockRef", "insertLineRef", "quickLink"]);
-      const buttons = [
-        ["ingestionCapture", () => this.plugin.openResearchIngestion()],
-        ["insertLink", () => this.plugin.openLinkInsertModal("wikilink")],
-        ["insertBlockRef", () => this.plugin.openBlockReferenceFlow()],
-        ["insertLineRef", () => this.plugin.openLineReferenceFlow()],
-        ["quickLink", () => this.plugin.openLinkInsertModal("quick_link")],
-        ["addRelation", () => this.plugin.openRelationFlow()],
-        ["manageTags", () => this.plugin.openTagManager()],
-        ["suggestTags", () => this.plugin.openTagSuggestion()],
-        ["semanticSearch", () => this.plugin.openSemanticSearch()]
-      ];
-      for (const [key, handler] of buttons) {
-        const needsFile = fileRequiredKeys.has(key);
-        const disabled = needsFile && !hasContext;
-        const button = toolbar.createEl("button", {
-          text: this.plugin.t(key),
-          cls: "lti-toolbar-button"
-        });
-        button.dataset.action = key;
-        if (disabled) {
-          button.disabled = true;
-          button.title = this.plugin.t("noActiveNote");
-          button.addClass("lti-toolbar-button-disabled");
-        } else {
-          button.addEventListener("click", handler);
-        }
-      }
-      const activeFile = this.plugin.getContextNoteFile();
-      if (!(activeFile instanceof import_obsidian10.TFile)) {
-        content.createDiv({ text: this.plugin.t("noActiveNote"), cls: "lti-empty" });
-        return;
-      }
-      const currentSection = this.createSection(content, "current-note", this.plugin.t("currentNote"), void 0, true, true);
-      if (currentSection) {
-        const noteCard = currentSection.createDiv({ cls: "lti-item lti-item-compact lti-current-note-card" });
-        const currentHeader = noteCard.createDiv({ cls: "lti-item-topline" });
-        const currentLink = currentHeader.createEl("button", {
-          text: activeFile.basename,
-          cls: "lti-note-link lti-note-title",
-          attr: { type: "button" }
-        });
-        currentLink.addEventListener("click", (event) => {
-          event.preventDefault();
-          this.plugin.openFile(activeFile);
-        });
-        noteCard.createSpan({ text: activeFile.path, cls: "lti-item-meta lti-item-path" });
-        this.renderMetadataPills(noteCard, getResearchSourceMetadataForFile(this.app, activeFile));
-      }
-      this.renderFileSection(content, "outgoing-links", this.plugin.t("outgoingLinks"), await getOutgoingLinkFiles(this.app, activeFile), true);
-      this.renderFileSection(content, "backlinks", this.plugin.t("backlinks"), await getBacklinkFiles(this.app, activeFile), false);
-      if (!isExcalidrawFile(activeFile)) {
-        this.renderExactReferenceSection(content, "outgoing-references", this.plugin.t("outgoingReferences"), await getOutgoingExactReferences(this.app, activeFile), "outgoing", true);
-        this.renderExactReferenceSection(content, "incoming-references", this.plugin.t("incomingReferences"), await getIncomingExactReferences(this.app, activeFile), "incoming", false);
-      }
-      this.renderRelationSection(content, activeFile);
-      this.renderTagSection(content, activeFile);
-      await this.renderMentionsSection(content, activeFile);
-      this.renderCaptureSection(content);
-      this.renderSemanticSection(content);
-      if (previousScrollTop !== null || options.focusSectionId) {
-        window.requestAnimationFrame(() => {
-          if (previousScrollTop !== null) {
-            scrollContainer.scrollTop = previousScrollTop;
-          }
-          if (options.focusSectionId) {
-            const toggle = this.contentEl.querySelector(`.lti-section-toggle[data-section-id="${options.focusSectionId}"]`);
-            toggle?.focus({ preventScroll: true });
-          }
-        });
-      }
+      await this.refreshPromise;
     } finally {
-      this.isRefreshing = false;
-    }
-  }
-  renderFileSection(parent, id, title, files, defaultExpanded) {
-    const section = this.createSection(parent, id, title, files.length, defaultExpanded);
-    if (!section) {
-      return;
-    }
-    if (files.length === 0) {
-      section.createDiv({ text: this.plugin.t("emptyList"), cls: "lti-empty" });
-      return;
-    }
-    const list = section.createDiv({ cls: "lti-list lti-list-compact" });
-    for (const file of files) {
-      const row = list.createDiv({ cls: "lti-list-row" });
-      const header = row.createDiv({ cls: "lti-list-row-head" });
-      const link = header.createEl("button", {
-        text: file.basename,
-        cls: "lti-note-link lti-list-row-title",
-        attr: { type: "button" }
-      });
-      link.addEventListener("click", (event) => {
-        event.preventDefault();
-        this.plugin.openFile(file);
-      });
-      row.createDiv({ text: file.path, cls: "lti-list-row-path" });
-    }
-  }
-  renderExactReferenceSection(parent, id, title, references, direction, defaultExpanded) {
-    const section = this.createSection(parent, id, title, references.length, defaultExpanded);
-    if (!section) {
-      return;
-    }
-    if (references.length === 0) {
-      section.createDiv({ text: this.plugin.t("emptyList"), cls: "lti-empty" });
-      return;
-    }
-    const list = section.createDiv({ cls: "lti-list lti-list-compact" });
-    for (const reference of references) {
-      const row = list.createDiv({ cls: "lti-list-row lti-reference-row" });
-      const header = row.createDiv({ cls: "lti-list-row-head" });
-      const primaryFile = direction === "outgoing" ? reference.targetFile : reference.sourceFile;
-      const link = header.createEl("button", {
-        text: primaryFile.basename,
-        cls: "lti-note-link lti-list-row-title",
-        attr: { type: "button" }
-      });
-      link.addEventListener("click", (event) => {
-        event.preventDefault();
-        this.openPrimaryReference(reference, direction);
-      });
-      row.createDiv({ text: primaryFile.path, cls: "lti-list-row-path" });
-      const meta = row.createDiv({ cls: "lti-pill-row lti-pill-row-compact lti-reference-meta" });
-      meta.createSpan({
-        text: this.plugin.t(reference.kind === "block" ? "referenceTypeBlock" : "referenceTypeLine"),
-        cls: "lti-pill"
-      });
-      meta.createSpan({ text: reference.raw, cls: "lti-ref-syntax lti-list-row-code" });
-      this.renderMetadataPills(row, direction === "outgoing" ? reference.targetMetadata : reference.sourceMetadata);
-      const preview = direction === "outgoing" ? reference.targetPreview : reference.sourceContext;
-      if (preview) {
-        row.createDiv({ text: preview, cls: "lti-list-row-snippet" });
+      this.refreshPromise = null;
+      if (this.pendingRefresh) {
+        this.scheduleRefresh();
       }
     }
   }
-  renderRelationSection(parent, activeFile) {
-    const section = this.createSection(parent, "relations", this.plugin.t("relations"), Object.keys(getResolvedRelations(this.app, activeFile, this.plugin.settings)).length, false);
-    if (!section) {
-      return;
+  async performRefresh(request) {
+    const snapshot = await this.buildSnapshot();
+    this.applySnapshot(snapshot, request);
+    this.dependencyPaths = new Set(snapshot.dependencyPaths);
+  }
+  buildShell() {
+    const toolbar = this.contentEl.createDiv({ cls: "lti-toolbar" });
+    for (const [key, handler] of this.getToolbarActions()) {
+      const button = toolbar.createEl("button", {
+        text: this.plugin.t(key),
+        cls: "lti-toolbar-button",
+        attr: { type: "button" }
+      });
+      button.dataset.action = key;
+      button.addEventListener("click", handler);
+      this.toolbarButtons.set(key, button);
     }
+    const sections = this.contentEl.createDiv({ cls: "lti-sidebar-sections" });
+    this.sectionsContainerEl = sections;
+    for (const definition of SECTION_DEFINITIONS) {
+      this.sectionShells.set(definition.id, this.createSectionShell(sections, definition));
+    }
+  }
+  getToolbarActions() {
+    return [
+      ["ingestionCapture", () => this.plugin.openResearchIngestion()],
+      ["insertLink", () => this.plugin.openLinkInsertModal("wikilink")],
+      ["insertBlockRef", () => this.plugin.openBlockReferenceFlow()],
+      ["insertLineRef", () => this.plugin.openLineReferenceFlow()],
+      ["quickLink", () => this.plugin.openLinkInsertModal("quick_link")],
+      ["addRelation", () => this.plugin.openRelationFlow()],
+      ["manageTags", () => this.plugin.openTagManager()],
+      ["suggestTags", () => this.plugin.openTagSuggestion()],
+      ["semanticSearch", () => this.plugin.openSemanticSearch()]
+    ];
+  }
+  createSectionShell(parent, definition) {
+    const expanded = this.getSectionExpanded(definition.id, definition.defaultExpanded);
+    const sectionEl = parent.createDiv({ cls: `lti-section${definition.emphasized ? " lti-note-focus" : ""}` });
+    sectionEl.dataset.sectionId = definition.id;
+    sectionEl.classList.toggle("is-collapsed", !expanded);
+    const headerEl = sectionEl.createDiv({ cls: "lti-section-header" });
+    headerEl.dataset.sectionId = definition.id;
+    const toggleEl = headerEl.createDiv({ cls: "lti-section-toggle" });
+    toggleEl.dataset.sectionId = definition.id;
+    toggleEl.setAttribute("role", "button");
+    toggleEl.setAttribute("aria-expanded", expanded ? "true" : "false");
+    toggleEl.setAttribute("aria-label", this.plugin.t(definition.titleKey));
+    toggleEl.tabIndex = 0;
+    toggleEl.createSpan({ text: ">", cls: "lti-section-chevron" });
+    const titleEl = toggleEl.createSpan({
+      text: this.plugin.t(definition.titleKey),
+      cls: "lti-section-toggle-title"
+    });
+    const countEl = toggleEl.createSpan({ text: "", cls: "lti-section-count" });
+    countEl.hidden = true;
+    const bodyEl = sectionEl.createDiv({ cls: "lti-section-body" });
+    bodyEl.dataset.sectionId = definition.id;
+    if (!expanded) {
+      bodyEl.addClass("is-collapsed");
+    }
+    const innerEl = bodyEl.createDiv({ cls: "lti-section-inner" });
+    const onToggle = () => {
+      const nextExpanded = !this.getSectionExpanded(definition.id, definition.defaultExpanded);
+      this.sectionState.set(definition.id, nextExpanded);
+      sectionEl.classList.toggle("is-collapsed", !nextExpanded);
+      bodyEl.classList.toggle("is-collapsed", !nextExpanded);
+      toggleEl.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
+    };
+    toggleEl.addEventListener("click", onToggle);
+    toggleEl.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        onToggle();
+      }
+    });
+    return {
+      sectionEl,
+      toggleEl,
+      titleEl,
+      countEl,
+      bodyEl,
+      innerEl,
+      defaultExpanded: definition.defaultExpanded,
+      lastSignature: null
+    };
+  }
+  async buildSnapshot() {
+    const toolbar = this.buildToolbarSnapshot();
+    const activeFile = this.plugin.getContextNoteFile();
+    if (!(activeFile instanceof import_obsidian10.TFile)) {
+      return {
+        toolbar,
+        hasContext: false,
+        emptyMessage: this.plugin.t("noActiveNote"),
+        dependencyPaths: []
+      };
+    }
+    const dependencyPaths = /* @__PURE__ */ new Set([activeFile.path]);
+    const currentNote = {
+      title: activeFile.basename,
+      path: activeFile.path,
+      metadataChips: this.formatMetadataChips(getResearchSourceMetadataForFile(this.app, activeFile))
+    };
+    const outgoingLinks = this.buildFileSectionSnapshot(
+      this.plugin.t("outgoingLinks"),
+      await getOutgoingLinkFiles(this.app, activeFile),
+      dependencyPaths
+    );
+    const backlinks = this.buildFileSectionSnapshot(
+      this.plugin.t("backlinks"),
+      await getBacklinkFiles(this.app, activeFile),
+      dependencyPaths
+    );
+    const outgoingReferences = isExcalidrawFile(activeFile) ? void 0 : this.buildReferenceSectionSnapshot(
+      this.plugin.t("outgoingReferences"),
+      await Promise.resolve(getOutgoingExactReferences(this.app, activeFile)),
+      "outgoing",
+      dependencyPaths
+    );
+    const incomingReferences = isExcalidrawFile(activeFile) ? void 0 : this.buildReferenceSectionSnapshot(
+      this.plugin.t("incomingReferences"),
+      await Promise.resolve(getIncomingExactReferences(this.app, activeFile)),
+      "incoming",
+      dependencyPaths
+    );
+    const relations = this.buildRelationSectionSnapshot(activeFile, dependencyPaths);
+    const tags = this.buildTagSectionSnapshot(activeFile);
+    const mentions = this.buildMentionSectionSnapshot(
+      this.plugin.t("unlinkedMentions"),
+      await findUnlinkedMentions(this.app, activeFile, this.plugin.settings),
+      dependencyPaths
+    );
+    return {
+      toolbar,
+      hasContext: true,
+      emptyMessage: "",
+      currentNote,
+      outgoingLinks,
+      backlinks,
+      outgoingReferences,
+      incomingReferences,
+      relations,
+      tags,
+      mentions,
+      capture: this.buildCaptureSectionSnapshot(),
+      semantic: this.buildSemanticSectionSnapshot(),
+      dependencyPaths: [...dependencyPaths]
+    };
+  }
+  buildToolbarSnapshot() {
+    const hasContext = Boolean(this.plugin.getContextNoteFile());
+    return this.getToolbarActions().map(([key]) => {
+      const disabled = FILE_REQUIRED_ACTIONS.has(key) && !hasContext;
+      return {
+        key,
+        label: this.plugin.t(key),
+        disabled,
+        title: disabled ? this.plugin.t("noActiveNote") : void 0
+      };
+    });
+  }
+  buildFileSectionSnapshot(title, files, dependencyPaths) {
+    const items = files.map((file) => {
+      dependencyPaths.add(file.path);
+      return { basename: file.basename, path: file.path };
+    });
+    return {
+      title,
+      count: items.length,
+      items,
+      emptyMessage: this.plugin.t("emptyList")
+    };
+  }
+  buildReferenceSectionSnapshot(title, references, direction, dependencyPaths) {
+    const items = references.map((reference) => {
+      const file = direction === "outgoing" ? reference.targetFile : reference.sourceFile;
+      dependencyPaths.add(file.path);
+      if (direction === "incoming") {
+        dependencyPaths.add(reference.targetFile.path);
+      } else {
+        dependencyPaths.add(reference.sourceFile.path);
+      }
+      return {
+        basename: file.basename,
+        path: file.path,
+        typeLabel: this.plugin.t(reference.kind === "block" ? "referenceTypeBlock" : "referenceTypeLine"),
+        raw: reference.raw,
+        preview: direction === "outgoing" ? reference.targetPreview : reference.sourceContext,
+        metadataChips: this.formatMetadataChips(
+          direction === "outgoing" ? reference.targetMetadata : reference.sourceMetadata
+        ),
+        action: direction === "outgoing" ? {
+          path: reference.targetFile.path,
+          blockId: reference.kind === "block" ? reference.blockId : void 0,
+          startLine: reference.kind === "line" ? reference.startLine : void 0,
+          endLine: reference.kind === "line" ? reference.endLine : void 0
+        } : {
+          path: reference.sourceFile.path,
+          startLine: reference.sourceStartLine,
+          endLine: reference.sourceEndLine
+        }
+      };
+    });
+    return {
+      title,
+      count: items.length,
+      items,
+      emptyMessage: this.plugin.t("emptyList")
+    };
+  }
+  buildRelationSectionSnapshot(activeFile, dependencyPaths) {
     const relationMap = getResolvedRelations(this.app, activeFile, this.plugin.settings);
-    if (Object.keys(relationMap).length === 0) {
-      section.createDiv({ text: this.plugin.t("emptyList"), cls: "lti-empty" });
-      return;
-    }
-    const list = section.createDiv({ cls: "lti-list lti-compact-list" });
-    for (const [key, files] of Object.entries(relationMap)) {
-      const block = list.createDiv({ cls: "lti-item lti-item-compact" });
-      const header = block.createDiv({ cls: "lti-section-inline-head" });
-      header.createDiv({ text: this.plugin.relationLabel(key), cls: "suggestion-title" });
-      header.createSpan({ text: key, cls: "suggestion-meta" });
-      const pills = block.createDiv({ cls: "lti-pill-row lti-pill-grid" });
-      for (const file of files) {
-        const pill = pills.createEl("button", {
-          text: file.basename,
-          cls: "lti-pill lti-note-link lti-pill-link",
-          attr: { type: "button" }
-        });
-        pill.addEventListener("click", (event) => {
-          event.preventDefault();
-          this.plugin.openFile(file);
-        });
-      }
-    }
+    const groups = Object.entries(relationMap).map(([key, files]) => ({
+      label: this.plugin.relationLabel(key),
+      key,
+      items: files.map((file) => {
+        dependencyPaths.add(file.path);
+        return { basename: file.basename, path: file.path };
+      })
+    }));
+    return {
+      title: this.plugin.t("relations"),
+      count: groups.length,
+      groups,
+      emptyMessage: this.plugin.t("emptyList")
+    };
   }
-  renderTagSection(parent, activeFile) {
+  buildTagSectionSnapshot(activeFile) {
     const tags = getAllTagsForFile(this.app, activeFile);
-    const section = this.createSection(parent, "tags", this.plugin.t("tags"), tags.length, true);
-    if (!section) {
-      return;
-    }
     if (tags.length === 0) {
-      section.createDiv({ text: this.plugin.t("emptyList"), cls: "lti-empty" });
-      return;
+      return {
+        title: this.plugin.t("tags"),
+        count: 0,
+        groups: [],
+        emptyMessage: this.plugin.t("emptyList")
+      };
     }
     const grouped = /* @__PURE__ */ new Map();
     const unclassified = [];
@@ -6130,177 +6277,382 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
       }
       grouped.set(facet, [...grouped.get(facet) ?? [], tag]);
     }
+    const groups = [];
     if (grouped.size === 0) {
-      const pills = section.createDiv({ cls: "lti-pill-row lti-tag-grid" });
-      for (const tag of tags) {
-        pills.createSpan({ text: `#${tag}`, cls: "lti-pill lti-tag-chip" });
+      groups.push({ tags: [...tags] });
+    } else {
+      for (const [facet, facetTags] of [...grouped.entries()].sort((left, right) => left[0].localeCompare(right[0], "zh-Hans-CN"))) {
+        groups.push({
+          label: this.plugin.formatFacetLabel(facet),
+          count: facetTags.length,
+          tags: facetTags
+        });
       }
+      if (unclassified.length > 0) {
+        groups.push({
+          label: this.plugin.t("tagFacetUnclassified"),
+          count: unclassified.length,
+          tags: unclassified
+        });
+      }
+    }
+    return {
+      title: this.plugin.t("tags"),
+      count: tags.length,
+      groups,
+      emptyMessage: this.plugin.t("emptyList")
+    };
+  }
+  buildMentionSectionSnapshot(title, mentions, dependencyPaths) {
+    const items = mentions.map((mention) => {
+      dependencyPaths.add(mention.file.path);
+      return {
+        basename: mention.file.basename,
+        path: mention.file.path,
+        matchedTerm: mention.matchedTerm,
+        snippet: mention.snippet
+      };
+    });
+    return {
+      title,
+      count: items.length,
+      explanation: this.plugin.t("mentionsExplanation"),
+      items,
+      emptyMessage: this.plugin.t("emptyList")
+    };
+  }
+  buildCaptureSectionSnapshot() {
+    return {
+      title: this.plugin.t("ingestionCapture"),
+      lines: [
+        isIngestionConfigured(this.plugin.settings) ? this.plugin.t("configured") : this.plugin.t("notConfigured"),
+        this.plugin.t("ingestionStatusHint")
+      ]
+    };
+  }
+  buildSemanticSectionSnapshot() {
+    const lines = [
+      isSemanticBridgeConfigured(this.plugin.settings) ? this.plugin.t("configured") : this.plugin.t("notConfigured")
+    ];
+    if (this.plugin.settings.workflowMode === "researcher") {
+      lines.push(this.plugin.t("settingsSemanticResearchHint"));
+    }
+    return {
+      title: this.plugin.t("semanticBridge"),
+      lines
+    };
+  }
+  applySnapshot(snapshot, request) {
+    this.applyToolbarSnapshot(snapshot.toolbar);
+    this.applyContextVisibility(snapshot);
+    if (!snapshot.hasContext) {
       return;
     }
-    for (const [facet, facetTags] of [...grouped.entries()].sort((left, right) => left[0].localeCompare(right[0], "zh-Hans-CN"))) {
-      const block = section.createDiv({ cls: "lti-item lti-item-compact" });
-      const header = block.createDiv({ cls: "lti-section-inline-head" });
-      header.createDiv({ text: this.plugin.formatFacetLabel(facet), cls: "suggestion-title" });
-      header.createSpan({ text: String(facetTags.length), cls: "suggestion-meta" });
-      const pills = block.createDiv({ cls: "lti-pill-row lti-tag-grid" });
-      for (const tag of facetTags) {
-        pills.createSpan({ text: `#${tag}`, cls: "lti-pill lti-tag-chip" });
-      }
-    }
-    if (unclassified.length > 0) {
-      const block = section.createDiv({ cls: "lti-item lti-item-compact" });
-      const header = block.createDiv({ cls: "lti-section-inline-head" });
-      header.createDiv({ text: this.plugin.t("tagFacetUnclassified"), cls: "suggestion-title" });
-      header.createSpan({ text: String(unclassified.length), cls: "suggestion-meta" });
-      const pills = block.createDiv({ cls: "lti-pill-row lti-tag-grid" });
-      for (const tag of unclassified) {
-        pills.createSpan({ text: `#${tag}`, cls: "lti-pill lti-tag-chip" });
-      }
+    this.updateSection("current-note", snapshot.currentNote ?? null);
+    this.updateSection("outgoing-links", snapshot.outgoingLinks ?? null);
+    this.updateSection("backlinks", snapshot.backlinks ?? null);
+    this.updateSection("outgoing-references", snapshot.outgoingReferences ?? null);
+    this.updateSection("incoming-references", snapshot.incomingReferences ?? null);
+    this.updateSection("relations", snapshot.relations ?? null);
+    this.updateSection("tags", snapshot.tags ?? null);
+    this.updateSection("mentions", snapshot.mentions ?? null);
+    this.updateSection("capture", snapshot.capture ?? null);
+    this.updateSection("semantic", snapshot.semantic ?? null);
+    if (request.focusSectionId) {
+      const shell = this.sectionShells.get(request.focusSectionId);
+      shell?.toggleEl.focus({ preventScroll: true });
     }
   }
-  async renderMentionsSection(parent, activeFile) {
-    const mentions = await findUnlinkedMentions(this.app, activeFile, this.plugin.settings);
-    const section = this.createSection(parent, "mentions", this.plugin.t("unlinkedMentions"), mentions.length, false);
-    if (!section) {
+  applyToolbarSnapshot(toolbar) {
+    const signature = serializeSnapshot(toolbar);
+    if (this.toolbarSignature === signature) {
       return;
     }
-    section.createDiv({ text: this.plugin.t("mentionsExplanation"), cls: "lti-item-subtext" });
-    if (mentions.length === 0) {
-      section.createDiv({ text: this.plugin.t("emptyList"), cls: "lti-empty" });
+    this.toolbarSignature = signature;
+    for (const item of toolbar) {
+      const button = this.toolbarButtons.get(item.key);
+      if (!button) {
+        continue;
+      }
+      button.textContent = item.label;
+      button.disabled = item.disabled;
+      if (item.title) {
+        button.title = item.title;
+      } else {
+        button.removeAttribute("title");
+      }
+      button.classList.toggle("lti-toolbar-button-disabled", item.disabled);
+    }
+  }
+  applyContextVisibility(snapshot) {
+    if (this.sectionsContainerEl) {
+      this.sectionsContainerEl.hidden = !snapshot.hasContext;
+    }
+  }
+  updateSection(id, snapshot) {
+    const shell = this.sectionShells.get(id);
+    if (!shell) {
       return;
     }
-    const list = section.createDiv({ cls: "lti-list lti-list-compact" });
-    for (const mention of mentions) {
+    const visible = snapshot !== null;
+    shell.sectionEl.style.display = visible ? "" : "none";
+    if (!visible) {
+      shell.lastSignature = null;
+      shell.innerEl.empty();
+      shell.countEl.hidden = true;
+      return;
+    }
+    const { title, count } = this.getSectionMeta(snapshot);
+    shell.titleEl.textContent = title;
+    shell.toggleEl.setAttribute("aria-label", title);
+    shell.countEl.hidden = typeof count !== "number";
+    if (typeof count === "number") {
+      shell.countEl.textContent = String(count);
+    }
+    const signature = serializeSnapshot(snapshot);
+    if (shell.lastSignature === signature) {
+      return;
+    }
+    shell.lastSignature = signature;
+    shell.innerEl.empty();
+    switch (id) {
+      case "current-note":
+        this.renderCurrentNoteBody(shell.innerEl, snapshot);
+        break;
+      case "outgoing-links":
+      case "backlinks":
+        this.renderFileSectionBody(shell.innerEl, snapshot);
+        break;
+      case "outgoing-references":
+      case "incoming-references":
+        this.renderReferenceSectionBody(shell.innerEl, snapshot);
+        break;
+      case "relations":
+        this.renderRelationSectionBody(shell.innerEl, snapshot);
+        break;
+      case "tags":
+        this.renderTagSectionBody(shell.innerEl, snapshot);
+        break;
+      case "mentions":
+        this.renderMentionSectionBody(shell.innerEl, snapshot);
+        break;
+      case "capture":
+      case "semantic":
+        this.renderStatusSectionBody(shell.innerEl, snapshot);
+        break;
+    }
+  }
+  getSectionMeta(snapshot) {
+    if (this.isCurrentNoteSnapshot(snapshot)) {
+      return { title: this.plugin.t("currentNote") };
+    }
+    if (this.isStatusSectionSnapshot(snapshot)) {
+      return { title: snapshot.title };
+    }
+    const typed = snapshot;
+    return {
+      title: typed.title,
+      count: typed.count
+    };
+  }
+  isCurrentNoteSnapshot(snapshot) {
+    return typeof snapshot === "object" && snapshot !== null && "path" in snapshot && "metadataChips" in snapshot && !("count" in snapshot);
+  }
+  isStatusSectionSnapshot(snapshot) {
+    return typeof snapshot === "object" && snapshot !== null && "lines" in snapshot;
+  }
+  renderCurrentNoteBody(parent, snapshot) {
+    const noteCard = parent.createDiv({ cls: "lti-item lti-item-compact lti-current-note-card" });
+    const header = noteCard.createDiv({ cls: "lti-item-topline" });
+    const link = header.createEl("button", {
+      text: snapshot.title,
+      cls: "lti-note-link lti-note-title",
+      attr: { type: "button" }
+    });
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      this.openFileByPath(snapshot.path);
+    });
+    noteCard.createSpan({ text: snapshot.path, cls: "lti-item-meta lti-item-path" });
+    this.renderChipRow(noteCard, snapshot.metadataChips);
+  }
+  renderFileSectionBody(parent, snapshot) {
+    if (snapshot.items.length === 0) {
+      parent.createDiv({ text: snapshot.emptyMessage, cls: "lti-empty" });
+      return;
+    }
+    const list = parent.createDiv({ cls: "lti-list lti-list-compact" });
+    for (const item of snapshot.items) {
       const row = list.createDiv({ cls: "lti-list-row" });
       const header = row.createDiv({ cls: "lti-list-row-head" });
       const link = header.createEl("button", {
-        text: mention.file.basename,
+        text: item.basename,
         cls: "lti-note-link lti-list-row-title",
         attr: { type: "button" }
       });
       link.addEventListener("click", (event) => {
         event.preventDefault();
-        this.plugin.openFile(mention.file);
+        this.openFileByPath(item.path);
+      });
+      row.createDiv({ text: item.path, cls: "lti-list-row-path" });
+    }
+  }
+  renderReferenceSectionBody(parent, snapshot) {
+    if (snapshot.items.length === 0) {
+      parent.createDiv({ text: snapshot.emptyMessage, cls: "lti-empty" });
+      return;
+    }
+    const list = parent.createDiv({ cls: "lti-list lti-list-compact" });
+    for (const item of snapshot.items) {
+      const row = list.createDiv({ cls: "lti-list-row lti-reference-row" });
+      const header = row.createDiv({ cls: "lti-list-row-head" });
+      const link = header.createEl("button", {
+        text: item.basename,
+        cls: "lti-note-link lti-list-row-title",
+        attr: { type: "button" }
+      });
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        this.openReferenceAction(item.action);
+      });
+      row.createDiv({ text: item.path, cls: "lti-list-row-path" });
+      const meta = row.createDiv({ cls: "lti-pill-row lti-pill-row-compact lti-reference-meta" });
+      meta.createSpan({ text: item.typeLabel, cls: "lti-pill" });
+      meta.createSpan({ text: item.raw, cls: "lti-ref-syntax lti-list-row-code" });
+      this.renderChipRow(row, item.metadataChips);
+      if (item.preview) {
+        row.createDiv({ text: item.preview, cls: "lti-list-row-snippet" });
+      }
+    }
+  }
+  renderRelationSectionBody(parent, snapshot) {
+    if (snapshot.groups.length === 0) {
+      parent.createDiv({ text: snapshot.emptyMessage, cls: "lti-empty" });
+      return;
+    }
+    const list = parent.createDiv({ cls: "lti-list lti-compact-list" });
+    for (const group of snapshot.groups) {
+      const block = list.createDiv({ cls: "lti-item lti-item-compact" });
+      const header = block.createDiv({ cls: "lti-section-inline-head" });
+      header.createDiv({ text: group.label, cls: "suggestion-title" });
+      header.createSpan({ text: group.key, cls: "suggestion-meta" });
+      const pills = block.createDiv({ cls: "lti-pill-row lti-pill-grid" });
+      for (const item of group.items) {
+        const pill = pills.createEl("button", {
+          text: item.basename,
+          cls: "lti-pill lti-note-link lti-pill-link",
+          attr: { type: "button" }
+        });
+        pill.addEventListener("click", (event) => {
+          event.preventDefault();
+          this.openFileByPath(item.path);
+        });
+      }
+    }
+  }
+  renderTagSectionBody(parent, snapshot) {
+    if (snapshot.groups.length === 0) {
+      parent.createDiv({ text: snapshot.emptyMessage, cls: "lti-empty" });
+      return;
+    }
+    for (const group of snapshot.groups) {
+      if (group.label) {
+        const block = parent.createDiv({ cls: "lti-item lti-item-compact" });
+        const header = block.createDiv({ cls: "lti-section-inline-head" });
+        header.createDiv({ text: group.label, cls: "suggestion-title" });
+        if (typeof group.count === "number") {
+          header.createSpan({ text: String(group.count), cls: "suggestion-meta" });
+        }
+        const pills2 = block.createDiv({ cls: "lti-pill-row lti-tag-grid" });
+        for (const tag of group.tags) {
+          pills2.createSpan({ text: `#${tag}`, cls: "lti-pill lti-tag-chip" });
+        }
+        continue;
+      }
+      const pills = parent.createDiv({ cls: "lti-pill-row lti-tag-grid" });
+      for (const tag of group.tags) {
+        pills.createSpan({ text: `#${tag}`, cls: "lti-pill lti-tag-chip" });
+      }
+    }
+  }
+  renderMentionSectionBody(parent, snapshot) {
+    parent.createDiv({ text: snapshot.explanation, cls: "lti-item-subtext" });
+    if (snapshot.items.length === 0) {
+      parent.createDiv({ text: snapshot.emptyMessage, cls: "lti-empty" });
+      return;
+    }
+    const list = parent.createDiv({ cls: "lti-list lti-list-compact" });
+    for (const item of snapshot.items) {
+      const row = list.createDiv({ cls: "lti-list-row" });
+      const header = row.createDiv({ cls: "lti-list-row-head" });
+      const link = header.createEl("button", {
+        text: item.basename,
+        cls: "lti-note-link lti-list-row-title",
+        attr: { type: "button" }
+      });
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        this.openFileByPath(item.path);
       });
       const meta = header.createDiv({ cls: "lti-list-row-meta" });
-      meta.createSpan({ text: mention.matchedTerm, cls: "lti-pill" });
-      row.createDiv({ text: mention.file.path, cls: "lti-list-row-path" });
-      row.createDiv({ text: mention.snippet, cls: "lti-list-row-snippet" });
+      meta.createSpan({ text: item.matchedTerm, cls: "lti-pill" });
+      row.createDiv({ text: item.path, cls: "lti-list-row-path" });
+      row.createDiv({ text: item.snippet, cls: "lti-list-row-snippet" });
     }
   }
-  renderSemanticSection(parent) {
-    const section = this.createSection(parent, "semantic", this.plugin.t("semanticBridge"), void 0, false);
-    if (!section) {
-      return;
-    }
-    section.createDiv({
-      text: isSemanticBridgeConfigured(this.plugin.settings) ? this.plugin.t("configured") : this.plugin.t("notConfigured"),
-      cls: "lti-item-subtext"
-    });
-    if (this.plugin.settings.workflowMode === "researcher") {
-      section.createDiv({
-        text: this.plugin.t("settingsSemanticResearchHint"),
-        cls: "lti-item-subtext"
-      });
+  renderStatusSectionBody(parent, snapshot) {
+    for (const line of snapshot.lines) {
+      parent.createDiv({ text: line, cls: "lti-item-subtext" });
     }
   }
-  renderCaptureSection(parent) {
-    const section = this.createSection(parent, "capture", this.plugin.t("ingestionCapture"), void 0, false);
-    if (!section) {
-      return;
-    }
-    section.createDiv({
-      text: isIngestionConfigured(this.plugin.settings) ? this.plugin.t("configured") : this.plugin.t("notConfigured"),
-      cls: "lti-item-subtext"
-    });
-    section.createDiv({
-      text: this.plugin.t("ingestionStatusHint"),
-      cls: "lti-item-subtext"
-    });
-  }
-  renderMetadataPills(parent, metadata) {
-    const chips = this.plugin.formatResearchMetadataChips(metadata);
+  renderChipRow(parent, chips) {
     if (chips.length === 0) {
       return;
     }
-    const metaRow = parent.createDiv({ cls: "lti-pill-row lti-pill-row-compact lti-reference-meta" });
+    const row = parent.createDiv({ cls: "lti-pill-row lti-pill-row-compact lti-reference-meta" });
     for (const chip of chips) {
-      metaRow.createSpan({ text: chip, cls: "lti-pill" });
+      row.createSpan({ text: chip, cls: "lti-pill" });
     }
   }
-  createSection(parent, id, title, count, defaultExpanded = false, emphasized = false) {
-    const expanded = this.getSectionExpanded(id, defaultExpanded);
-    const section = parent.createDiv({ cls: `lti-section${emphasized ? " lti-note-focus" : ""}` });
-    section.dataset.sectionId = id;
-    const header = section.createDiv({ cls: "lti-section-header" });
-    header.dataset.sectionId = id;
-    const toggle = header.createDiv({ cls: "lti-section-toggle" });
-    toggle.dataset.sectionId = id;
-    toggle.setAttribute("role", "button");
-    toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
-    toggle.setAttribute("aria-label", title);
-    toggle.tabIndex = 0;
-    toggle.createSpan({ text: ">", cls: "lti-section-chevron" });
-    toggle.createSpan({ text: title, cls: "lti-section-toggle-title" });
-    if (typeof count === "number") {
-      toggle.createSpan({ text: String(count), cls: "lti-section-count" });
+  formatMetadataChips(metadata) {
+    return this.plugin.formatResearchMetadataChips(metadata);
+  }
+  openReferenceAction(action) {
+    const file = this.resolveFileByPath(action.path);
+    if (!file) {
+      return;
     }
-    const onToggle = () => {
-      const newExpanded = !this.getSectionExpanded(id, defaultExpanded);
-      this.sectionState.set(id, newExpanded);
-      section.classList.toggle("is-collapsed", !newExpanded);
-      body.classList.toggle("is-collapsed", !newExpanded);
-    };
-    toggle.addEventListener("click", onToggle);
-    toggle.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        onToggle();
-      }
-    });
-    const body = section.createDiv({ cls: "lti-section-body" });
-    body.dataset.sectionId = id;
-    const inner = body.createDiv({ cls: "lti-section-inner" });
-    if (!expanded) {
-      body.addClass("is-collapsed");
+    if (action.blockId) {
+      this.plugin.openFileAtBlock(file, action.blockId);
+      return;
     }
-    return inner;
+    if (typeof action.startLine === "number") {
+      this.plugin.openFileAtLine(file, action.startLine, action.endLine);
+      return;
+    }
+    this.plugin.openFile(file);
+  }
+  openFileByPath(path) {
+    const file = this.resolveFileByPath(path);
+    if (file) {
+      this.plugin.openFile(file);
+    }
+  }
+  resolveFileByPath(path) {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    return file instanceof import_obsidian10.TFile ? file : null;
   }
   getSectionExpanded(id, defaultExpanded) {
     return this.sectionState.get(id) ?? defaultExpanded;
   }
-  getScrollContainer() {
-    return this.contentEl.closest(".view-content") instanceof HTMLElement ? this.contentEl.closest(".view-content") : this.contentEl;
-  }
-  openExactReference(reference) {
-    if (reference.kind === "block" && reference.blockId) {
-      this.plugin.openFileAtBlock(reference.targetFile, reference.blockId);
-      return;
+  async onClose() {
+    if (this.refreshFrame !== null) {
+      window.cancelAnimationFrame(this.refreshFrame);
+      this.refreshFrame = null;
     }
-    if (typeof reference.startLine === "number") {
-      this.plugin.openFileAtLine(reference.targetFile, reference.startLine, reference.endLine);
-      return;
-    }
-    this.plugin.openFile(reference.targetFile);
-  }
-  openPrimaryReference(reference, direction) {
-    if (direction === "outgoing") {
-      this.openExactReference(reference);
-      return;
-    }
-    if (typeof reference.sourceStartLine === "number") {
-      this.plugin.openFileAtLine(reference.sourceFile, reference.sourceStartLine, reference.sourceEndLine);
-      return;
-    }
-    this.plugin.openFile(reference.sourceFile);
-  }
-  onClose() {
-    if (this.refreshTimer !== null) {
-      window.clearTimeout(this.refreshTimer);
-      this.refreshTimer = null;
-    }
+    this.pendingRefresh = null;
+    this.refreshPromise = null;
     this.contentEl.empty();
-    return Promise.resolve();
   }
 };
 
@@ -6336,7 +6688,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
       LINK_TAG_INTELLIGENCE_VIEW,
       (leaf) => new LinkTagIntelligenceView(leaf, this)
     );
-    this.addRibbonIcon("links-coming-in", this.t("openPanel"), () => {
+    this.addRibbonIcon(LINK_TAG_INTELLIGENCE_ICON_ID, this.t("openPanel"), () => {
       void this.openIntelligencePanel();
     });
     this.addCommand({
@@ -6469,9 +6821,22 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
           this.lastExcalidrawFilePath = file.path;
         }
       }
-      this.refreshAllViews();
+      this.refreshAllViews({
+        reason: "context",
+        force: true,
+        changedPaths: file instanceof import_obsidian11.TFile ? [file.path] : void 0
+      });
     }));
-    this.registerEvent(this.app.metadataCache.on("changed", () => this.refreshAllViews()));
+    this.registerEvent(this.app.metadataCache.on("changed", (file) => {
+      const currentFile = this.getContextNoteFile();
+      if (!(file instanceof import_obsidian11.TFile) || !(currentFile instanceof import_obsidian11.TFile) || file.path !== currentFile.path) {
+        return;
+      }
+      this.refreshAllViews({
+        reason: "metadata",
+        changedPaths: [file.path]
+      });
+    }));
     this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => {
       const viewType = leaf?.view?.getViewType() ?? null;
       const viewFile = leaf?.view instanceof import_obsidian11.FileView ? leaf.view.file?.path ?? null : null;
@@ -6511,11 +6876,23 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
         const fileChanged = this.captureSupportedFileContext(leafFile);
         const editorChanged = this.captureEditorContext(leaf);
         if (editorChanged || fileChanged || isExcalidrawViewReady) {
-          this.refreshAllViews();
+          this.refreshAllViews({
+            reason: "context",
+            force: true,
+            changedPaths: leafFile instanceof import_obsidian11.TFile ? [leafFile.path] : void 0
+          });
         }
       }, 0);
     }));
-    this.registerEvent(this.app.vault.on("rename", () => this.refreshAllViews()));
+    this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+      if (!(file instanceof import_obsidian11.TFile)) {
+        return;
+      }
+      this.refreshAllViews({
+        reason: "metadata",
+        changedPaths: [file.path, oldPath].filter((path) => typeof path === "string" && path.length > 0)
+      });
+    }));
     this.registerMarkdownPostProcessor((el, ctx) => renderLegacyReferences(el, ctx, {
       app: this.app,
       resolveTarget: (target, sourcePath) => resolveNoteTarget(this.app, target, sourcePath),
@@ -6540,7 +6917,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
     this.settings.recentLinkTargets = this.settings.recentLinkTargets.slice(0, memory);
     await this.saveData(this.settings);
   }
-  async getResearchWorkbenchState() {
+  getResearchWorkbenchState() {
     return readResearchWorkbenchState(
       this.app,
       buildResearchWorkbenchProfile(this.settings, this.currentLanguage())
@@ -6586,13 +6963,13 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
     settingApi.openTabById(id === "semantic-bridge" ? this.manifest.id : id);
     return true;
   }
-  async importZoteroNotes() {
+  importZoteroNotes() {
     return this.executeCommandByCandidates([
       "obsidian-zotero-desktop-connector:zdc-import-notes",
       "zdc-import-notes"
     ]);
   }
-  async openSmartConnectionsView() {
+  openSmartConnectionsView() {
     return this.executeCommandByCandidates([
       "smart-connections:smart-connections-view",
       "smart-connections-view"
@@ -6787,13 +7164,13 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
     return this.getContextEditorView()?.editor?.getSelection() ?? "";
   }
   getNavigationLeaf() {
-    const activeLeaf = this.app.workspace.getMostRecentLeaf();
+    const mostRecentLeaf = this.app.workspace.getMostRecentLeaf();
     const activeFile = this.getActiveSupportedFile();
-    if (activeLeaf && activeFile) {
+    if (mostRecentLeaf && activeFile) {
       this.captureSupportedFileContext(activeFile);
-      if (activeLeaf.view instanceof import_obsidian11.MarkdownView) {
-        this.captureEditorContext(activeLeaf);
-        return activeLeaf;
+      if (mostRecentLeaf.view instanceof import_obsidian11.MarkdownView) {
+        this.captureEditorContext(mostRecentLeaf);
+        return mostRecentLeaf;
       }
     }
     if (this.lastEditorLeaf) {
@@ -6814,11 +7191,11 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
     }
     await leaf.setViewState({ type: LINK_TAG_INTELLIGENCE_VIEW, active: true });
     await this.app.workspace.revealLeaf(leaf);
-    this.refreshAllViews();
+    this.refreshAllViews({ reason: "context", force: true });
   }
-  refreshAllViews() {
+  refreshAllViews(request = { reason: "mutation" }) {
     const leaves = this.app.workspace.getLeavesOfType(LINK_TAG_INTELLIGENCE_VIEW);
-    debugLog(this.app, "refreshAllViews", { leafCount: leaves.length });
+    debugLog(this.app, "refreshAllViews", { leafCount: leaves.length, reason: request.reason, changedPaths: request.changedPaths ?? [] });
     for (const leaf of leaves) {
       const view = leaf.view;
       debugLog(this.app, "refreshAllViews:viewCheck", {
@@ -6826,7 +7203,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
         isLTIView: view instanceof LinkTagIntelligenceView
       });
       if (view instanceof LinkTagIntelligenceView) {
-        void view.refresh();
+        view.requestRefresh(request);
       }
     }
   }
