@@ -238,8 +238,9 @@ class LegacyReadingHoverController extends MarkdownRenderChild implements Readin
     const margin = 12;
     const rect = anchor.getBoundingClientRect();
 
-    // max-width uses dynamic margin calculation, cannot be in CSS class
-    el.style.setProperty("max-width", `min(28rem, calc(100vw - ${margin * 2}px))`);
+    el.setCssProps({
+      "--lti-reading-hover-max-width": `min(28rem, calc(100vw - ${margin * 2}px))`
+    });
 
     const elRect = el.getBoundingClientRect();
     const left = Math.min(rect.left, doc.documentElement.clientWidth - elRect.width - margin);
@@ -248,8 +249,10 @@ class LegacyReadingHoverController extends MarkdownRenderChild implements Readin
       ? rect.bottom + gap
       : rect.top - elRect.height - gap;
 
-    el.style.setProperty("left", `${Math.max(margin, left)}px`);
-    el.style.setProperty("top", `${Math.max(margin, top)}px`);
+    el.setCssProps({
+      "--lti-reading-hover-left": `${Math.max(margin, left)}px`,
+      "--lti-reading-hover-top": `${Math.max(margin, top)}px`
+    });
   }
 
   private destroyFallbackPopover(): void {

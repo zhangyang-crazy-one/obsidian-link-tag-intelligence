@@ -3020,10 +3020,12 @@ var _ReferencePreviewPopover = class _ReferencePreviewPopover {
     const margin = 12;
     const safeTop = 20;
     const anchorRect = anchor.getBoundingClientRect();
-    this.rootEl.style.setProperty("left", "0px");
-    this.rootEl.style.setProperty("top", "0px");
-    this.rootEl.style.setProperty("max-width", `min(28rem, calc(100vw - ${margin * 2}px))`);
-    this.rootEl.style.setProperty("max-height", `calc(100vh - ${margin * 2}px)`);
+    this.rootEl.setCssProps({
+      "--lti-preview-left": "0px",
+      "--lti-preview-top": "0px",
+      "--lti-preview-max-width": `min(28rem, calc(100vw - ${margin * 2}px))`,
+      "--lti-preview-max-height": `calc(100vh - ${margin * 2}px)`
+    });
     const previewRect = this.rootEl.getBoundingClientRect();
     const left = clamp2(anchorRect.left, margin, window.innerWidth - previewRect.width - margin);
     const availableHeight = Math.max(160, window.innerHeight - margin * 2);
@@ -3043,8 +3045,10 @@ var _ReferencePreviewPopover = class _ReferencePreviewPopover {
       top = anchorRect.top - previewHeight - gap;
     }
     top = clamp2(top, safeTop, window.innerHeight - previewHeight - margin);
-    this.rootEl.style.setProperty("left", `${left}px`);
-    this.rootEl.style.setProperty("top", `${top}px`);
+    this.rootEl.setCssProps({
+      "--lti-preview-left": `${left}px`,
+      "--lti-preview-top": `${top}px`
+    });
   }
 };
 _ReferencePreviewPopover.ROOT_SELECTOR = ".lti-hover-preview";

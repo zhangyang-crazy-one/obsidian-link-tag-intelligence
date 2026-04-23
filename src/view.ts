@@ -1035,7 +1035,7 @@ export class LinkTagIntelligenceView extends ItemView {
     return this.sectionState.get(id) ?? defaultExpanded;
   }
 
-  async onClose(): Promise<void> {
+  onClose(): void {
     if (this.refreshFrame !== null) {
       window.cancelAnimationFrame(this.refreshFrame);
       this.refreshFrame = null;

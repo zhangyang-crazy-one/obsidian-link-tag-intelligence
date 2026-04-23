@@ -362,7 +362,7 @@ export async function getOutgoingLinkFiles(app: App, file: TFile): Promise<TFile
 }
 
 export async function getBacklinkFiles(app: App, file: TFile): Promise<TFile[]> {
-  const resolvedLinks = app.metadataCache.resolvedLinks as Record<string, Record<string, number>>;
+  const resolvedLinks = app.metadataCache.resolvedLinks;
   const seen = new Set<string>();
   const backlinks: TFile[] = [];
 
@@ -553,7 +553,7 @@ export async function findUnlinkedMentions(
   }
 
   const results: MentionCandidate[] = [];
-  const resolvedLinks = app.metadataCache.resolvedLinks as Record<string, Record<string, number>>;
+  const resolvedLinks = app.metadataCache.resolvedLinks;
 
   for (const otherFile of getAllMarkdownFiles(app)) {
     if (otherFile.path === file.path) {

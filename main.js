@@ -4484,13 +4484,17 @@ var LegacyReadingHoverController = class extends import_obsidian8.MarkdownRender
     const gap = 8;
     const margin = 12;
     const rect = anchor.getBoundingClientRect();
-    el.style.setProperty("max-width", `min(28rem, calc(100vw - ${margin * 2}px))`);
+    el.setCssProps({
+      "--lti-reading-hover-max-width": `min(28rem, calc(100vw - ${margin * 2}px))`
+    });
     const elRect = el.getBoundingClientRect();
     const left = Math.min(rect.left, doc.documentElement.clientWidth - elRect.width - margin);
     const spaceBelow = doc.documentElement.clientHeight - rect.bottom - margin;
     const top = spaceBelow >= elRect.height + gap ? rect.bottom + gap : rect.top - elRect.height - gap;
-    el.style.setProperty("left", `${Math.max(margin, left)}px`);
-    el.style.setProperty("top", `${Math.max(margin, top)}px`);
+    el.setCssProps({
+      "--lti-reading-hover-left": `${Math.max(margin, left)}px`,
+      "--lti-reading-hover-top": `${Math.max(margin, top)}px`
+    });
   }
   destroyFallbackPopover() {
     if (!this.fallbackEl) {
@@ -6645,7 +6649,7 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
   getSectionExpanded(id, defaultExpanded) {
     return this.sectionState.get(id) ?? defaultExpanded;
   }
-  async onClose() {
+  onClose() {
     if (this.refreshFrame !== null) {
       window.cancelAnimationFrame(this.refreshFrame);
       this.refreshFrame = null;

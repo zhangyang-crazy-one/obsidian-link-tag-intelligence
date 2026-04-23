@@ -1338,8 +1338,10 @@
 
 .lti-fallback-popover {
   position: fixed;
+  left: var(--lti-reading-hover-left, 0);
+  top: var(--lti-reading-hover-top, 0);
   z-index: var(--layer-popover, 300);
-  max-width: min(28rem, calc(100vw - 1.5rem));
+  max-width: var(--lti-reading-hover-max-width, min(28rem, calc(100vw - 1.5rem)));
   padding: 0.8rem;
   border: 1px solid var(--lti-border);
   border-radius: 12px;
