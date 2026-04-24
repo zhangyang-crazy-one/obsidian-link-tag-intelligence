@@ -4139,7 +4139,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian10.Plugin {
       return;
     }
     await leaf.setViewState({ type: LINK_TAG_INTELLIGENCE_VIEW, active: true });
-    this.app.workspace.revealLeaf(leaf);
+    void this.app.workspace.revealLeaf(leaf);
     this.refreshAllViews();
   }
   refreshAllViews() {

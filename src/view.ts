@@ -149,6 +149,15 @@ interface StatusSectionSnapshot {
   lines: string[];
 }
 
+type SectionSnapshot =
+  | CurrentNoteSnapshot
+  | FileSectionSnapshot
+  | ReferenceSectionSnapshot
+  | RelationSectionSnapshot
+  | TagSectionSnapshot
+  | MentionSectionSnapshot
+  | StatusSectionSnapshot;
+
 interface SidebarSnapshot {
   toolbar: ToolbarButtonSnapshot[];
   hasContext: boolean;
@@ -741,7 +750,7 @@ export class LinkTagIntelligenceView extends ItemView {
     }
   }
 
-  private updateSection(id: SidebarSectionId, snapshot: unknown | null): void {
+  private updateSection(id: SidebarSectionId, snapshot: SectionSnapshot | null): void {
     const shell = this.sectionShells.get(id);
     if (!shell) {
       return;
@@ -799,7 +808,7 @@ export class LinkTagIntelligenceView extends ItemView {
     }
   }
 
-  private getSectionMeta(snapshot: unknown): { title: string; count?: number } {
+  private getSectionMeta(snapshot: SectionSnapshot): { title: string; count?: number } {
     if (this.isCurrentNoteSnapshot(snapshot)) {
       return { title: this.plugin.t("currentNote") };
     }
