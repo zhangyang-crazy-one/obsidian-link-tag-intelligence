@@ -816,16 +816,9 @@ export class LinkTagIntelligenceView extends ItemView {
       return { title: snapshot.title };
     }
 
-    const typed = snapshot as
-      | FileSectionSnapshot
-      | ReferenceSectionSnapshot
-      | RelationSectionSnapshot
-      | TagSectionSnapshot
-      | MentionSectionSnapshot;
-
     return {
-      title: typed.title,
-      count: typed.count
+      title: snapshot.title,
+      count: snapshot.count
     };
   }
 

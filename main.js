@@ -6453,10 +6453,9 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
     if (this.isStatusSectionSnapshot(snapshot)) {
       return { title: snapshot.title };
     }
-    const typed = snapshot;
     return {
-      title: typed.title,
-      count: typed.count
+      title: snapshot.title,
+      count: snapshot.count
     };
   }
   isCurrentNoteSnapshot(snapshot) {
