@@ -43,6 +43,7 @@ import {
 } from "./settings";
 import { LINK_TAG_INTELLIGENCE_VIEW, LinkTagIntelligenceView } from "./view";
 import type { ViewRefreshRequest } from "./view-refresh";
+import { SpeechRecorder, type RecorderSnapshot } from "./speech-recorder";
 
 export default class LinkTagIntelligencePlugin extends Plugin {
   settings: LinkTagIntelligenceSettings = DEFAULT_SETTINGS;
@@ -52,6 +53,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   private lastExcalidrawFilePath: string | null = null;
   private readonly referencePreview = new ReferencePreviewPopover();
   private referencePreviewToken = 0;
+  speechRecorder = new SpeechRecorder();
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -191,6 +193,22 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       callback: () => this.openSemanticSearch()
     });
 
+    this.addCommand({
+      id: "toggle-speech-recording",
+      name: this.t("speechToggleCommand"),
+      hotkeys: [{ modifiers: ["Ctrl", "Shift"], key: "V" }],
+      checkCallback: (checking) => {
+        const editorView = this.app.workspace.activeEditor;
+        if (!editorView?.editor) {
+          return false;
+        }
+        if (!checking) {
+          void this.toggleSpeechRecording();
+        }
+        return true;
+      }
+    });
+
     this.addSettingTab(new LinkTagIntelligenceSettingTab(this.app, this));
     this.registerHoverLinkSource("link-tag-intelligence", {
       display: this.t("pluginName"),
@@ -314,6 +332,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   }
 
   onunload(): void {
+    this.speechRecorder.destroy();
     this.referencePreview.destroy();
   }
 
@@ -1035,6 +1054,31 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
   openSemanticSearch(): void {
     new SemanticSearchModal(this).open();
+  }
+
+  async toggleSpeechRecording(): Promise<void> {
+    if (!this.speechRecorder.canToggle()) {
+      // If in error state, clicking the button acknowledges the error (D-02)
+      if (this.speechRecorder.getSnapshot().phase === "error") {
+        this.speechRecorder.acknowledgeError();
+        this.refreshAllViews();
+      }
+      return;
+    }
+
+    const errorKey = await this.speechRecorder.toggle((key, vars) => this.t(key as Parameters<typeof tr>[1], vars));
+
+    if (errorKey) {
+      new Notice(this.t(errorKey as Parameters<typeof tr>[1]));
+      this.refreshAllViews();
+      return;
+    }
+
+    this.refreshAllViews();
+  }
+
+  getSpeechRecorderSnapshot(): RecorderSnapshot {
+    return this.speechRecorder.getSnapshot();
   }
 
   async runResearchIngestion(request: ResearchIngestionRequest): Promise<Awaited<ReturnType<typeof runIngestionCommand>>> {
