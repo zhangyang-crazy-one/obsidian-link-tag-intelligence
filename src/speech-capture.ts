@@ -105,6 +105,9 @@ export function stopCapture(state: CaptureState): void {
 }
 
 export function calculateRMS(samples: Float32Array): number {
+  if (samples.length === 0) {
+    return 0;
+  }
   let sum = 0;
   for (let i = 0; i < samples.length; i++) {
     sum += samples[i] * samples[i];
@@ -114,7 +117,7 @@ export function calculateRMS(samples: Float32Array): number {
 
 export function rmsToDecibels(rms: number): number {
   // Convert RMS amplitude to dB (full-scale, reference = 1.0)
-  if (rms <= 0) {
+  if (Number.isNaN(rms) || rms <= 0) {
     return -Infinity;
   }
   return 20 * Math.log10(rms);
