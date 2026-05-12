@@ -54,23 +54,23 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SPEECH-01 | — | Pending |
-| SPEECH-02 | — | Pending |
-| SPEECH-03 | — | Pending |
-| SPEECH-04 | — | Pending |
-| SPEECH-05 | — | Pending |
-| SPEECH-06 | — | Pending |
-| SPEECH-07 | — | Pending |
-| SPEECH-08 | — | Pending |
-| SPEECH-09 | — | Pending |
-| SPEECH-10 | — | Pending |
-| SPEECH-11 | — | Pending |
+| SPEECH-01 | Phase 1 | Pending |
+| SPEECH-02 | Phase 1 | Pending |
+| SPEECH-03 | Phase 2 | Pending |
+| SPEECH-04 | Phase 1 | Pending |
+| SPEECH-05 | Phase 1 | Pending |
+| SPEECH-06 | Phase 2 | Pending |
+| SPEECH-07 | Phase 2 | Pending |
+| SPEECH-08 | Phase 2 | Pending |
+| SPEECH-09 | Phase 1 | Pending |
+| SPEECH-10 | Phase 1 | Pending |
+| SPEECH-11 | Phase 2 | Pending |
 
 **Coverage:**
 - v1 requirements: 11 total
-- Mapped to phases: 0
-- Unmapped: 11 ⚠️
+- Mapped to phases: 11
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-05-12*
-*Last updated: 2026-05-12 after initial definition*
+*Last updated: 2026-05-12 after roadmap creation*
