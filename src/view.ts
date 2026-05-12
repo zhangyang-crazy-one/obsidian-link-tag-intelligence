@@ -1,6 +1,7 @@
 import { ItemView, TFile, WorkspaceLeaf } from "obsidian";
 
 import type LinkTagIntelligencePlugin from "./main";
+import type { RecorderSnapshot } from "./speech-recorder";
 import { isIngestionConfigured } from "./ingestion";
 import { LINK_TAG_INTELLIGENCE_ICON_ID } from "./icons";
 import {
@@ -33,7 +34,8 @@ type ToolbarActionId =
   | "addRelation"
   | "manageTags"
   | "suggestTags"
-  | "semanticSearch";
+  | "semanticSearch"
+  | "speechRecord";
 
 type SidebarSectionId =
   | "current-note"
@@ -54,6 +56,9 @@ interface ToolbarButtonSnapshot {
   label: string;
   disabled: boolean;
   title?: string;
+  state?: string;       // RecorderPhase string — drives CSS class (D-08)
+  audioLevel?: number;  // 0.0 - 1.0 — drives VU meter fill
+  dbValue?: number;     // dBFS for numeric readout
 }
 
 interface FileLinkSnapshot {
@@ -238,6 +243,9 @@ export class LinkTagIntelligenceView extends ItemView {
   private dependencyPaths = new Set<string>();
   private toolbarSignature: string | null = null;
   private sectionsContainerEl: HTMLDivElement | null = null;
+  private vuMeterEl: HTMLDivElement | null = null;
+  private vuMeterBars: HTMLDivElement[] = [];
+  private vuMeterDbLabel: HTMLSpanElement | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: LinkTagIntelligencePlugin) {
     super(leaf);
@@ -340,6 +348,18 @@ export class LinkTagIntelligenceView extends ItemView {
       this.toolbarButtons.set(key, button);
     }
 
+    // VU meter: 5-bar + dB readout, positioned adjacent to speech button (D-07)
+    const vuMeter = toolbar.createDiv({ cls: "lti-vu-meter" });
+    vuMeter.hidden = true;
+    this.vuMeterEl = vuMeter;
+    this.vuMeterBars = [];
+    for (let i = 0; i < 5; i++) {
+      const bar = vuMeter.createDiv({ cls: "lti-vu-bar" });
+      bar.dataset.index = String(i);
+      this.vuMeterBars.push(bar);
+    }
+    this.vuMeterDbLabel = vuMeter.createSpan({ cls: "lti-vu-db-label", text: "" });
+
     const sections = this.contentEl.createDiv({ cls: "lti-sidebar-sections" });
     this.sectionsContainerEl = sections;
     for (const definition of SECTION_DEFINITIONS) {
@@ -357,7 +377,8 @@ export class LinkTagIntelligenceView extends ItemView {
       ["addRelation", () => this.plugin.openRelationFlow()],
       ["manageTags", () => this.plugin.openTagManager()],
       ["suggestTags", () => this.plugin.openTagSuggestion()],
-      ["semanticSearch", () => this.plugin.openSemanticSearch()]
+      ["semanticSearch", () => this.plugin.openSemanticSearch()],
+      ["speechRecord", () => this.plugin.toggleSpeechRecording()]
     ];
   }
 
@@ -497,7 +518,11 @@ export class LinkTagIntelligenceView extends ItemView {
 
   private buildToolbarSnapshot(): ToolbarButtonSnapshot[] {
     const hasContext = Boolean(this.plugin.getContextNoteFile());
+    const recorderSnapshot = this.plugin.getSpeechRecorderSnapshot();
     return this.getToolbarActions().map(([key]) => {
+      if (key === "speechRecord") {
+        return this.buildSpeechButtonSnapshot(key, recorderSnapshot);
+      }
       const disabled = FILE_REQUIRED_ACTIONS.has(key) && !hasContext;
       return {
         key,
@@ -506,6 +531,27 @@ export class LinkTagIntelligenceView extends ItemView {
         title: disabled ? this.plugin.t("noActiveNote") : undefined
       };
     });
+  }
+
+  private buildSpeechButtonSnapshot(
+    key: ToolbarActionId,
+    snapshot: RecorderSnapshot
+  ): ToolbarButtonSnapshot {
+    const tooltipKey = snapshot.phase === "error" ? "speechRecordTooltipError"
+      : snapshot.phase === "processing" ? "speechRecordTooltipProcessing"
+      : snapshot.phase === "recording" ? "speechRecordTooltipRecording"
+      : snapshot.phase === "initializing" ? "speechRecordTooltipInitializing"
+      : "speechRecordTooltipIdle";
+    const isError = snapshot.phase === "error";
+    return {
+      key,
+      label: this.plugin.t("speechRecord"),
+      disabled: isError ? false : false, // error button is clickable for acknowledgment
+      title: this.plugin.t(tooltipKey),
+      state: snapshot.phase,
+      audioLevel: snapshot.phase === "recording" ? snapshot.audioLevel : undefined,
+      dbValue: snapshot.phase === "recording" ? snapshot.dbValue : undefined
+    };
   }
 
   private buildFileSectionSnapshot(
@@ -732,6 +778,10 @@ export class LinkTagIntelligenceView extends ItemView {
       if (!button) {
         continue;
       }
+      // Speech button state is handled separately below
+      if (item.key === "speechRecord") {
+        continue;
+      }
 
       button.textContent = item.label;
       button.disabled = item.disabled;
@@ -741,6 +791,61 @@ export class LinkTagIntelligenceView extends ItemView {
         button.removeAttribute("title");
       }
       button.classList.toggle("lti-toolbar-button-disabled", item.disabled);
+    }
+
+    // Speech recording button: apply state CSS classes (D-04, D-06, D-08)
+    const speechButton = this.toolbarButtons.get("speechRecord");
+    if (speechButton) {
+      const speechItem = toolbar.find((item) => item.key === "speechRecord");
+      // Remove all state modifier classes
+      speechButton.classList.remove(
+        "is-idle", "is-initializing", "is-recording", "is-processing", "is-error"
+      );
+      if (speechItem?.state) {
+        speechButton.classList.add(`is-${speechItem.state}`);
+      }
+      // Update VU meter visibility: only show during recording
+      this.updateVuMeter(speechItem?.state === "recording" ? speechItem : null);
+    }
+  }
+
+  /**
+   * Update VU meter display based on recording state audio level.
+   * VU meter is hidden unless in recording state (D-07).
+   * Bar thresholds from UI-SPEC:
+   *   Bar 1: green  when level > -50 dBFS
+   *   Bar 2: green  when level > -36 dBFS
+   *   Bar 3: green  when level > -24 dBFS
+   *   Bar 4: yellow when level > -18 dBFS
+   *   Bar 5: red    when level >  -6 dBFS
+   */
+  private updateVuMeter(snapshot: ToolbarButtonSnapshot | null): void {
+    if (!this.vuMeterEl) {
+      return;
+    }
+
+    const show = snapshot !== null && typeof snapshot.dbValue === "number" && isFinite(snapshot.dbValue);
+    this.vuMeterEl.hidden = !show;
+
+    if (!show) {
+      return;
+    }
+
+    const dbValue = snapshot!.dbValue!;
+    const thresholds = [-50, -36, -24, -18, -6];
+    const colors = ["is-active-green", "is-active-green", "is-active-green", "is-active-yellow", "is-active-red"];
+
+    for (let i = 0; i < this.vuMeterBars.length; i++) {
+      const bar = this.vuMeterBars[i];
+      // Remove all color classes
+      bar.classList.remove("is-active-green", "is-active-yellow", "is-active-red");
+      if (dbValue > thresholds[i]) {
+        bar.classList.add(colors[i]);
+      }
+    }
+
+    if (this.vuMeterDbLabel) {
+      this.vuMeterDbLabel.textContent = dbValue === -Infinity ? "-\u221E" : `${Math.round(dbValue)} dB`;
     }
   }
 
@@ -1045,6 +1150,9 @@ export class LinkTagIntelligenceView extends ItemView {
 
     this.pendingRefresh = null;
     this.refreshPromise = null;
+    this.vuMeterEl = null;
+    this.vuMeterBars = [];
+    this.vuMeterDbLabel = null;
     this.contentEl.empty();
   }
 }
