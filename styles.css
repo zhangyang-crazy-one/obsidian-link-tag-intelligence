@@ -4973,3 +4973,160 @@ button[lvl="primary"]:hover {
     var(--lti-surface) 100%
   );
 }
+
+/* ── Speech Recording Button ── */
+
+/* Speech button: inherit toolbar button base, transparent background (D-06) */
+.lti-toolbar button[data-action="speechRecord"] {
+  background: transparent !important;
+  box-shadow: none !important;
+  border-color: transparent !important;
+}
+
+.lti-toolbar button[data-action="speechRecord"]::before {
+  display: none;
+}
+
+/* Idle state: default mic icon, no animation (D-06) */
+.lti-toolbar button[data-action="speechRecord"].is-idle {
+  color: var(--text-muted);
+  border-color: transparent;
+}
+
+/* Initializing state: spinning loader indicator (D-06) */
+.lti-toolbar button[data-action="speechRecord"].is-initializing {
+  color: var(--text-muted);
+  opacity: 0.7;
+  animation: lti-speech-spin 1s linear infinite;
+}
+
+/* Recording state: accent icon color + pulsing border (D-06) */
+.lti-toolbar button[data-action="speechRecord"].is-recording {
+  color: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  animation: lti-speech-pulse 1.5s ease-in-out infinite;
+}
+
+/* Processing state: subtle fade pulse (D-06) */
+.lti-toolbar button[data-action="speechRecord"].is-processing {
+  color: var(--text-muted);
+  opacity: 0.6;
+  animation: lti-speech-fade-pulse 1s ease-in-out infinite;
+}
+
+/* Error state: red icon, no animation, solid border (D-02) */
+.lti-toolbar button[data-action="speechRecord"].is-error {
+  color: #e93147;
+  border-color: #e93147;
+  background: color-mix(in srgb, #e93147 15%, transparent) !important;
+}
+
+/* ── Speech Recording Animations ── */
+
+/* Recording pulsing border — breathing effect via box-shadow (D-06) */
+@keyframes lti-speech-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--interactive-accent) 40%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--interactive-accent) 0%, transparent);
+  }
+}
+
+/* Initializing spinner */
+@keyframes lti-speech-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Processing fade pulse */
+@keyframes lti-speech-fade-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+/* ── VU Meter ── */
+
+/* VU meter container: sits adjacent to speech button (D-07) */
+.lti-vu-meter {
+  display: flex;
+  align-items: center;
+  gap: 2px;               /* 2px gap between bars per UI-SPEC spacing */
+  margin-left: 4px;       /* 4px gap from button per UI-SPEC */
+  flex-shrink: 0;
+}
+
+/* Individual VU bar: 4px wide, 18px tall (UI-SPEC) */
+.lti-vu-bar {
+  width: 4px;
+  height: 18px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text-faint) 30%, transparent);
+  transition: background-color 80ms ease;
+}
+
+/* VU bar active states: green, yellow, red (UI-SPEC Color section) */
+.lti-vu-bar.is-active-green {
+  background: #4caf50;
+}
+
+.lti-vu-bar.is-active-yellow {
+  background: #ff9800;
+}
+
+.lti-vu-bar.is-active-red {
+  background: #f44336;
+}
+
+/* dB numeric readout: 12px font next to bars (UI-SPEC Typography) */
+.lti-vu-db-label {
+  margin-left: 4px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-muted);
+  font-family: var(--font-text);
+  min-width: 42px;
+  white-space: nowrap;
+}
+
+/* ── Voice Settings Section (settings.ts voice fields) ── */
+
+/* Horizontal row for model path input + browse button */
+.lti-voice-field-row {
+  display: block;
+}
+
+.lti-voice-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.lti-voice-path-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.lti-voice-browse-btn {
+  flex-shrink: 0;
+}
+
+/* Slider row for VAD sensitivity */
+.lti-voice-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lti-voice-slider {
+  flex: 1;
+  min-width: 0;
+}
+
+.lti-voice-slider-value {
+  min-width: 1.5em;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
