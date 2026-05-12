@@ -126,6 +126,10 @@ export interface LinkTagIntelligenceSettings {
   smartConnectionsFolderExclusions: string;
   smartConnectionsHeadingExclusions: string;
   smartConnectionsResultsLimit: number;
+  speechModelPath: string;
+  speechLanguage: "zh" | "en";
+  speechVadSensitivity: number;
+  speechAutoStopSec: number;
 }
 
 export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSettings {
@@ -160,7 +164,11 @@ export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSetting
     researchOpenNoteAfterImport: true,
     smartConnectionsFolderExclusions: buildSmartConnectionsExclusions(configDir).join(", "),
     smartConnectionsHeadingExclusions: SMART_CONNECTIONS_HEADINGS.join(", "),
-    smartConnectionsResultsLimit: DEFAULT_SMART_RESULTS_LIMIT
+    smartConnectionsResultsLimit: DEFAULT_SMART_RESULTS_LIMIT,
+    speechModelPath: "",
+    speechLanguage: "zh",
+    speechVadSensitivity: 2,
+    speechAutoStopSec: 60
   };
 }
 
@@ -328,6 +336,17 @@ export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagI
     ? normalized.smartConnectionsResultsLimit
     : defaults.smartConnectionsResultsLimit;
 
+  normalized.speechModelPath = typeof normalized.speechModelPath === "string"
+    ? normalized.speechModelPath.trim()
+    : "";
+  normalized.speechLanguage = normalized.speechLanguage === "en" ? "en" : "zh";
+  normalized.speechVadSensitivity = Number.isFinite(normalized.speechVadSensitivity)
+    ? Math.max(0, Math.min(3, Math.round(normalized.speechVadSensitivity)))
+    : 2;
+  normalized.speechAutoStopSec = Number.isFinite(normalized.speechAutoStopSec)
+    ? Math.max(0, Math.min(300, Math.round(normalized.speechAutoStopSec)))
+    : 60;
+
   return normalized;
 }
 
@@ -348,6 +367,8 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.addClass("lti-settings-root");
+
+    this.renderVoiceSection(containerEl);
 
     const shell = containerEl.createDiv({ cls: "lti-workbench" });
     shell.createDiv({
@@ -1561,5 +1582,83 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
 
   private booleanText(value: unknown): string {
     return value === true ? this.plugin.t("settingsWorkbenchOn") : this.plugin.t("settingsWorkbenchOff");
+  }
+
+  private renderVoiceSection(containerEl: HTMLElement): void {
+    const section = this.createSectionCard(
+      containerEl,
+      this.plugin.t("speechSettingsHeading"),
+      this.plugin.t("speechSettingsDescription")
+    );
+
+    // Model file path — text input + Browse button (D-15)
+    const modelRow = section.createDiv({ cls: "lti-voice-field-row" });
+    const modelField = this.createFieldShell(modelRow, this.plugin.t("speechModelPath"), this.plugin.t("speechModelPathDescription"));
+    const modelInputRow = modelField.createDiv({ cls: "lti-voice-input-row" });
+    const modelInput = modelInputRow.createEl("input", { cls: "lti-workbench-input lti-voice-path-input", type: "text" });
+    modelInput.value = this.plugin.settings.speechModelPath;
+    modelInput.placeholder = "/path/to/sherpa-onnx/model";
+    modelInput.addEventListener("change", () => {
+      this.plugin.settings.speechModelPath = modelInput.value.trim();
+      void this.plugin.saveSettings();
+    });
+    const browseBtn = modelInputRow.createEl("button", {
+      cls: "lti-workbench-button lti-voice-browse-btn",
+      text: this.plugin.t("speechBrowse"),
+      type: "button"
+    });
+    browseBtn.addEventListener("click", () => {
+      modelInput.focus();
+    });
+
+    // Language selector — dropdown with zh/en (D-16)
+    this.createSelectField(
+      section,
+      this.plugin.t("speechLanguage"),
+      "",
+      [
+        { value: "zh", label: this.plugin.t("speechLanguageZh") },
+        { value: "en", label: this.plugin.t("speechLanguageEn") }
+      ],
+      this.plugin.settings.speechLanguage,
+      async (value) => {
+        this.plugin.settings.speechLanguage = value as "zh" | "en";
+        await this.plugin.saveSettings();
+      }
+    );
+
+    // VAD sensitivity — slider 0-3, default 2 (D-17)
+    const vadField = this.createFieldShell(section, this.plugin.t("speechVadSensitivity"), this.plugin.t("speechVadSensitivityDescription"));
+    const vadRow = vadField.createDiv({ cls: "lti-voice-slider-row" });
+    const vadSlider = vadRow.createEl("input", { type: "range", cls: "lti-voice-slider" });
+    vadSlider.min = "0";
+    vadSlider.max = "3";
+    vadSlider.step = "1";
+    vadSlider.value = String(this.plugin.settings.speechVadSensitivity);
+    const vadLabel = vadRow.createSpan({ cls: "lti-voice-slider-value", text: String(this.plugin.settings.speechVadSensitivity) });
+    vadSlider.addEventListener("input", () => {
+      const val = Number.parseInt(vadSlider.value, 10);
+      vadLabel.textContent = String(val);
+    });
+    vadSlider.addEventListener("change", () => {
+      this.plugin.settings.speechVadSensitivity = Number.parseInt(vadSlider.value, 10);
+      void this.plugin.saveSettings();
+    });
+
+    // Auto-stop timeout — number input, default 60, range 10-300, 0 = disabled (D-18)
+    const autoStopField = this.createFieldShell(section, this.plugin.t("speechAutoStopTimeout"), this.plugin.t("speechAutoStopTimeoutDescription"));
+    const autoStopInput = autoStopField.createEl("input", { cls: "lti-workbench-input", type: "number" });
+    autoStopInput.min = "0";
+    autoStopInput.max = "300";
+    autoStopInput.step = "10";
+    autoStopInput.value = String(this.plugin.settings.speechAutoStopSec);
+    autoStopInput.addEventListener("change", () => {
+      const parsed = Number.parseInt(autoStopInput.value, 10);
+      if (Number.isFinite(parsed)) {
+        this.plugin.settings.speechAutoStopSec = Math.max(0, Math.min(300, parsed));
+        autoStopInput.value = String(this.plugin.settings.speechAutoStopSec);
+        void this.plugin.saveSettings();
+      }
+    });
   }
 }
