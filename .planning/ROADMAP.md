@@ -21,7 +21,13 @@ This project adds real-time local Chinese speech-to-text to the existing Obsidia
   3. Audio level VU meter (3-5 bars, green/yellow/red) updates in real-time during recording, confirming microphone input is being captured
   4. All voice-related UI text (button tooltips, state labels, error messages, settings labels) displays in Chinese when plugin language is zh and English when en
   5. Settings panel shows speech configuration fields: model file path with browse button, language selector (zh/en), VAD sensitivity slider, and auto-stop timeout input
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — i18n + Settings + Audio Capture Module (SPEECH-09, SPEECH-10, SPEECH-05)
+- [ ] 01-02-PLAN.md — Recording State Machine + Main Integration (SPEECH-01, SPEECH-04)
+- [ ] 01-03-PLAN.md — Toolbar UI + CSS Styling (SPEECH-02, SPEECH-05, SPEECH-04)
+- [ ] 01-04-PLAN.md — Unit Tests (SPEECH-01, SPEECH-04, SPEECH-05)
 **UI hint**: yes
 
 ### Phase 2: ASR Model & Transcription
@@ -35,6 +41,7 @@ This project adds real-time local Chinese speech-to-text to the existing Obsidia
   4. Recording automatically stops after the configured silence duration (default 30 seconds), preceded by a visible countdown warning in the toolbar button
   5. First-time users are guided through model file download with clear steps, download progress indicator, and automatic checksum verification before first use
 **Plans**: TBD
+
 **UI hint**: yes
 
 ## Progress
