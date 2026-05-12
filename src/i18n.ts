@@ -255,6 +255,32 @@ type TranslationKey =
   | "settingsWorkbenchPluginMissing"
   | "settingsWorkbenchSettingsUnavailable"
   | "settingsWorkbenchCommandUnavailable"
+  | "speechAudioContextFailed"
+  | "speechAutoStopTimeout"
+  | "speechAutoStopTimeoutDescription"
+  | "speechBrowse"
+  | "speechLanguage"
+  | "speechLanguageEn"
+  | "speechLanguageZh"
+  | "speechMicDisconnected"
+  | "speechMicNotFound"
+  | "speechMicPermissionDenied"
+  | "speechModelPath"
+  | "speechModelPathDescription"
+  | "speechNoEditor"
+  | "speechRecordingError"
+  | "speechRecord"
+  | "speechRecordTooltipError"
+  | "speechRecordTooltipIdle"
+  | "speechRecordTooltipInitializing"
+  | "speechRecordTooltipProcessing"
+  | "speechRecordTooltipRecording"
+  | "speechSettingsDescription"
+  | "speechSettingsHeading"
+  | "speechShortcutConflict"
+  | "speechToggleCommand"
+  | "speechVadSensitivity"
+  | "speechVadSensitivityDescription"
   | "mentionsExplanation"
   | "selected"
   | "notSelected"
@@ -577,6 +603,32 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsWorkbenchPluginMissing: "That companion plugin is not installed in the current vault.",
     settingsWorkbenchSettingsUnavailable: "Obsidian settings could not be opened programmatically.",
     settingsWorkbenchCommandUnavailable: "The companion command is not available in this vault.",
+    speechAudioContextFailed: "Audio system initialization failed. Please restart Obsidian and try again.",
+    speechAutoStopTimeout: "Auto-stop timeout (seconds)",
+    speechAutoStopTimeoutDescription: "Automatically stop recording after this duration of silence. Set to 0 to disable. Range 10-300 seconds.",
+    speechBrowse: "Browse...",
+    speechLanguage: "Recognition language",
+    speechLanguageEn: "English (en)",
+    speechLanguageZh: "Chinese (zh)",
+    speechMicDisconnected: "Microphone disconnected. Recording stopped.",
+    speechMicNotFound: "No microphone detected. Please connect a microphone and try again.",
+    speechMicPermissionDenied: "Microphone permission denied. Please allow Obsidian in System Settings > Privacy & Security > Microphone.",
+    speechModelPath: "Model file path",
+    speechModelPathDescription: "Path to the sherpa-onnx streaming model directory. Supports Zipformer Chinese or bilingual Chinese-English models.",
+    speechNoEditor: "Open a Markdown note to use voice input.",
+    speechRecordingError: "Recording error: {message}. Please try again.",
+    speechRecord: "Voice",
+    speechRecordTooltipError: "Recording error, click for details",
+    speechRecordTooltipIdle: "Start voice input (Ctrl+Shift+V)",
+    speechRecordTooltipInitializing: "Initializing microphone...",
+    speechRecordTooltipProcessing: "Processing...",
+    speechRecordTooltipRecording: "Recording... Click to stop",
+    speechSettingsDescription: "Configure speech recognition model, language, and recording behavior. All processing is local.",
+    speechSettingsHeading: "Voice",
+    speechShortcutConflict: "Shortcut Ctrl+Shift+V is already in use. Please configure manually in Obsidian hotkey settings.",
+    speechToggleCommand: "Toggle voice input",
+    speechVadSensitivity: "VAD sensitivity",
+    speechVadSensitivityDescription: "0 = least sensitive (requires clearer speech), 3 = most sensitive (triggers more easily)",
     mentionsExplanation: "Notes that mention this note title or aliases without already linking to it.",
     selected: "Selected",
     notSelected: "Not selected",
@@ -898,6 +950,32 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsWorkbenchPluginMissing: "当前 vault 中没有安装这个 companion 插件。",
     settingsWorkbenchSettingsUnavailable: "无法通过程序方式打开 Obsidian 设置页。",
     settingsWorkbenchCommandUnavailable: "当前 vault 中没有找到可执行的 companion 命令。",
+    speechAudioContextFailed: "音频系统初始化失败，请重启 Obsidian 后重试。",
+    speechAutoStopTimeout: "自动停止超时（秒）",
+    speechAutoStopTimeoutDescription: "静音超过此时长后自动停止录音。设为 0 禁用自动停止。范围 10-300 秒。",
+    speechBrowse: "浏览...",
+    speechLanguage: "识别语言",
+    speechLanguageEn: "English (en)",
+    speechLanguageZh: "中文 (zh)",
+    speechMicDisconnected: "麦克风已断开，录音已停止。",
+    speechMicNotFound: "未检测到麦克风设备。请连接麦克风后重试。",
+    speechMicPermissionDenied: "麦克风权限未授予，请在系统偏好设置 > 安全性与隐私 > 麦克风 中允许 Obsidian。",
+    speechModelPath: "模型文件路径",
+    speechModelPathDescription: "sherpa-onnx 流式模型目录的路径。支持 Zipformer 中文或中英双语模型。",
+    speechNoEditor: "请打开 Markdown 笔记以使用语音输入。",
+    speechRecordingError: "录音出错：{message}。请重试。",
+    speechRecord: "语音",
+    speechRecordTooltipError: "录音出错，点击查看详情",
+    speechRecordTooltipIdle: "开始语音输入 (Ctrl+Shift+V)",
+    speechRecordTooltipInitializing: "正在初始化麦克风...",
+    speechRecordTooltipProcessing: "正在处理...",
+    speechRecordTooltipRecording: "正在录音... 点击停止",
+    speechSettingsDescription: "配置语音识别模型、语言和录音行为。所有处理均在本地完成。",
+    speechSettingsHeading: "语音",
+    speechShortcutConflict: "快捷键 Ctrl+Shift+V 已被占用，请在 Obsidian 快捷键设置中手动配置。",
+    speechToggleCommand: "切换语音输入",
+    speechVadSensitivity: "VAD 灵敏度",
+    speechVadSensitivityDescription: "0 = 最不敏感（需要更清晰的声音）, 3 = 最敏感（更容易触发）",
     mentionsExplanation: "列出提及当前笔记标题或别名、但尚未建立链接的笔记。",
     selected: "已选",
     notSelected: "未选",
