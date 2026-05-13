@@ -65,11 +65,17 @@ rl.on("line", (raw) => {
         const buf = Buffer.from(msg.bufferB64, "base64");
         const samples = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
         stream.acceptWaveform(16e3, samples);
-        while (recognizer.isReady(stream)) recognizer.decode(stream);
-        const r = recognizer.getResult(stream);
-        const isEndpoint = recognizer.isEndpoint(stream);
-        if (isEndpoint) recognizer.reset(stream);
-        process.stdout.write(JSON.stringify({ type: "result", text: r.text || "", isEndpoint }) + "\n");
+        let decoded = false;
+        while (recognizer.isReady(stream)) {
+          recognizer.decode(stream);
+          decoded = true;
+        }
+        if (decoded) {
+          const r = recognizer.getResult(stream);
+          const isEndpoint = recognizer.isEndpoint(stream);
+          if (isEndpoint) recognizer.reset(stream);
+          process.stdout.write(JSON.stringify({ type: "result", text: r.text || "", isEndpoint }) + "\n");
+        }
         break;
       }
       case "reset":
