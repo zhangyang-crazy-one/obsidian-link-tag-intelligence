@@ -1167,7 +1167,17 @@ var TRANSLATIONS = {
     speechAsrReady: "Speech recognition ready",
     speechAsrError: "Speech recognition error",
     speechAsrAutoStopCountdown: "Auto-stop in {seconds}s",
-    speechAutoStopTimeoutReached: "Auto-stop: recording stopped after silence timeout."
+    speechAutoStopTimeoutReached: "Auto-stop: recording stopped after silence timeout.",
+    speechModelDownloadStart: "Downloading {lang} speech model files...",
+    speechModelDownloadProgress: "{filename} ({percent}%, {loadedMB}/{totalMB} MB) [{current}/{total}]",
+    speechModelDownloadComplete: "{lang} speech model ready. You can now start recording.",
+    speechModelDownloadFailed: "Model download failed: {error}. Check Settings \u2192 Voice for manual download.",
+    speechModelChecksumFailed: "Checksum verification failed for {filename}. Retrying...",
+    speechModelManualDownloadTitle: "Manual Model Download Required",
+    speechModelManualDownloadSteps: "Download these files:\nFrom: {baseUrl}\nFiles: {files}\nSave to: {modelDir}\nThen restart recording.",
+    speechModelNotFound: "Speech model files not found. Download from Settings \u2192 Voice.",
+    speechModelFirstRunTitle: "First-Time Setup: Speech Model Required",
+    speechModelFirstRunGuide: "Downloading speech recognition model ({zhSize} for Chinese, {enSize} for bilingual).\nFiles will be saved to: {modelDir}\n\nDownload will start now. This is a one-time setup."
   },
   zh: {
     pluginName: "\u94FE\u63A5\u4E0E\u6807\u7B7E\u667A\u80FD",
@@ -1520,7 +1530,17 @@ var TRANSLATIONS = {
     speechAsrReady: "\u8BED\u97F3\u8BC6\u522B\u5C31\u7EEA",
     speechAsrError: "\u8BED\u97F3\u8BC6\u522B\u9519\u8BEF",
     speechAsrAutoStopCountdown: "{seconds}\u79D2\u540E\u81EA\u52A8\u505C\u6B62",
-    speechAutoStopTimeoutReached: "\u81EA\u52A8\u505C\u6B62\uFF1A\u9759\u97F3\u8D85\u65F6\uFF0C\u5F55\u97F3\u5DF2\u505C\u6B62\u3002"
+    speechAutoStopTimeoutReached: "\u81EA\u52A8\u505C\u6B62\uFF1A\u9759\u97F3\u8D85\u65F6\uFF0C\u5F55\u97F3\u5DF2\u505C\u6B62\u3002",
+    speechModelDownloadStart: "\u6B63\u5728\u4E0B\u8F7D{lang}\u8BED\u97F3\u6A21\u578B\u6587\u4EF6...",
+    speechModelDownloadProgress: "{filename} ({percent}%, {loadedMB}/{totalMB} MB) [{current}/{total}]",
+    speechModelDownloadComplete: "{lang}\u8BED\u97F3\u6A21\u578B\u5C31\u7EEA\u3002\u73B0\u5728\u53EF\u4EE5\u5F00\u59CB\u5F55\u97F3\u3002",
+    speechModelDownloadFailed: "\u6A21\u578B\u4E0B\u8F7D\u5931\u8D25\uFF1A{error}\u3002\u8BF7\u524D\u5F80 \u8BBE\u7F6E \u2192 \u8BED\u97F3 \u624B\u52A8\u4E0B\u8F7D\u3002",
+    speechModelChecksumFailed: "{filename} \u6821\u9A8C\u5931\u8D25\uFF0C\u6B63\u5728\u91CD\u8BD5...",
+    speechModelManualDownloadTitle: "\u9700\u8981\u624B\u52A8\u4E0B\u8F7D\u6A21\u578B",
+    speechModelManualDownloadSteps: "\u8BF7\u4E0B\u8F7D\u4EE5\u4E0B\u6587\u4EF6\uFF1A\n\u6765\u6E90\uFF1A{baseUrl}\n\u6587\u4EF6\uFF1A{files}\n\u4FDD\u5B58\u5230\uFF1A{modelDir}\n\u7136\u540E\u91CD\u65B0\u5F00\u59CB\u5F55\u97F3\u3002",
+    speechModelNotFound: "\u672A\u627E\u5230\u8BED\u97F3\u6A21\u578B\u6587\u4EF6\u3002\u8BF7\u4ECE \u8BBE\u7F6E \u2192 \u8BED\u97F3 \u4E0B\u8F7D\u3002",
+    speechModelFirstRunTitle: "\u9996\u6B21\u8BBE\u7F6E\uFF1A\u9700\u8981\u8BED\u97F3\u6A21\u578B",
+    speechModelFirstRunGuide: "\u6B63\u5728\u4E0B\u8F7D\u8BED\u97F3\u8BC6\u522B\u6A21\u578B\uFF08\u4E2D\u6587\u7EA6 {zhSize}\uFF0C\u53CC\u8BED\u7EA6 {enSize}\uFF09\u3002\n\u6587\u4EF6\u5C06\u4FDD\u5B58\u5230\uFF1A{modelDir}\n\n\u4E0B\u8F7D\u5373\u5C06\u5F00\u59CB\u3002\u6B64\u64CD\u4F5C\u4EC5\u9700\u4E00\u6B21\u3002"
   }
 };
 var RELATION_KEY_LABELS = {
@@ -8355,14 +8375,28 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     const modelDir = this.speechRecorder.getModelDirInternal();
     const fileList = getModelFileList(this.settings.speechLanguage);
     let allExist = true;
+    let anyExist = false;
     for (const file of fileList) {
       const exists = await this.app.vault.adapter.exists(modelDir + file.filename);
-      if (!exists) {
+      if (exists) {
+        anyExist = true;
+      } else {
         allExist = false;
-        break;
       }
     }
     if (allExist) return true;
+    if (!anyExist) {
+      const lang = this.settings.speechLanguage;
+      new import_obsidian12.Notice(
+        this.t("speechModelFirstRunTitle") + "\n\n" + this.t("speechModelFirstRunGuide", {
+          modelDir,
+          zhSize: "~25 MB",
+          enSize: "~70 MB"
+        }),
+        12e3
+      );
+      return this.downloadSpeechModel();
+    }
     return this.downloadSpeechModel();
   }
   /**
@@ -8657,6 +8691,12 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
         this._sentenceManager.addPartialText(text);
       }
     };
+    if (recorder.getSnapshot().phase === "idle") {
+      const modelReady = await this.ensureSpeechModel();
+      if (!modelReady) {
+        return;
+      }
+    }
     const errorKey = await recorder.toggle((key, vars) => this.t(key, vars));
     if (errorKey) {
       new import_obsidian12.Notice(this.t(errorKey));

@@ -352,7 +352,17 @@ type TranslationKey =
   | "speechAsrReady"
   | "speechAsrError"
   | "speechAsrAutoStopCountdown"
-  | "speechAutoStopTimeoutReached";
+  | "speechAutoStopTimeoutReached"
+  | "speechModelDownloadStart"
+  | "speechModelDownloadProgress"
+  | "speechModelDownloadComplete"
+  | "speechModelDownloadFailed"
+  | "speechModelChecksumFailed"
+  | "speechModelManualDownloadTitle"
+  | "speechModelManualDownloadSteps"
+  | "speechModelNotFound"
+  | "speechModelFirstRunTitle"
+  | "speechModelFirstRunGuide";
 
 const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
   en: {
@@ -706,7 +716,17 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     speechAsrReady: "Speech recognition ready",
     speechAsrError: "Speech recognition error",
     speechAsrAutoStopCountdown: "Auto-stop in {seconds}s",
-    speechAutoStopTimeoutReached: "Auto-stop: recording stopped after silence timeout."
+    speechAutoStopTimeoutReached: "Auto-stop: recording stopped after silence timeout.",
+    speechModelDownloadStart: "Downloading {lang} speech model files...",
+    speechModelDownloadProgress: "{filename} ({percent}%, {loadedMB}/{totalMB} MB) [{current}/{total}]",
+    speechModelDownloadComplete: "{lang} speech model ready. You can now start recording.",
+    speechModelDownloadFailed: "Model download failed: {error}. Check Settings → Voice for manual download.",
+    speechModelChecksumFailed: "Checksum verification failed for {filename}. Retrying...",
+    speechModelManualDownloadTitle: "Manual Model Download Required",
+    speechModelManualDownloadSteps: "Download these files:\nFrom: {baseUrl}\nFiles: {files}\nSave to: {modelDir}\nThen restart recording.",
+    speechModelNotFound: "Speech model files not found. Download from Settings → Voice.",
+    speechModelFirstRunTitle: "First-Time Setup: Speech Model Required",
+    speechModelFirstRunGuide: "Downloading speech recognition model ({zhSize} for Chinese, {enSize} for bilingual).\nFiles will be saved to: {modelDir}\n\nDownload will start now. This is a one-time setup."
   },
   zh: {
     pluginName: "链接与标签智能",
@@ -1059,7 +1079,17 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     speechAsrReady: "语音识别就绪",
     speechAsrError: "语音识别错误",
     speechAsrAutoStopCountdown: "{seconds}秒后自动停止",
-    speechAutoStopTimeoutReached: "自动停止：静音超时，录音已停止。"
+    speechAutoStopTimeoutReached: "自动停止：静音超时，录音已停止。",
+    speechModelDownloadStart: "正在下载{lang}语音模型文件...",
+    speechModelDownloadProgress: "{filename} ({percent}%, {loadedMB}/{totalMB} MB) [{current}/{total}]",
+    speechModelDownloadComplete: "{lang}语音模型就绪。现在可以开始录音。",
+    speechModelDownloadFailed: "模型下载失败：{error}。请前往 设置 → 语音 手动下载。",
+    speechModelChecksumFailed: "{filename} 校验失败，正在重试...",
+    speechModelManualDownloadTitle: "需要手动下载模型",
+    speechModelManualDownloadSteps: "请下载以下文件：\n来源：{baseUrl}\n文件：{files}\n保存到：{modelDir}\n然后重新开始录音。",
+    speechModelNotFound: "未找到语音模型文件。请从 设置 → 语音 下载。",
+    speechModelFirstRunTitle: "首次设置：需要语音模型",
+    speechModelFirstRunGuide: "正在下载语音识别模型（中文约 {zhSize}，双语约 {enSize}）。\n文件将保存到：{modelDir}\n\n下载即将开始。此操作仅需一次。"
   }
 };
 

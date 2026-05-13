@@ -1127,17 +1127,35 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
     // Check if all files exist
     let allExist = true;
+    let anyExist = false;
     for (const file of fileList) {
       const exists = await this.app.vault.adapter.exists(modelDir + file.filename);
-      if (!exists) {
+      if (exists) {
+        anyExist = true;
+      } else {
         allExist = false;
-        break;
       }
     }
 
     if (allExist) return true;
 
-    // Files missing — trigger download flow
+    // First-run: no model files at all — show setup guide
+    if (!anyExist) {
+      const lang = this.settings.speechLanguage;
+      new Notice(
+        this.t("speechModelFirstRunTitle") + "\n\n" +
+        this.t("speechModelFirstRunGuide", {
+          modelDir,
+          zhSize: "~25 MB",
+          enSize: "~70 MB",
+        }),
+        12000
+      );
+      // Auto-start download
+      return this.downloadSpeechModel();
+    }
+
+    // Some files missing — trigger download for missing ones
     return this.downloadSpeechModel();
   }
 
@@ -1494,6 +1512,15 @@ export default class LinkTagIntelligencePlugin extends Plugin {
         this._sentenceManager!.addPartialText(text);
       }
     };
+
+    // If starting recording (currently idle), ensure model files exist
+    if (recorder.getSnapshot().phase === "idle") {
+      const modelReady = await this.ensureSpeechModel();
+      if (!modelReady) {
+        // Model files missing — abort toggle (ensureSpeechModel shows Notice)
+        return;
+      }
+    }
 
     const errorKey = await recorder.toggle((key, vars) => this.t(key as Parameters<typeof this.t>[0], vars));
 
