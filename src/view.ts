@@ -380,8 +380,7 @@ export class LinkTagIntelligenceView extends ItemView {
       ["addRelation", () => this.plugin.openRelationFlow()],
       ["manageTags", () => this.plugin.openTagManager()],
       ["suggestTags", () => this.plugin.openTagSuggestion()],
-      ["semanticSearch", () => this.plugin.openSemanticSearch()],
-      ["speechRecord", () => this.plugin.toggleSpeechRecording()]
+      ["semanticSearch", () => this.plugin.openSemanticSearch()]
     ];
   }
 

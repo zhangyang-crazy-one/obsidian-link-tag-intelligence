@@ -36,7 +36,7 @@ rl.on("line", (raw) => {
             modelConfig: {
               transducer: {
                 encoder: msg.modelDir + "encoder-epoch-99-avg-1.int8.onnx",
-                decoder: msg.modelDir + "decoder-epoch-99-avg-1.onnx",
+                decoder: msg.modelDir + "decoder-epoch-99-avg-1.int8.onnx",
                 joiner: msg.modelDir + "joiner-epoch-99-avg-1.int8.onnx"
               },
               tokens: msg.modelDir + "tokens.txt",
