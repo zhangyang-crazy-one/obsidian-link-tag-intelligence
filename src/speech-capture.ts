@@ -1,45 +1,77 @@
-// AudioWorklet-based microphone capture with audio level metering.
-// Used by the speech-to-text feature for Phase 01 audio pipeline.
-// AudioWorklet processor code is embedded as a string and loaded via
-// Blob URL to bypass Obsidian's CSP restriction on external module loads.
+// Microphone capture with audio level metering, used by the speech-to-text feature.
+// Tries AudioWorklet first (clean off-main-thread processing), falls back to
+// ScriptProcessorNode when Obsidian's CSP blocks blob: URLs for AudioWorklet.
 
 export interface CaptureState {
   audioContext: AudioContext | null;
   mediaStream: MediaStream | null;
-  workletNode: AudioWorkletNode | null;
+  processorNode: AudioWorkletNode | ScriptProcessorNode | null;
   sourceNode: MediaStreamAudioSourceNode | null;
   blobUrl: string | null;
   cleanup: () => void;
 }
 
-const WORKLET_PROCESSOR = `
+const WORKLET_CODE = `
 class MicProcessor extends AudioWorkletProcessor {
-  process(inputs: Float32Array[][], _outputs: Float32Array[][], _parameters: Record<string, Float32Array>): boolean {
-    const input = inputs[0];
+  process(inputs) {
+    var input = inputs[0];
     if (input && input.length > 0 && input[0] && input[0].length > 0) {
-      // Send mono PCM chunk to main thread for RMS calculation
       this.port.postMessage(input[0]);
     }
-    return true; // keep processor alive; return false only when done
+    return true;
   }
 }
 registerProcessor('mic-processor', MicProcessor);
 `;
 
+async function tryAudioWorklet(
+  audioContext: AudioContext,
+  mediaStream: MediaStream,
+  onAudioChunk: (chunk: Float32Array) => void
+): Promise<{ node: AudioWorkletNode; source: MediaStreamAudioSourceNode; blobUrl: string }> {
+  const blob = new Blob([WORKLET_CODE], { type: "application/javascript" });
+  const blobUrl = URL.createObjectURL(blob);
+
+  await audioContext.audioWorklet.addModule(blobUrl);
+  const node = new AudioWorkletNode(audioContext, "mic-processor");
+  node.port.onmessage = (event: MessageEvent<Float32Array>) => onAudioChunk(event.data);
+
+  const source = audioContext.createMediaStreamSource(mediaStream);
+  source.connect(node);
+
+  return { node, source, blobUrl };
+}
+
+function createScriptProcessorFallback(
+  audioContext: AudioContext,
+  mediaStream: MediaStream,
+  onAudioChunk: (chunk: Float32Array) => void
+): { node: ScriptProcessorNode; source: MediaStreamAudioSourceNode; blobUrl: null } {
+  // 4096 samples at 16kHz = ~256ms per buffer — acceptable for real-time dictation
+  const node = audioContext.createScriptProcessor(4096, 1, 1);
+  node.onaudioprocess = (event: AudioProcessingEvent) => {
+    const input = event.inputBuffer.getChannelData(0);
+    // Copy into new Float32Array to avoid detached buffer issues
+    onAudioChunk(new Float32Array(input));
+  };
+
+  const source = audioContext.createMediaStreamSource(mediaStream);
+  source.connect(node);
+  // ScriptProcessorNode must be connected to destination to fire events
+  node.connect(audioContext.destination);
+
+  return { node, source, blobUrl: null };
+}
+
 export async function startCapture(
   onAudioChunk: (chunk: Float32Array) => void
 ): Promise<CaptureState> {
-  // Create AudioContext on user gesture (NOT in plugin onload)
-  // 16kHz sample rate matches sherpa-onnx Zipformer model expectations
   const audioContext = new AudioContext({ sampleRate: 16000 });
 
-  // Resume if suspended (Chromium autoplay policy may suspend)
   if (audioContext.state === "suspended") {
     await audioContext.resume();
   }
 
-  // Audio-only: prevents macOS Electron video+audio getUserMedia bug (Pitfall 5)
-  // Disable all processing: raw PCM for ASR pipeline
   const mediaStream = await navigator.mediaDevices.getUserMedia({
     audio: {
       channelCount: 1,
@@ -51,53 +83,39 @@ export async function startCapture(
     video: false
   });
 
-  // Blob URL CSP workaround: Obsidian blocks audioWorklet.addModule(filePath)
-  // Construct processor code as inline string, create Blob, load from blob: URL
-  const blob = new Blob([WORKLET_PROCESSOR], { type: "application/javascript" });
-  const blobUrl = URL.createObjectURL(blob);
-
-  let workletNode: AudioWorkletNode | null = null;
+  let processorNode: AudioWorkletNode | ScriptProcessorNode | null = null;
   let sourceNode: MediaStreamAudioSourceNode | null = null;
+  let blobUrl: string | null = null;
 
   try {
-    await audioContext.audioWorklet.addModule(blobUrl);
-    workletNode = new AudioWorkletNode(audioContext, "mic-processor");
+    // Primary path: AudioWorklet (off-main-thread, clean audio)
+    const result = await tryAudioWorklet(audioContext, mediaStream, onAudioChunk);
+    processorNode = result.node;
+    sourceNode = result.source;
+    blobUrl = result.blobUrl;
+  } catch (_workletError) {
+    // Fallback: ScriptProcessorNode (deprecated but works when CSP blocks blob: URLs)
+    const fallback = createScriptProcessorFallback(audioContext, mediaStream, onAudioChunk);
+    processorNode = fallback.node;
+    sourceNode = fallback.source;
+    blobUrl = fallback.blobUrl;
+  }
 
-    workletNode.port.onmessage = (event: MessageEvent<Float32Array>) => {
-      onAudioChunk(event.data);
-    };
-
-    sourceNode = audioContext.createMediaStreamSource(mediaStream);
-    sourceNode.connect(workletNode);
-
-    const cleanup = (): void => {
-      // Disconnect and close all audio pipeline resources.
-      // Critical for hot-reload: prevents resource exhaustion (Pitfall 4).
-      if (workletNode) {
-        try { workletNode.port.onmessage = null; } catch { /* node already closed */ }
-        try { workletNode.disconnect(); } catch { /* already disconnected */ }
-      }
-      if (sourceNode) {
-        try { sourceNode.disconnect(); } catch { /* already disconnected */ }
-      }
-      // Stop all media tracks to release microphone
-      mediaStream.getTracks().forEach((track) => track.stop());
-      // Close AudioContext (releases audio hardware)
-      void audioContext.close();
-      // Revoke Blob URL to prevent memory leak
-      if (blobUrl) {
-        URL.revokeObjectURL(blobUrl);
-      }
-    };
-
-    return { audioContext, mediaStream, workletNode, sourceNode, blobUrl, cleanup };
-  } catch (error) {
-    // Clean up partially created resources on failure
+  const cleanup = (): void => {
+    if (processorNode) {
+      try { processorNode.disconnect(); } catch { /* already closed */ }
+    }
+    if (sourceNode) {
+      try { sourceNode.disconnect(); } catch { /* already closed */ }
+    }
     mediaStream.getTracks().forEach((track) => track.stop());
     void audioContext.close();
-    if (blobUrl) { URL.revokeObjectURL(blobUrl); }
-    throw error;
-  }
+    if (blobUrl) {
+      URL.revokeObjectURL(blobUrl);
+    }
+  };
+
+  return { audioContext, mediaStream, processorNode, sourceNode, blobUrl, cleanup };
 }
 
 export function stopCapture(state: CaptureState): void {
