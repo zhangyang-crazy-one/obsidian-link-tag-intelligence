@@ -45,6 +45,47 @@ import { LINK_TAG_INTELLIGENCE_VIEW, LinkTagIntelligenceView } from "./view";
 import type { ViewRefreshRequest } from "./view-refresh";
 import { SpeechRecorder, type RecorderSnapshot } from "./speech-recorder";
 
+const SENTENCE_END_PUNCTUATION = /[。！？\.!\?]$/;
+
+export class SentenceManager {
+  private partialText = "";
+  private plugin: LinkTagIntelligencePlugin;
+
+  constructor(plugin: LinkTagIntelligencePlugin) {
+    this.plugin = plugin;
+  }
+
+  /** Called on every Worker result — accumulates partial text. */
+  addPartialText(text: string): void {
+    this.partialText += text;
+  }
+
+  /** Called when isEndpoint=true — finalizes the current sentence. */
+  finalizeSentence(text?: string): string {
+    const sentence = text ?? this.partialText;
+    this.partialText = "";
+
+    const trimmed = sentence.trim();
+    if (!trimmed) return "";
+
+    if (SENTENCE_END_PUNCTUATION.test(trimmed)) {
+      return trimmed;
+    }
+    const lang = this.plugin.settings.speechLanguage;
+    return trimmed + (lang === "zh" ? "。" : ".");
+  }
+
+  /** Get current accumulated partial text (for debugging). */
+  getPartialText(): string {
+    return this.partialText;
+  }
+
+  /** Reset on recording stop. */
+  reset(): void {
+    this.partialText = "";
+  }
+}
+
 export default class LinkTagIntelligencePlugin extends Plugin {
   settings: LinkTagIntelligenceSettings = DEFAULT_SETTINGS;
   private lastEditorLeaf: WorkspaceLeaf | null = null;
@@ -53,7 +94,10 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   private lastExcalidrawFilePath: string | null = null;
   private readonly referencePreview = new ReferencePreviewPopover();
   private referencePreviewToken = 0;
-  speechRecorder = new SpeechRecorder();
+  speechRecorder: SpeechRecorder = new SpeechRecorder();
+  private _sentenceManager: SentenceManager | null = null;
+  autoStopTimer: ReturnType<typeof setInterval> | null = null;
+  autoStopSecondsRemaining = 0;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -335,6 +379,8 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   onunload(): void {
     this.speechRecorder.destroy();
     this.referencePreview.destroy();
+    this.cancelAutoStopTimer();
+    this.speechRecorder.destroy();
   }
 
   async loadSettings(): Promise<void> {
@@ -350,6 +396,14 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     this.speechRecorder.setSettingsVadSensitivity(this.settings.speechVadSensitivity);
 
     await this.saveData(this.settings);
+
+    // Propagate speech settings to SpeechRecorder
+    // D-10: Language change only propagated when NOT currently recording
+    if (!this.speechRecorder.isActive) {
+      this.speechRecorder.setSettingsLanguage(this.settings.speechLanguage);
+    }
+    // VAD sensitivity can always be updated (no impact on current stream)
+    this.speechRecorder.setSettingsVadSensitivity(this.settings.speechVadSensitivity);
   }
 
   getResearchWorkbenchState(): Promise<ResearchWorkbenchState> {
@@ -1334,5 +1388,129 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       return false;
     }
     return true;
+  }
+
+  // ─── Speech methods ───────────────────────────────────────────────────
+
+  getSpeechRecorderSnapshot(): RecorderSnapshot {
+    return this.speechRecorder.getSnapshot();
+  }
+
+  async toggleSpeechRecording(): Promise<void> {
+    const recorder = this.speechRecorder;
+
+    if (!recorder.canToggle()) {
+      if (recorder.getSnapshot().phase === "error") {
+        recorder.acknowledgeError();
+        this.refreshAllViews();
+      }
+      return;
+    }
+
+    // Create SentenceManager on first use
+    if (!this._sentenceManager) {
+      this._sentenceManager = new SentenceManager(this);
+    }
+
+    // Set ASR result handler
+    recorder.onAsrResult = (text, isEndpoint) => {
+      if (isEndpoint) {
+        // D-06: Sentence boundary — finalize and insert at cursor (D-07)
+        const finalSentence = this._sentenceManager!.finalizeSentence(text);
+        if (finalSentence) {
+          this.insertSpeechText(finalSentence);
+        }
+      } else {
+        // Partial result — accumulate only (no insertion per deferred decision)
+        this._sentenceManager!.addPartialText(text);
+      }
+    };
+
+    const errorKey = await recorder.toggle((key, vars) => this.t(key as Parameters<typeof this.t>[0], vars));
+
+    if (errorKey) {
+      new Notice(this.t(errorKey as Parameters<typeof this.t>[0]));
+      this._sentenceManager?.reset();
+      this.refreshAllViews();
+      return;
+    }
+
+    // D-12: Start auto-stop timer when recording with autoStopSec configured
+    if (recorder.getSnapshot().phase === "recording" && this.settings.speechAutoStopSec > 0) {
+      this.startAutoStopTimer();
+    }
+
+    // On stop: flush any remaining partial text
+    if (!recorder.isActive && this._sentenceManager) {
+      const remaining = this._sentenceManager.getPartialText();
+      if (remaining.trim()) {
+        const final = this._sentenceManager.finalizeSentence();
+        if (final) this.insertSpeechText(final);
+      }
+      this._sentenceManager.reset();
+      this.cancelAutoStopTimer();
+    }
+
+    this.refreshAllViews();
+  }
+
+  private insertSpeechText(text: string): void {
+    if (!text) return;
+
+    const editorView = this.getContextEditorView();
+    if (!editorView?.editor) {
+      debugLog(this.app, "speech.insert-no-editor", { text });
+      return;
+    }
+
+    const editor = editorView.editor;
+
+    // D-08: Save cursor position before insert (for concurrent typing protection)
+    const cursor = editor.getCursor();
+
+    // D-07: Insert sentence at current cursor with trailing space
+    editor.replaceSelection(text + " ");
+
+    // D-08: Cursor is already positioned after inserted text by replaceSelection
+    debugLog(this.app, "speech.text-inserted", {
+      textLen: text.length,
+      cursorLine: cursor.line,
+      cursorCh: cursor.ch,
+    });
+  }
+
+  // ─── Auto-stop timer ─────────────────────────────────────────────────
+
+  private startAutoStopTimer(): void {
+    this.cancelAutoStopTimer();
+    this.autoStopSecondsRemaining = this.settings.speechAutoStopSec;
+
+    // D-12: Countdown visible when <= 10 seconds remain, last second flashes
+    this.autoStopTimer = setInterval(() => {
+      this.autoStopSecondsRemaining--;
+
+      if (this.autoStopSecondsRemaining <= 0) {
+        this.speechRecorder.forceStop();
+        this.cancelAutoStopTimer();
+        this.refreshAllViews();
+        new Notice(this.t("speechAutoStopTimeoutReached" as Parameters<typeof this.t>[0]));
+        return;
+      }
+
+      // Refresh view to update countdown display
+      this.refreshAllViews();
+    }, 1000);
+  }
+
+  private cancelAutoStopTimer(): void {
+    if (this.autoStopTimer) {
+      clearInterval(this.autoStopTimer);
+      this.autoStopTimer = null;
+    }
+    this.autoStopSecondsRemaining = 0;
+  }
+
+  getAutoStopSecondsRemaining(): number {
+    return this.autoStopSecondsRemaining;
   }
 }

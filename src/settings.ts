@@ -126,7 +126,6 @@ export interface LinkTagIntelligenceSettings {
   smartConnectionsFolderExclusions: string;
   smartConnectionsHeadingExclusions: string;
   smartConnectionsResultsLimit: number;
-  speechModelPath: string;
   speechLanguage: "zh" | "en";
   speechVadSensitivity: number;
   speechAutoStopSec: number;
@@ -165,10 +164,9 @@ export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSetting
     smartConnectionsFolderExclusions: buildSmartConnectionsExclusions(configDir).join(", "),
     smartConnectionsHeadingExclusions: SMART_CONNECTIONS_HEADINGS.join(", "),
     smartConnectionsResultsLimit: DEFAULT_SMART_RESULTS_LIMIT,
-    speechModelPath: "",
     speechLanguage: "zh",
-    speechVadSensitivity: 2,
-    speechAutoStopSec: 60
+    speechVadSensitivity: 1,
+    speechAutoStopSec: 0
   };
 }
 
@@ -336,16 +334,13 @@ export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagI
     ? normalized.smartConnectionsResultsLimit
     : defaults.smartConnectionsResultsLimit;
 
-  normalized.speechModelPath = typeof normalized.speechModelPath === "string"
-    ? normalized.speechModelPath.trim()
-    : "";
   normalized.speechLanguage = normalized.speechLanguage === "en" ? "en" : "zh";
-  normalized.speechVadSensitivity = Number.isFinite(normalized.speechVadSensitivity)
-    ? Math.max(0, Math.min(3, Math.round(normalized.speechVadSensitivity)))
-    : 2;
+  normalized.speechVadSensitivity = Number.isFinite(normalized.speechVadSensitivity) && normalized.speechVadSensitivity >= 0 && normalized.speechVadSensitivity <= 3
+    ? Math.round(normalized.speechVadSensitivity)
+    : defaults.speechVadSensitivity;
   normalized.speechAutoStopSec = Number.isFinite(normalized.speechAutoStopSec)
-    ? Math.max(0, Math.min(300, Math.round(normalized.speechAutoStopSec)))
-    : 60;
+    ? (normalized.speechAutoStopSec === 0 ? 0 : Math.max(10, Math.min(300, Math.round(normalized.speechAutoStopSec))))
+    : defaults.speechAutoStopSec;
 
   return normalized;
 }
