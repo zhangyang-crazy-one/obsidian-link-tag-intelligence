@@ -22,6 +22,7 @@ export class SpeechRecorder {
   private throttleTimer: ReturnType<typeof setTimeout> | null = null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private asrProcess: any = null;
+  private asrStdin: { write: (d: string) => void } | null = null;
   private asrReady = false;
   private pendingLanguage: "zh" | "en" | null = null;
   private appRef: App | null = null;
@@ -97,9 +98,10 @@ export class SpeechRecorder {
             this.audioLevel = calculateRMS(chunk);
           }, 60);
         }
-        // Route audio chunk to ASR child process
+        // Route audio chunk to ASR child process via stdin pipe
         if (this.asrProcess && this.asrReady) {
-          this.asrProcess.send({ type: "audio", buffer: chunk.buffer });
+          const b64 = Buffer.from(new Uint8Array(chunk.buffer)).toString("base64");
+          this.asrStdin?.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");
         }
       });
 
@@ -111,46 +113,65 @@ export class SpeechRecorder {
         const adapter = this.appRef?.vault.adapter;
         const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
         const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence";
+        console.log("[lti-speech] Spawning ASR worker from:", pluginDir);
         try {
           // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
-          // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
-          const cp = require("child_process") as { fork: (m: string, args?: string[], opts?: { cwd?: string; stdio?: string }) => { send: (m: Record<string, unknown>) => void; on: (e: string, cb: (m: Record<string, unknown>) => void) => void; kill: () => void } };
+          const cp = require("child_process") as {
+            spawn: (cmd: string, args: string[], opts?: { cwd?: string; stdio?: string[] }) => {
+              stdin: { write: (d: string) => void; end: () => void };
+              stdout: { on: (e: string, cb: (d: Buffer) => void) => void };
+              stderr: { on: (e: string, cb: (d: Buffer) => void) => void };
+              on: (e: string, cb: (code?: number) => void) => void;
+              kill: () => void;
+            }
+          };
           const workerPath = pluginDir + "/asr-worker.js";
-          this.asrProcess = cp.fork(workerPath, [], { cwd: pluginDir, stdio: "ipc" });
+          console.log("[lti-speech] Worker path:", workerPath);
+          this.asrProcess = cp.spawn(process.execPath, [workerPath], {
+            cwd: pluginDir,
+            stdio: ["pipe", "pipe", "pipe"],
+          });
+          this.asrStdin = this.asrProcess.stdin;
+          console.log("[lti-speech] Spawned OK, pid:", this.asrProcess?.pid ?? "unknown");
+
+          // Read JSON-line responses from stdout
+          let stdoutBuf = "";
+          this.asrProcess.stdout.on("data", (chunk: Buffer) => {
+            stdoutBuf += chunk.toString();
+            const lines = stdoutBuf.split("\n");
+            stdoutBuf = lines.pop() ?? "";
+            for (const line of lines) {
+              try {
+                const msg = JSON.parse(line) as { type: string; ok?: boolean; text?: string; isEndpoint?: boolean };
+                switch (msg.type) {
+                  case "ready": this.asrReady = !!msg.ok; break;
+                  case "result": this.onAsrResult?.(msg.text ?? "", msg.isEndpoint ?? false); break;
+                }
+              } catch { /* skip malformed JSON */ }
+            }
+          });
+          this.asrProcess.stderr.on("data", (chunk: Buffer) => {
+            console.error("[lti-asr-worker]", chunk.toString());
+          });
+          this.asrProcess.on("exit", (code: number | null) => {
+            console.log("[lti-speech] ASR worker exited, code:", code);
+          });
         } catch (e) {
-          throw new Error("ASR Worker init failed — cannot fork child process: " + String(e));
+          console.error("[lti-speech] Spawn failed:", String(e));
+          throw new Error("ASR Worker init failed — cannot spawn child process: " + String(e));
         }
-        this.asrProcess.on("message", (msg: { type: string; ok?: boolean; text?: string; isEndpoint?: boolean }) => {
-          switch (msg.type) {
-            case "started":
-              break;
-            case "ready":
-              this.asrReady = !!msg.ok;
-              break;
-            case "result":
-              this.onAsrResult?.(msg.text ?? "", msg.isEndpoint ?? false);
-              break;
-            case "destroyed":
-              break;
-            case "error":
-              if (this.appRef) debugLog(this.appRef, "asr-worker.error", { message: msg.text ?? "" });
-              break;
-          }
-        });
-        this.asrProcess.on("error", (err: Error) => {
-          if (this.appRef) debugLog(this.appRef, "asr-worker.process-error", { message: err.message });
-        });
       }
 
-      // Initialize ASR recognizer in child process
+      // Initialize ASR recognizer in child process (send JSON via stdin)
       this.asrReady = false;
       this.pendingLanguage = this.settingsLanguage;
-      this.asrProcess.send({
+      const initMsg = JSON.stringify({
         type: "init",
         modelDir: this.getModelDir(),
         language: this.settingsLanguage,
         vadSensitivity: this.settingsVadSensitivity,
-      });
+      }) + "\n";
+      this.asrStdin?.write(initMsg);
 
       // Wait for ready signal
       await new Promise<void>((resolve, reject) => {
@@ -167,9 +188,10 @@ export class SpeechRecorder {
       this.phase = "error";
       this.cleanupCapture();
       if (this.asrProcess) {
-        this.asrProcess.send({ type: "destroy" });
+        this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
         this.asrProcess.kill();
         this.asrProcess = null;
+        this.asrStdin = null;
       }
       this.asrReady = false;
 
@@ -206,7 +228,7 @@ export class SpeechRecorder {
 
     // Reset recognizer state in child process for next toggle
     if (this.asrProcess && this.asrReady) {
-      this.asrProcess.send({ type: "reset" });
+      this.asrStdin?.write(JSON.stringify({ type: "reset" }) + "\n");
     }
 
     this.cleanupCapture();
@@ -302,9 +324,10 @@ export class SpeechRecorder {
   /** Full cleanup for plugin onunload(). */
   destroy(): void {
     if (this.asrProcess) {
-      this.asrProcess.send({ type: "destroy" });
+      this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
       this.asrProcess.kill();
       this.asrProcess = null;
+      this.asrStdin = null;
       this.asrReady = false;
     }
     this.removeDeviceChangeHandler();
@@ -317,11 +340,12 @@ export class SpeechRecorder {
   setSettingsLanguage(lang: "zh" | "en"): void {
     if (lang === this.settingsLanguage) return;
     this.settingsLanguage = lang;
-    // If not currently recording, destroy child process so next toggle forks with new language
+    // If not currently recording, destroy child process so next spawn uses new language
     if (!this.isActive && this.asrProcess) {
-      this.asrProcess.send({ type: "destroy" });
+      this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
       this.asrProcess.kill();
       this.asrProcess = null;
+      this.asrStdin = null;
       this.asrReady = false;
     }
   }

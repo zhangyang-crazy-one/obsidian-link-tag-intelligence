@@ -1,30 +1,29 @@
-// Standalone ASR worker process — runs in pure Node.js (child_process.fork)
-// to avoid Electron renderer NODERAWFS limitation.
-// Communicates with main plugin via process.send / process.on('message').
+// Standalone ASR worker process — pure Node.js, spawned by Electron renderer.
+// Communicates via stdin/stdout JSON lines (child_process ipc not available
+// in Electron renderer, so we use pipe-based protocol).
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
 const sherpaOnnx = require("sherpa-onnx");
 
 type Recognizer = {
   createStream(): Stream;
-  isReady(stream: Stream): boolean;
-  decode(stream: Stream): void;
-  getResult(stream: Stream): { text: string };
-  isEndpoint(stream: Stream): boolean;
-  reset(stream: Stream): void;
+  isReady(s: Stream): boolean;
+  decode(s: Stream): void;
+  getResult(s: Stream): { text: string };
+  isEndpoint(s: Stream): boolean;
+  reset(s: Stream): void;
   free(): void;
 };
-
 type Stream = {
-  acceptWaveform(sampleRate: number, samples: Float32Array): void;
+  acceptWaveform(sr: number, samples: Float32Array): void;
   free(): void;
 };
 
-function mapVadSensitivityToRule1(s: number): number {
+function mapVadToRule1(s: number): number {
   const m: Record<number, number> = { 0: 1.6, 1: 1.2, 2: 0.8, 3: 0.5 };
   return m[s] ?? 0.8;
 }
-function mapVadSensitivityToRule2(s: number): number {
+function mapVadToRule2(s: number): number {
   const m: Record<number, number> = { 0: 0.8, 1: 0.6, 2: 0.4, 3: 0.25 };
   return m[s] ?? 0.4;
 }
@@ -32,88 +31,63 @@ function mapVadSensitivityToRule2(s: number): number {
 let recognizer: Recognizer | null = null;
 let stream: Stream | null = null;
 
-function init(cfg: { modelDir: string; language: string; vadSensitivity: number }): boolean {
-  if (cfg.modelDir.split("/").some((p) => p === "..")) return false;
-  try {
-    recognizer = sherpaOnnx.createOnlineRecognizer(sherpaOnnx.wasmModule, {
-      modelConfig: {
-        transducer: {
-          encoder: cfg.modelDir + "encoder-epoch-99-avg-1.int8.onnx",
-          decoder: cfg.modelDir + "decoder-epoch-99-avg-1.onnx",
-          joiner: cfg.modelDir + "joiner-epoch-99-avg-1.int8.onnx",
-        },
-        tokens: cfg.modelDir + "tokens.txt",
-        modelingUnit: cfg.language === "zh" ? "cjkchar" : "bpe",
-        numThreads: 1,
-        provider: "cpu",
-        debug: 0,
-      },
-      featConfig: { sampleRate: 16000, featureDim: 80 },
-      decodingMethod: "greedy_search",
-      maxActivePaths: 4,
-      enableEndpoint: 1,
-      rule1MinTrailingSilence: mapVadSensitivityToRule1(cfg.vadSensitivity),
-      rule2MinTrailingSilence: mapVadSensitivityToRule2(cfg.vadSensitivity),
-      rule3MinUtteranceLength: 2.0,
-    });
-    if (!recognizer) return false;
-    stream = recognizer.createStream();
-    return true;
-  } catch {
-    return false;
-  }
-}
+const rl = require("readline").createInterface({ input: process.stdin });
+rl.on("line", (raw: string) => {
+  let msg: { type: string; modelDir?: string; language?: string; vadSensitivity?: number; bufferB64?: string };
+  try { msg = JSON.parse(raw); } catch { return; }
 
-function processAudio(buf: Buffer): { text: string; isEndpoint: boolean } {
-  if (!recognizer || !stream) return { text: "", isEndpoint: false };
-  const samples = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
-  stream.acceptWaveform(16000, samples);
-  while (recognizer.isReady(stream)) recognizer.decode(stream);
-  const r = recognizer.getResult(stream);
-  const isEndpoint = recognizer.isEndpoint(stream);
-  if (isEndpoint) recognizer.reset(stream);
-  return { text: r.text || "", isEndpoint };
-}
-
-function destroy(): void {
-  if (stream) { stream.free(); stream = null; }
-  if (recognizer) { recognizer.free(); recognizer = null; }
-}
-
-// IPC message handler
-process.on("message", (msg: { type: string; modelDir?: string; language?: string; vadSensitivity?: number; buffer?: ArrayBuffer }) => {
   try {
     switch (msg.type) {
       case "init": {
-        const ok = init({
-          modelDir: msg.modelDir!,
-          language: msg.language!,
-          vadSensitivity: msg.vadSensitivity ?? 2,
-        });
-        process.send!({ type: "ready", ok });
-        break;
-      }
-      case "audio": {
-        if (msg.buffer) {
-          const r = processAudio(Buffer.from(msg.buffer as ArrayBuffer));
-          process.send!({ type: "result", text: r.text, isEndpoint: r.isEndpoint });
+        if (!msg.modelDir || !msg.language) { process.stdout.write(JSON.stringify({ type: "ready", ok: false }) + "\n"); break; }
+        if (msg.modelDir.split("/").some((p) => p === "..")) { process.stdout.write(JSON.stringify({ type: "ready", ok: false }) + "\n"); break; }
+        try {
+          recognizer = sherpaOnnx.createOnlineRecognizer(sherpaOnnx.wasmModule, {
+            modelConfig: {
+              transducer: {
+                encoder: msg.modelDir + "encoder-epoch-99-avg-1.int8.onnx",
+                decoder: msg.modelDir + "decoder-epoch-99-avg-1.onnx",
+                joiner: msg.modelDir + "joiner-epoch-99-avg-1.int8.onnx",
+              },
+              tokens: msg.modelDir + "tokens.txt",
+              modelingUnit: msg.language === "zh" ? "cjkchar" : "bpe",
+              numThreads: 1, provider: "cpu", debug: 0,
+            },
+            featConfig: { sampleRate: 16000, featureDim: 80 },
+            decodingMethod: "greedy_search" as const, maxActivePaths: 4,
+            enableEndpoint: 1,
+            rule1MinTrailingSilence: mapVadToRule1(msg.vadSensitivity ?? 2),
+            rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
+            rule3MinUtteranceLength: 2.0,
+          });
+          stream = recognizer ? recognizer.createStream() : null;
+          process.stdout.write(JSON.stringify({ type: "ready", ok: !!recognizer }) + "\n");
+        } catch (e) {
+          process.stdout.write(JSON.stringify({ type: "ready", ok: false, error: String(e) }) + "\n");
         }
         break;
       }
-      case "reset": {
-        if (recognizer && stream) recognizer.reset(stream);
+      case "audio": {
+        if (!recognizer || !stream || !msg.bufferB64) break;
+        const buf = Buffer.from(msg.bufferB64, "base64");
+        const samples = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
+        stream.acceptWaveform(16000, samples);
+        while (recognizer.isReady(stream)) recognizer.decode(stream);
+        const r = recognizer.getResult(stream);
+        const isEndpoint = recognizer.isEndpoint(stream);
+        if (isEndpoint) recognizer.reset(stream);
+        process.stdout.write(JSON.stringify({ type: "result", text: r.text || "", isEndpoint }) + "\n");
         break;
       }
+      case "reset": if (recognizer && stream) recognizer.reset(stream); break;
       case "destroy": {
-        destroy();
-        process.send!({ type: "destroyed" });
-        break;
+        if (stream) { stream.free(); stream = null; }
+        if (recognizer) { recognizer.free(); recognizer = null; }
+        process.stdout.write(JSON.stringify({ type: "destroyed" }) + "\n");
+        process.exit(0);
       }
     }
   } catch (e) {
-    process.send!({ type: "error", message: String(e) });
+    process.stdout.write(JSON.stringify({ type: "error", error: String(e) }) + "\n");
   }
 });
-
-// Signal ready to parent
-process.send!({ type: "started" });
