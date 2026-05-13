@@ -43,9 +43,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — ASR Worker Engine: sherpa-onnx WASM Web Worker, ArrayBuffer audio routing, Worker lifecycle, endpoint detection (SPEECH-03, SPEECH-07)
-- [ ] 02-02-PLAN.md — Transcription Pipeline: sentence boundary, punctuation, text insertion at cursor, cursor preservation, language switch, auto-stop countdown (SPEECH-03, SPEECH-06, SPEECH-08)
-- [ ] 02-03-PLAN.md — Model Download: HuggingFace fetch with progress, SHA256 verification, retry logic, manual download guide, i18n keys (SPEECH-11)
+- [x] 02-01-PLAN.md — ASR Worker Engine: sherpa-onnx WASM Web Worker, ArrayBuffer audio routing, Worker lifecycle, endpoint detection (SPEECH-03, SPEECH-07)
+- [x] 02-02-PLAN.md — Transcription Pipeline: sentence boundary, punctuation, text insertion at cursor, cursor preservation, language switch, auto-stop countdown (SPEECH-03, SPEECH-06, SPEECH-08)
+- [x] 02-03-PLAN.md — Model Download: HuggingFace fetch with progress, SHA256 verification, retry logic, manual download guide, i18n keys (SPEECH-11)
 
 **UI hint**: yes
 
