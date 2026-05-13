@@ -127,7 +127,11 @@ export class SpeechRecorder {
           };
           const workerPath = pluginDir + "/asr-worker.js";
           console.log("[lti-speech] Worker path:", workerPath);
-          this.asrProcess = cp.spawn(process.execPath, [workerPath], {
+          // Spawn via shell so `node` is resolved from PATH.
+          // Electron renderer's process.execPath is the Electron binary,
+          // not Node.js, so direct spawn without shell won't find node.
+          this.asrProcess = cp.spawn("node", [workerPath], {
+            shell: true,
             cwd: pluginDir,
             stdio: ["pipe", "pipe", "pipe"],
           });

@@ -42,7 +42,7 @@ rl.on("line", (raw: string) => {
         if (!msg.modelDir || !msg.language) { process.stdout.write(JSON.stringify({ type: "ready", ok: false }) + "\n"); break; }
         if (msg.modelDir.split("/").some((p) => p === "..")) { process.stdout.write(JSON.stringify({ type: "ready", ok: false }) + "\n"); break; }
         try {
-          recognizer = sherpaOnnx.createOnlineRecognizer(sherpaOnnx.wasmModule, {
+          recognizer = sherpaOnnx.createOnlineRecognizer({
             modelConfig: {
               transducer: {
                 encoder: msg.modelDir + "encoder-epoch-99-avg-1.int8.onnx",

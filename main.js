@@ -7174,7 +7174,8 @@ var SpeechRecorder = class {
           const cp = require("child_process");
           const workerPath = pluginDir + "/asr-worker.js";
           console.log("[lti-speech] Worker path:", workerPath);
-          this.asrProcess = cp.spawn(process.execPath, [workerPath], {
+          this.asrProcess = cp.spawn("node", [workerPath], {
+            shell: true,
             cwd: pluginDir,
             stdio: ["pipe", "pipe", "pipe"]
           });

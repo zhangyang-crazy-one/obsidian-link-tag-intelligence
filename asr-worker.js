@@ -32,7 +32,7 @@ rl.on("line", (raw) => {
           break;
         }
         try {
-          recognizer = sherpaOnnx.createOnlineRecognizer(sherpaOnnx.wasmModule, {
+          recognizer = sherpaOnnx.createOnlineRecognizer({
             modelConfig: {
               transducer: {
                 encoder: msg.modelDir + "encoder-epoch-99-avg-1.int8.onnx",
