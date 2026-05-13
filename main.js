@@ -20,6 +20,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/main.ts
 var main_exports = {};
 __export(main_exports, {
+  SentenceManager: () => SentenceManager,
   default: () => LinkTagIntelligencePlugin
 });
 module.exports = __toCommonJS(main_exports);
@@ -1161,7 +1162,12 @@ var TRANSLATIONS = {
     pickBlockRefTarget: "Choose a note for block reference",
     pickLineRefTarget: "Choose a note for line reference",
     blockRefInserted: "Inserted block reference to {title}.",
-    lineRefInserted: "Inserted line reference to {title}."
+    lineRefInserted: "Inserted line reference to {title}.",
+    speechAsrLoading: "Loading speech model...",
+    speechAsrReady: "Speech recognition ready",
+    speechAsrError: "Speech recognition error",
+    speechAsrAutoStopCountdown: "Auto-stop in {seconds}s",
+    speechAutoStopTimeoutReached: "Auto-stop: recording stopped after silence timeout."
   },
   zh: {
     pluginName: "\u94FE\u63A5\u4E0E\u6807\u7B7E\u667A\u80FD",
@@ -1509,7 +1515,12 @@ var TRANSLATIONS = {
     pickBlockRefTarget: "\u9009\u62E9\u5757\u5F15\u7528\u76EE\u6807\u7B14\u8BB0",
     pickLineRefTarget: "\u9009\u62E9\u884C\u5F15\u7528\u76EE\u6807\u7B14\u8BB0",
     blockRefInserted: "\u5DF2\u63D2\u5165\u6307\u5411 {title} \u7684\u5757\u5F15\u7528\u3002",
-    lineRefInserted: "\u5DF2\u63D2\u5165\u6307\u5411 {title} \u7684\u884C\u5F15\u7528\u3002"
+    lineRefInserted: "\u5DF2\u63D2\u5165\u6307\u5411 {title} \u7684\u884C\u5F15\u7528\u3002",
+    speechAsrLoading: "\u6B63\u5728\u52A0\u8F7D\u8BED\u97F3\u6A21\u578B...",
+    speechAsrReady: "\u8BED\u97F3\u8BC6\u522B\u5C31\u7EEA",
+    speechAsrError: "\u8BED\u97F3\u8BC6\u522B\u9519\u8BEF",
+    speechAsrAutoStopCountdown: "{seconds}\u79D2\u540E\u81EA\u52A8\u505C\u6B62",
+    speechAutoStopTimeoutReached: "\u81EA\u52A8\u505C\u6B62\uFF1A\u9759\u97F3\u8D85\u65F6\uFF0C\u5F55\u97F3\u5DF2\u505C\u6B62\u3002"
   }
 };
 var RELATION_KEY_LABELS = {
@@ -4726,10 +4737,9 @@ function buildDefaultSettings(configDir = "") {
     smartConnectionsFolderExclusions: buildSmartConnectionsExclusions(configDir).join(", "),
     smartConnectionsHeadingExclusions: SMART_CONNECTIONS_HEADINGS.join(", "),
     smartConnectionsResultsLimit: DEFAULT_SMART_RESULTS_LIMIT,
-    speechModelPath: "",
     speechLanguage: "zh",
-    speechVadSensitivity: 2,
-    speechAutoStopSec: 60
+    speechVadSensitivity: 1,
+    speechAutoStopSec: 0
   };
 }
 var DEFAULT_SETTINGS = buildDefaultSettings();
@@ -4857,10 +4867,9 @@ function normalizeLoadedSettings(data, configDir = "") {
     defaults.smartConnectionsHeadingExclusions
   );
   normalized.smartConnectionsResultsLimit = Number.isFinite(normalized.smartConnectionsResultsLimit) && normalized.smartConnectionsResultsLimit > 0 ? normalized.smartConnectionsResultsLimit : defaults.smartConnectionsResultsLimit;
-  normalized.speechModelPath = typeof normalized.speechModelPath === "string" ? normalized.speechModelPath.trim() : "";
   normalized.speechLanguage = normalized.speechLanguage === "en" ? "en" : "zh";
-  normalized.speechVadSensitivity = Number.isFinite(normalized.speechVadSensitivity) ? Math.max(0, Math.min(3, Math.round(normalized.speechVadSensitivity))) : 2;
-  normalized.speechAutoStopSec = Number.isFinite(normalized.speechAutoStopSec) ? Math.max(0, Math.min(300, Math.round(normalized.speechAutoStopSec))) : 60;
+  normalized.speechVadSensitivity = Number.isFinite(normalized.speechVadSensitivity) && normalized.speechVadSensitivity >= 0 && normalized.speechVadSensitivity <= 3 ? Math.round(normalized.speechVadSensitivity) : defaults.speechVadSensitivity;
+  normalized.speechAutoStopSec = Number.isFinite(normalized.speechAutoStopSec) ? normalized.speechAutoStopSec === 0 ? 0 : Math.max(10, Math.min(300, Math.round(normalized.speechAutoStopSec))) : defaults.speechAutoStopSec;
   return normalized;
 }
 var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSettingTab {
@@ -6203,6 +6212,9 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
   }
   getToolbarActions() {
     return [
+      ["speechRecord", () => {
+        void this.plugin.toggleSpeechRecording();
+      }],
       ["ingestionCapture", () => this.plugin.openResearchIngestion()],
       ["insertLink", () => this.plugin.openLinkInsertModal("wikilink")],
       ["insertBlockRef", () => this.plugin.openBlockReferenceFlow()],
@@ -6331,10 +6343,10 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
   }
   buildToolbarSnapshot() {
     const hasContext = Boolean(this.plugin.getContextNoteFile());
-    const recorderSnapshot = this.plugin.getSpeechRecorderSnapshot();
+    const snapshot = this.plugin.getSpeechRecorderSnapshot();
     return this.getToolbarActions().map(([key]) => {
       if (key === "speechRecord") {
-        return this.buildSpeechButtonSnapshot(key, recorderSnapshot);
+        return this.buildSpeechButtonSnapshot(key, snapshot);
       }
       const disabled = FILE_REQUIRED_ACTIONS.has(key) && !hasContext;
       return {
@@ -6346,14 +6358,36 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
     });
   }
   buildSpeechButtonSnapshot(key, snapshot) {
-    const tooltipKey = snapshot.phase === "error" ? "speechRecordTooltipError" : snapshot.phase === "processing" ? "speechRecordTooltipProcessing" : snapshot.phase === "recording" ? "speechRecordTooltipRecording" : snapshot.phase === "initializing" ? "speechRecordTooltipInitializing" : "speechRecordTooltipIdle";
-    const isError = snapshot.phase === "error";
+    const asrLoading = snapshot.phase === "initializing" || snapshot.phase === "recording" && !snapshot.asrReady;
+    let tooltipKey;
+    let label = this.plugin.t("speechRecord");
+    if (snapshot.phase === "error") {
+      tooltipKey = snapshot.errorKey === "speechAsrInitFailed" ? "speechAsrError" : "speechRecordTooltipError";
+    } else if (asrLoading) {
+      tooltipKey = "speechAsrLoading";
+    } else if (snapshot.phase === "processing") {
+      tooltipKey = "speechRecordTooltipProcessing";
+    } else if (snapshot.phase === "recording") {
+      const remaining = this.plugin.getAutoStopSecondsRemaining();
+      if (remaining > 0 && remaining <= 10) {
+        label = `${remaining}s`;
+        tooltipKey = "speechAsrAutoStopCountdown";
+      } else {
+        tooltipKey = "speechRecordTooltipRecording";
+      }
+    } else if (snapshot.asrReady) {
+      tooltipKey = "speechAsrReady";
+    } else {
+      tooltipKey = "speechRecordTooltipIdle";
+    }
     return {
       key,
-      label: this.plugin.t("speechRecord"),
-      disabled: isError ? false : false,
-      // error button is clickable for acknowledgment
-      title: this.plugin.t(tooltipKey),
+      label,
+      disabled: false,
+      title: this.plugin.t(
+        tooltipKey,
+        tooltipKey === "speechAsrAutoStopCountdown" ? { seconds: this.plugin.getAutoStopSecondsRemaining() } : void 0
+      ),
       state: snapshot.phase,
       audioLevel: snapshot.phase === "recording" ? snapshot.audioLevel : void 0,
       dbValue: snapshot.phase === "recording" ? snapshot.dbValue : void 0
@@ -6553,6 +6587,13 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
         button.removeAttribute("title");
       }
       button.classList.toggle("lti-toolbar-button-disabled", item.disabled);
+      if (item.key === "speechRecord") {
+        if (item.state) {
+          button.classList.add(`is-${item.state}`);
+        }
+        const remaining = this.plugin.getAutoStopSecondsRemaining();
+        button.classList.toggle("is-countdown-flash", remaining === 1);
+      }
     }
     const speechButton = this.toolbarButtons.get("speechRecord");
     if (speechButton) {
@@ -7264,9 +7305,171 @@ var SpeechRecorder = class {
     this.phase = "idle";
     this.errorKey = null;
   }
+  /** D-10: Switch language by destroying current recognizer; rebuilt on next toggle. */
+  setSettingsLanguage(lang) {
+    if (lang === this.settingsLanguage) return;
+    this.settingsLanguage = lang;
+    if (!this.isActive && this.worker) {
+      this.worker.postMessage({ type: "destroy" });
+      this.workerReady = false;
+    }
+  }
+  setSettingsVadSensitivity(sensitivity) {
+    const clamped = Math.max(0, Math.min(3, Math.round(sensitivity)));
+    this.settingsVadSensitivity = clamped;
+  }
+  /** Expose model directory path for file checks by main.ts. */
+  getModelDirInternal(language) {
+    const lang = language ?? this.settingsLanguage;
+    const adapter = this.appRef?.vault.adapter;
+    const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
+    const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
+    return pluginDir + "models/" + (lang === "zh" ? "zh-14M" : "en") + "/";
+  }
 };
 
+// src/speech-model.ts
+var ZH_MODEL_REPO = "csukuangfj/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23";
+var EN_MODEL_REPO = "csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26";
+var ZH_MODEL_FILES = [
+  { filename: "encoder-epoch-99-avg-1.int8.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+  { filename: "decoder-epoch-99-avg-1.int8.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+  { filename: "joiner-epoch-99-avg-1.int8.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+  { filename: "tokens.txt", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" }
+];
+var EN_MODEL_FILES = [
+  { filename: "encoder-epoch-99-avg-1.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+  { filename: "decoder-epoch-99-avg-1.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+  { filename: "joiner-epoch-99-avg-1.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+  { filename: "tokens.txt", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" }
+];
+async function sha256Hex(buffer) {
+  const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function verifyChecksum(buffer, expectedSha256) {
+  const actual = await sha256Hex(buffer);
+  return actual === expectedSha256;
+}
+function getModelFileList(language) {
+  return language === "zh" ? [...ZH_MODEL_FILES] : [...EN_MODEL_FILES];
+}
+function getModelRepo(language) {
+  return language === "zh" ? ZH_MODEL_REPO : EN_MODEL_REPO;
+}
+async function downloadModelFile(repo, filename, onProgress) {
+  const url = `https://huggingface.co/${repo}/resolve/main/${filename}`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText} for ${filename}`);
+  }
+  const contentLength = Number(response.headers.get("content-length") || "0");
+  const reader = response.body.getReader();
+  const chunks = [];
+  let loaded = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.length;
+    onProgress({
+      percent: contentLength > 0 ? loaded / contentLength : 0,
+      loadedBytes: loaded,
+      totalBytes: contentLength
+    });
+  }
+  const total = chunks.reduce((sum, c) => sum + c.length, 0);
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result.buffer;
+}
+async function downloadWithRetry(repo, filename, expectedSha256, onProgress, maxRetries = 3) {
+  const backoffDelays = [1e3, 2e3, 4e3];
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const buffer = await downloadModelFile(repo, filename, onProgress);
+      const valid = await verifyChecksum(buffer, expectedSha256);
+      if (!valid) {
+        if (attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, backoffDelays[attempt] ?? 4e3));
+          continue;
+        }
+        return { filename, success: false, error: "sha256 mismatch after retries" };
+      }
+      return { filename, success: true, buffer };
+    } catch (error) {
+      if (attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, backoffDelays[attempt] ?? 4e3));
+        continue;
+      }
+      return { filename, success: false, error: String(error) };
+    }
+  }
+  return { filename, success: false, error: "unknown error" };
+}
+async function downloadModelFiles(language, writeFile, onProgress) {
+  const repo = getModelRepo(language);
+  const files = getModelFileList(language);
+  const results = [];
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const result = await downloadWithRetry(
+      repo,
+      file.filename,
+      file.sha256,
+      (fp) => onProgress({
+        currentFile: file.filename,
+        fileIndex: i,
+        totalFiles: files.length,
+        fileProgress: fp
+      }),
+      3
+    );
+    if (result.success && result.buffer) {
+      await writeFile(file.filename, result.buffer);
+    }
+    results.push(result);
+  }
+  return results;
+}
+
 // src/main.ts
+var SENTENCE_END_PUNCTUATION = /[。！？\.!\?]$/;
+var SentenceManager = class {
+  constructor(plugin) {
+    this.partialText = "";
+    this.plugin = plugin;
+  }
+  /** Called on every Worker result — accumulates partial text. */
+  addPartialText(text) {
+    this.partialText += text;
+  }
+  /** Called when isEndpoint=true — finalizes the current sentence. */
+  finalizeSentence(text) {
+    const sentence = text ?? this.partialText;
+    this.partialText = "";
+    const trimmed = sentence.trim();
+    if (!trimmed) return "";
+    if (SENTENCE_END_PUNCTUATION.test(trimmed)) {
+      return trimmed;
+    }
+    const lang = this.plugin.settings.speechLanguage;
+    return trimmed + (lang === "zh" ? "\u3002" : ".");
+  }
+  /** Get current accumulated partial text (for debugging). */
+  getPartialText() {
+    return this.partialText;
+  }
+  /** Reset on recording stop. */
+  reset() {
+    this.partialText = "";
+  }
+};
 var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
   constructor() {
     super(...arguments);
@@ -7278,6 +7481,9 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     this.referencePreview = new ReferencePreviewPopover();
     this.referencePreviewToken = 0;
     this.speechRecorder = new SpeechRecorder();
+    this._sentenceManager = null;
+    this.autoStopTimer = null;
+    this.autoStopSecondsRemaining = 0;
   }
   async onload() {
     await this.loadSettings();
@@ -7536,6 +7742,8 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
   onunload() {
     this.speechRecorder.destroy();
     this.referencePreview.destroy();
+    this.cancelAutoStopTimer();
+    this.speechRecorder.destroy();
   }
   async loadSettings() {
     this.settings = normalizeLoadedSettings(await this.loadData(), this.app.vault.configDir);
@@ -7546,6 +7754,10 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     this.speechRecorder.setSettingsLanguage(this.settings.speechLanguage);
     this.speechRecorder.setSettingsVadSensitivity(this.settings.speechVadSensitivity);
     await this.saveData(this.settings);
+    if (!this.speechRecorder.isActive) {
+      this.speechRecorder.setSettingsLanguage(this.settings.speechLanguage);
+    }
+    this.speechRecorder.setSettingsVadSensitivity(this.settings.speechVadSensitivity);
   }
   getResearchWorkbenchState() {
     return readResearchWorkbenchState(
@@ -8098,27 +8310,84 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
   openSemanticSearch() {
     new SemanticSearchModal(this).open();
   }
-  async toggleSpeechRecording() {
-    this.speechRecorder.onAsrResult = (text, isEndpoint) => {
-      debugLog(this.app, "speech.asr-result", { text, isEndpoint });
-    };
-    if (!this.speechRecorder.canToggle()) {
-      if (this.speechRecorder.getSnapshot().phase === "error") {
-        this.speechRecorder.acknowledgeError();
-        this.refreshAllViews();
+  /**
+   * Ensure model files exist for the current language.
+   * Called before starting recording. Returns true if ready, false if download needed.
+   */
+  async ensureSpeechModel() {
+    const modelDir = this.speechRecorder.getModelDirInternal();
+    const fileList = getModelFileList(this.settings.speechLanguage);
+    let allExist = true;
+    for (const file of fileList) {
+      const exists = await this.app.vault.adapter.exists(modelDir + file.filename);
+      if (!exists) {
+        allExist = false;
+        break;
       }
-      return;
     }
-    const errorKey = await this.speechRecorder.toggle((key, vars) => this.t(key, vars));
-    if (errorKey) {
-      new import_obsidian12.Notice(this.t(errorKey));
-      this.refreshAllViews();
-      return;
-    }
-    this.refreshAllViews();
+    if (allExist) return true;
+    return this.downloadSpeechModel();
   }
-  getSpeechRecorderSnapshot() {
-    return this.speechRecorder.getSnapshot();
+  /**
+   * Download model files with progress Notice (D-15) and SHA256 verification (D-16).
+   * Shows manual download guide on failure (D-17).
+   */
+  async downloadSpeechModel() {
+    const lang = this.settings.speechLanguage;
+    const modelDir = this.speechRecorder.getModelDirInternal();
+    try {
+      await this.app.vault.adapter.mkdir(modelDir);
+    } catch {
+    }
+    const progressNotice = new import_obsidian12.Notice(
+      this.t("speechModelDownloadStart", { lang: lang === "zh" ? "\u4E2D\u6587" : "English" }),
+      0
+      // duration 0 = stays until replaced
+    );
+    const results = await downloadModelFiles(
+      lang,
+      async (filename, data) => {
+        const path = modelDir + filename;
+        await this.app.vault.adapter.writeBinary(path, data);
+      },
+      (progress) => {
+        const pct = Math.round(progress.fileProgress.percent * 100);
+        const loadedMB = (progress.fileProgress.loadedBytes / (1024 * 1024)).toFixed(1);
+        const totalMB = (progress.fileProgress.totalBytes / (1024 * 1024)).toFixed(1);
+        progressNotice.setMessage(
+          this.t("speechModelDownloadProgress", {
+            filename: progress.currentFile,
+            percent: pct,
+            current: progress.fileIndex + 1,
+            total: progress.totalFiles,
+            loadedMB,
+            totalMB
+          })
+        );
+      }
+    );
+    const failed = results.filter((r) => !r.success);
+    progressNotice.hide();
+    if (failed.length === 0) {
+      new import_obsidian12.Notice(this.t("speechModelDownloadComplete", { lang: lang === "zh" ? "\u4E2D\u6587" : "English" }));
+      return true;
+    }
+    this.showManualDownloadGuide(lang, failed.map((r) => r.filename));
+    return false;
+  }
+  /**
+   * Show manual download guide after automatic download fails (D-17).
+   */
+  showManualDownloadGuide(lang, failedFiles) {
+    const repo = getModelRepo(lang);
+    const modelDir = this.speechRecorder.getModelDirInternal();
+    const baseUrl = `https://huggingface.co/${repo}/resolve/main/`;
+    const message = this.t("speechModelManualDownloadTitle") + "\n\n" + this.t("speechModelManualDownloadSteps", {
+      modelDir,
+      baseUrl,
+      files: failedFiles.join(", ")
+    });
+    new import_obsidian12.Notice(message, 15e3);
   }
   async runResearchIngestion(request) {
     const result = await runIngestionCommand(
@@ -8325,4 +8594,97 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     }
     return true;
   }
+  // ─── Speech methods ───────────────────────────────────────────────────
+  getSpeechRecorderSnapshot() {
+    return this.speechRecorder.getSnapshot();
+  }
+  async toggleSpeechRecording() {
+    const recorder = this.speechRecorder;
+    if (!recorder.canToggle()) {
+      if (recorder.getSnapshot().phase === "error") {
+        recorder.acknowledgeError();
+        this.refreshAllViews();
+      }
+      return;
+    }
+    if (!this._sentenceManager) {
+      this._sentenceManager = new SentenceManager(this);
+    }
+    recorder.onAsrResult = (text, isEndpoint) => {
+      if (isEndpoint) {
+        const finalSentence = this._sentenceManager.finalizeSentence(text);
+        if (finalSentence) {
+          this.insertSpeechText(finalSentence);
+        }
+      } else {
+        this._sentenceManager.addPartialText(text);
+      }
+    };
+    const errorKey = await recorder.toggle((key, vars) => this.t(key, vars));
+    if (errorKey) {
+      new import_obsidian12.Notice(this.t(errorKey));
+      this._sentenceManager?.reset();
+      this.refreshAllViews();
+      return;
+    }
+    if (recorder.getSnapshot().phase === "recording" && this.settings.speechAutoStopSec > 0) {
+      this.startAutoStopTimer();
+    }
+    if (!recorder.isActive && this._sentenceManager) {
+      const remaining = this._sentenceManager.getPartialText();
+      if (remaining.trim()) {
+        const final = this._sentenceManager.finalizeSentence();
+        if (final) this.insertSpeechText(final);
+      }
+      this._sentenceManager.reset();
+      this.cancelAutoStopTimer();
+    }
+    this.refreshAllViews();
+  }
+  insertSpeechText(text) {
+    if (!text) return;
+    const editorView = this.getContextEditorView();
+    if (!editorView?.editor) {
+      debugLog(this.app, "speech.insert-no-editor", { text });
+      return;
+    }
+    const editor = editorView.editor;
+    const cursor = editor.getCursor();
+    editor.replaceSelection(text + " ");
+    debugLog(this.app, "speech.text-inserted", {
+      textLen: text.length,
+      cursorLine: cursor.line,
+      cursorCh: cursor.ch
+    });
+  }
+  // ─── Auto-stop timer ─────────────────────────────────────────────────
+  startAutoStopTimer() {
+    this.cancelAutoStopTimer();
+    this.autoStopSecondsRemaining = this.settings.speechAutoStopSec;
+    this.autoStopTimer = setInterval(() => {
+      this.autoStopSecondsRemaining--;
+      if (this.autoStopSecondsRemaining <= 0) {
+        this.speechRecorder.forceStop();
+        this.cancelAutoStopTimer();
+        this.refreshAllViews();
+        new import_obsidian12.Notice(this.t("speechAutoStopTimeoutReached"));
+        return;
+      }
+      this.refreshAllViews();
+    }, 1e3);
+  }
+  cancelAutoStopTimer() {
+    if (this.autoStopTimer) {
+      clearInterval(this.autoStopTimer);
+      this.autoStopTimer = null;
+    }
+    this.autoStopSecondsRemaining = 0;
+  }
+  getAutoStopSecondsRemaining() {
+    return this.autoStopSecondsRemaining;
+  }
 };
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
+  SentenceManager
+});

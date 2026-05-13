@@ -1216,46 +1216,6 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     new Notice(message, 15000);  // 15 second duration for reading
   }
 
-  async toggleSpeechRecording(): Promise<void> {
-    // Set ASR callback — will be handled in Plan 02 for actual text insertion.
-    // For now, log results to verify Worker protocol works end-to-end.
-    this.speechRecorder.onAsrResult = (text, isEndpoint) => {
-      debugLog(this.app, "speech.asr-result", { text, isEndpoint });
-    };
-
-    if (!this.speechRecorder.canToggle()) {
-      // If in error state, clicking the button acknowledges the error (D-02)
-      if (this.speechRecorder.getSnapshot().phase === "error") {
-        this.speechRecorder.acknowledgeError();
-        this.refreshAllViews();
-      }
-      return;
-    }
-
-    // If starting recording (currently idle), ensure model files exist
-    if (this.speechRecorder.getSnapshot().phase === "idle") {
-      const modelReady = await this.ensureSpeechModel();
-      if (!modelReady) {
-        // Download failed — abort toggle
-        return;
-      }
-    }
-
-    const errorKey = await this.speechRecorder.toggle((key, vars) => this.t(key as Parameters<typeof tr>[1], vars));
-
-    if (errorKey) {
-      new Notice(this.t(errorKey as Parameters<typeof tr>[1]));
-      this.refreshAllViews();
-      return;
-    }
-
-    this.refreshAllViews();
-  }
-
-  getSpeechRecorderSnapshot(): RecorderSnapshot {
-    return this.speechRecorder.getSnapshot();
-  }
-
   async runResearchIngestion(request: ResearchIngestionRequest): Promise<Awaited<ReturnType<typeof runIngestionCommand>>> {
     const result = await runIngestionCommand(
       this.app,
