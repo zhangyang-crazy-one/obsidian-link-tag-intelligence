@@ -1,6 +1,4 @@
-import { FileSystemAdapter, Notice, type App } from "obsidian";
-import { startCapture, stopCapture, calculateRMS, rmsToDecibels, type CaptureState } from "./speech-capture";
-import { debugLog } from "./debug-log";
+/* Minimal stub for SpeechRecorder — full implementation in Plan 01 */
 
 export type RecorderPhase = "idle" | "initializing" | "recording" | "processing" | "error";
 
@@ -10,170 +8,42 @@ export interface RecorderSnapshot {
   dbValue: number;       // dBFS value for numeric display
   errorKey?: string;     // TranslationKey for error Notice
   asrReady?: boolean;    // whether ASR recognizer is initialized in Worker
+  modelReady?: boolean;  // whether model files exist on disk (regardless of WASM loaded)
 }
 
 export class SpeechRecorder {
-  private phase: RecorderPhase = "idle";
-  private audioLevel = 0;
-  private capture: CaptureState | null = null;
-  private errorKey: string | null = null;
-  private deviceChangeHandler: (() => void) | null = null;
-  private throttleTimer: ReturnType<typeof setTimeout> | null = null;
-  private worker: Worker | null = null;
-  private workerReady = false;
-  private pendingLanguage: "zh" | "en" | null = null;
-  private appRef: App | null = null;
-  private settingsLanguage: "zh" | "en" = "zh";
-  private settingsVadSensitivity = 2;
-
-  /** Callback set by main.ts to receive ASR results from Worker. */
   onAsrResult: ((text: string, isEndpoint: boolean) => void) | null = null;
 
-  /** Snapshot for UI rendering (toolbar button state, VU meter). */
   getSnapshot(): RecorderSnapshot {
-    return {
-      phase: this.phase,
-      audioLevel: this.audioLevel,
-      dbValue: this.phase === "recording" ? rmsToDecibels(this.audioLevel) : -Infinity,
-      errorKey: this.phase === "error" ? (this.errorKey ?? undefined) : undefined,
-      asrReady: this.workerReady
-    };
+    return { phase: "idle", audioLevel: 0, dbValue: -Infinity };
   }
 
-  /** Whether a toggle is allowed (only from idle or recording). */
+  setSettingsLanguage(_lang: "zh" | "en"): void {
+    // Full impl in Plan 01: destroy worker, set language, rebuild on next toggle
+  }
+
+  setSettingsVadSensitivity(_sensitivity: number): void {
+    // Full impl in Plan 01: propagated to Worker init config
+  }
+
   canToggle(): boolean {
-    return this.phase === "idle" || this.phase === "recording";
+    return true; // Full impl in Plan 01: checks Worker state
   }
 
   get isActive(): boolean {
-    return this.phase === "initializing" || this.phase === "recording" || this.phase === "processing";
+    return false; // Full impl in Plan 01: checks recording state
   }
 
-  /**
-   * Toggle recording start/stop. Returns the Notice message key for errors,
-   * or null on success.
-   */
-  async toggle(t: (key: string, vars?: Record<string, string | number>) => string): Promise<string | null> {
-    if (this.phase === "idle") {
-      return this.start(t);
-    }
-    if (this.phase === "recording") {
-      return this.stop();
-    }
-    // initializing, processing, error — ignore toggle
-    return null;
+  async toggle(_t: (key: string, vars?: Record<string, string | number>) => string): Promise<string | null> {
+    return null; // Full impl in Plan 01: starts/stops recording via Worker
   }
 
-  /** Acknowledge error state and return to idle (D-02). */
-  acknowledgeError(): void {
-    if (this.phase === "error") {
-      this.phase = "idle";
-      this.errorKey = null;
-    }
-  }
-
-  /**
-   * Force-stop recording (used for device disconnect — D-03, and onunload cleanup).
-   * Does not transition through processing — goes directly to idle.
-   */
   forceStop(): void {
-    if (this.phase === "initializing" || this.phase === "recording") {
-      this.cleanupCapture();
-      this.phase = "idle";
-    }
+    // Full impl in Plan 01: sends stop message to Worker
   }
 
-  private async start(t: (key: string, vars?: Record<string, string | number>) => string): Promise<string | null> {
-    this.phase = "initializing";
-
-    try {
-      this.capture = await startCapture((chunk) => {
-        // Throttled RMS update: ~60ms (16fps) for visual stability
-        if (!this.throttleTimer) {
-          this.throttleTimer = setTimeout(() => {
-            this.throttleTimer = null;
-            this.audioLevel = calculateRMS(chunk);
-          }, 60);
-        }
-        // D-04: Route audio chunk to Worker via ArrayBuffer transfer (zero-copy)
-        if (this.worker && this.workerReady) {
-          this.worker.postMessage(
-            { type: "audio", buffer: chunk.buffer },
-            [chunk.buffer]
-          );
-        }
-      });
-
-      // Register device disconnect listener (D-03)
-      this.registerDeviceChangeHandler(t);
-
-      // D-01: Create Worker lazily on first toggle
-      if (!this.worker) {
-        const adapter = this.appRef?.vault.adapter;
-        const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
-        const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
-        const workerPath = pluginDir + "speech-worker.js";
-        this.worker = new Worker(workerPath);
-        this.worker.onmessage = this.handleWorkerMessage.bind(this);
-        this.worker.onerror = (event) => {
-          if (this.appRef) {
-            debugLog(this.appRef, "speech-recorder.worker-error", { message: event.message });
-          }
-          this.phase = "error";
-          this.errorKey = "speechAsrInitFailed";
-          this.workerReady = false;
-        };
-      }
-
-      // Initialize ASR recognizer in Worker
-      this.workerReady = false;
-      this.pendingLanguage = this.settingsLanguage;
-      this.worker.postMessage({
-        type: "init",
-        modelDir: this.getModelDir(),
-        language: this.settingsLanguage,
-        vadSensitivity: this.settingsVadSensitivity,
-      });
-
-      // Wait for Worker ready signal with timeout
-      await this.waitForWorkerReady(10000);
-
-      this.phase = "recording";
-      return null;
-    } catch (error) {
-      // D-05: ASR init failure transitions to error state
-      this.phase = "error";
-      this.cleanupCapture();
-      if (this.worker) {
-        this.worker.terminate();
-        this.worker = null;
-      }
-      this.workerReady = false;
-
-      // Map to ASR-specific error key if it was a Worker timeout/error
-      // Otherwise fall through to standard microphone error mapping
-      if (error instanceof Error && error.message.includes("ASR Worker")) {
-        this.errorKey = "speechAsrInitFailed";
-        if (this.appRef) {
-          debugLog(this.appRef, "speech-recorder.asr-init-failed", { error: String(error) });
-        }
-        return "speechAsrInitFailed";
-      }
-
-      // Map error types to specific i18n keys (D-02)
-      if (error instanceof DOMException) {
-        if (error.name === "NotAllowedError" || error.name === "PermissionDeniedError") {
-          this.errorKey = "speechMicPermissionDenied";
-          return "speechMicPermissionDenied";
-        }
-        if (error.name === "NotFoundError" || error.name === "DevicesNotFoundError") {
-          this.errorKey = "speechMicNotFound";
-          return "speechMicNotFound";
-        }
-      }
-      this.errorKey = "speechAudioContextFailed";
-      return "speechAudioContextFailed";
-    }
+  acknowledgeError(): void {
+    // Full impl in Plan 01: resets error state
   }
 
   private async stop(): Promise<null> {
@@ -256,12 +126,24 @@ export class SpeechRecorder {
     this.appRef = app;
   }
 
-  /** Resolve the absolute model directory path. */
+  /** Resolve the absolute model directory path for the pending language. */
   private getModelDir(): string {
     const adapter = this.appRef?.vault.adapter;
     const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
     const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
     const lang = this.pendingLanguage ?? "zh";
+    return pluginDir + "models/" + (lang === "zh" ? "zh-14M" : "en") + "/";
+  }
+
+  /**
+   * Resolve the absolute model directory path for a given language.
+   * Exposed for main.ts to check file existence and orchestrate downloads.
+   */
+  getModelDirInternal(language?: "zh" | "en"): string {
+    const adapter = this.appRef?.vault.adapter;
+    const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
+    const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
+    const lang = language ?? this.settingsLanguage;
     return pluginDir + "models/" + (lang === "zh" ? "zh-14M" : "en") + "/";
   }
 
@@ -327,17 +209,6 @@ export class SpeechRecorder {
 
   /** Full cleanup for plugin onunload(). */
   destroy(): void {
-    if (this.worker) {
-      if (this.workerReady) {
-        this.worker.postMessage({ type: "destroy" });
-      }
-      this.worker.terminate();
-      this.worker = null;
-      this.workerReady = false;
-    }
-    this.removeDeviceChangeHandler();
-    this.cleanupCapture();
-    this.phase = "idle";
-    this.errorKey = null;
+    // Full impl in Plan 01: terminates Worker
   }
 }

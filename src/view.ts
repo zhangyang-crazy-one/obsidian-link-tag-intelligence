@@ -56,9 +56,9 @@ interface ToolbarButtonSnapshot {
   label: string;
   disabled: boolean;
   title?: string;
-  state?: string;       // RecorderPhase string — drives CSS class (D-08)
-  audioLevel?: number;  // 0.0 - 1.0 — drives VU meter fill
-  dbValue?: number;     // dBFS for numeric readout
+  state?: string;
+  audioLevel?: number;
+  dbValue?: number;
 }
 
 interface FileLinkSnapshot {
@@ -369,6 +369,9 @@ export class LinkTagIntelligenceView extends ItemView {
 
   private getToolbarActions(): Array<[ToolbarActionId, () => void]> {
     return [
+      ["speechRecord", () => {
+        void this.plugin.toggleSpeechRecording();
+      }],
       ["ingestionCapture", () => this.plugin.openResearchIngestion()],
       ["insertLink", () => this.plugin.openLinkInsertModal("wikilink")],
       ["insertBlockRef", () => this.plugin.openBlockReferenceFlow()],
@@ -518,10 +521,10 @@ export class LinkTagIntelligenceView extends ItemView {
 
   private buildToolbarSnapshot(): ToolbarButtonSnapshot[] {
     const hasContext = Boolean(this.plugin.getContextNoteFile());
-    const recorderSnapshot = this.plugin.getSpeechRecorderSnapshot();
+    const snapshot = this.plugin.getSpeechRecorderSnapshot();
     return this.getToolbarActions().map(([key]) => {
       if (key === "speechRecord") {
-        return this.buildSpeechButtonSnapshot(key, recorderSnapshot);
+        return this.buildSpeechButtonSnapshot(key, snapshot);
       }
       const disabled = FILE_REQUIRED_ACTIONS.has(key) && !hasContext;
       return {
@@ -537,20 +540,47 @@ export class LinkTagIntelligenceView extends ItemView {
     key: ToolbarActionId,
     snapshot: RecorderSnapshot
   ): ToolbarButtonSnapshot {
-    const tooltipKey = snapshot.phase === "error" ? "speechRecordTooltipError"
-      : snapshot.phase === "processing" ? "speechRecordTooltipProcessing"
-      : snapshot.phase === "recording" ? "speechRecordTooltipRecording"
-      : snapshot.phase === "initializing" ? "speechRecordTooltipInitializing"
-      : "speechRecordTooltipIdle";
-    const isError = snapshot.phase === "error";
+    // Determine tooltip based on phase AND ASR status
+    const asrLoading = snapshot.phase === "initializing" ||
+      (snapshot.phase === "recording" && !snapshot.asrReady);
+
+    let tooltipKey: string;
+    let label = this.plugin.t("speechRecord");
+
+    if (snapshot.phase === "error") {
+      tooltipKey = snapshot.errorKey === "speechAsrInitFailed"
+        ? "speechAsrError"
+        : "speechRecordTooltipError";
+    } else if (asrLoading) {
+      tooltipKey = "speechAsrLoading";
+    } else if (snapshot.phase === "processing") {
+      tooltipKey = "speechRecordTooltipProcessing";
+    } else if (snapshot.phase === "recording") {
+      // D-12: Show countdown when <= 10s remaining
+      const remaining = this.plugin.getAutoStopSecondsRemaining();
+      if (remaining > 0 && remaining <= 10) {
+        label = `${remaining}s`;
+        tooltipKey = "speechAsrAutoStopCountdown";
+      } else {
+        tooltipKey = "speechRecordTooltipRecording";
+      }
+    } else if (snapshot.asrReady) {
+      tooltipKey = "speechAsrReady";
+    } else {
+      tooltipKey = "speechRecordTooltipIdle";
+    }
+
     return {
       key,
-      label: this.plugin.t("speechRecord"),
-      disabled: isError ? false : false, // error button is clickable for acknowledgment
-      title: this.plugin.t(tooltipKey),
+      label,
+      disabled: false,
+      title: this.plugin.t(tooltipKey as Parameters<typeof this.plugin.t>[0],
+        tooltipKey === "speechAsrAutoStopCountdown"
+          ? { seconds: this.plugin.getAutoStopSecondsRemaining() }
+          : undefined),
       state: snapshot.phase,
       audioLevel: snapshot.phase === "recording" ? snapshot.audioLevel : undefined,
-      dbValue: snapshot.phase === "recording" ? snapshot.dbValue : undefined
+      dbValue: snapshot.phase === "recording" ? snapshot.dbValue : undefined,
     };
   }
 
@@ -791,6 +821,15 @@ export class LinkTagIntelligenceView extends ItemView {
         button.removeAttribute("title");
       }
       button.classList.toggle("lti-toolbar-button-disabled", item.disabled);
+
+      // Speech button: apply state class and countdown flash (D-12)
+      if (item.key === "speechRecord") {
+        if (item.state) {
+          button.classList.add(`is-${item.state}`);
+        }
+        const remaining = this.plugin.getAutoStopSecondsRemaining();
+        button.classList.toggle("is-countdown-flash", remaining === 1);
+      }
     }
 
     // Speech recording button: apply state CSS classes (D-04, D-06, D-08)
