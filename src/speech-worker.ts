@@ -1,16 +1,22 @@
-// Web Worker entry point for sherpa-onnx WASM speech recognition.
-// Runs in a dedicated Worker thread (Electron nodeIntegrationInWorker).
-// Self-contained CJS module — must NOT import from other src/ files.
-// All logic uses require() for runtime sherpa-onnx loading.
+// Main-thread sherpa-onnx WASM ASR engine.
+// Runs in Obsidian's renderer process (NOT a Web Worker) because
+// Obsidian Electron disables nodeIntegrationInWorker, making
+// require("sherpa-onnx") unavailable in Worker context.
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
-const sherpaOnnx = require("sherpa-onnx");
+let sherpaOnnx: Record<string, unknown> | null = null;
+try {
+  sherpaOnnx = require("sherpa-onnx");
+} catch {
+  // sherpa-onnx not available (test environment / not installed)
+  sherpaOnnx = null;
+}
 
 type Recognizer = {
   createStream(): Stream;
   isReady(stream: Stream): boolean;
   decode(stream: Stream): void;
-  getResult(stream: Stream): { text: string; tokens: string[]; timestamps: number[] };
+  getResult(stream: Stream): { text: string };
   isEndpoint(stream: Stream): boolean;
   reset(stream: Stream): void;
   free(): void;
@@ -21,11 +27,7 @@ type Stream = {
   free(): void;
 };
 
-let recognizer: Recognizer | null = null;
-let stream: Stream | null = null;
-
 function mapVadSensitivityToRule1(sensitivity: number): number {
-  // VAD sensitivity mapping from RESEARCH.md Pitfall 6
   const map: Record<number, number> = { 0: 1.6, 1: 1.2, 2: 0.8, 3: 0.5 };
   return map[sensitivity] ?? 0.8;
 }
@@ -35,97 +37,88 @@ function mapVadSensitivityToRule2(sensitivity: number): number {
   return map[sensitivity] ?? 0.4;
 }
 
-// D-03: sherpa-onnx via WASM npm package (require('sherpa-onnx'))
-// D-11: Use sherpa-onnx built-in VAD (enableEndpoint: 1)
-// D-06: 800ms silence endpoint via rule1MinTrailingSilence: 0.8 (sensitivity=2 default)
+export interface AsrEngine {
+  init(modelDir: string, language: string, vadSensitivity: number): boolean;
+  processAudio(buffer: ArrayBuffer): { text: string; isEndpoint: boolean };
+  reset(): void;
+  destroy(): void;
+}
 
-self.onmessage = function (e: MessageEvent): void {
-  const msg = e.data as {
-    type: string;
-    modelDir?: string;
-    language?: string;
-    vadSensitivity?: number;
-    buffer?: ArrayBuffer;
-  };
+export function createAsrEngine(): AsrEngine {
+  let recognizer: Recognizer | null = null;
+  let stream: Stream | null = null;
 
-  switch (msg.type) {
-    case "init": {
-      if (!msg.modelDir || !msg.language) {
-        return;
-      }
-
-      // T-02-01 threat mitigation: reject path traversal in modelDir
-      const pathParts = msg.modelDir.split("/");
-      for (const part of pathParts) {
-        if (part === "..") {
-          return; // security rejection — no ready message sent
-        }
-      }
+  return {
+    init(modelDir: string, language: string, vadSensitivity: number): boolean {
+      // T-02-01: reject path traversal
+      if (modelDir.split("/").some((p) => p === "..")) return false;
 
       const cfg = {
         modelConfig: {
           transducer: {
-            encoder: msg.modelDir + "encoder-epoch-99-avg-1.int8.onnx",
-            decoder: msg.modelDir + "decoder-epoch-99-avg-1.onnx",
-            joiner: msg.modelDir + "joiner-epoch-99-avg-1.int8.onnx",
+            encoder: modelDir + "encoder-epoch-99-avg-1.int8.onnx",
+            decoder: modelDir + "decoder-epoch-99-avg-1.onnx",
+            joiner: modelDir + "joiner-epoch-99-avg-1.int8.onnx",
           },
-          tokens: msg.modelDir + "tokens.txt",
-          modelingUnit: msg.language === "zh" ? "cjkchar" : "bpe",
+          tokens: modelDir + "tokens.txt",
+          modelingUnit: language === "zh" ? "cjkchar" : "bpe",
           numThreads: 1,
-          provider: "cpu",
+          provider: "cpu" as const,
           debug: 0,
         },
         featConfig: { sampleRate: 16000, featureDim: 80 },
-        decodingMethod: "greedy_search",
+        decodingMethod: "greedy_search" as const,
         maxActivePaths: 4,
         enableEndpoint: 1,
-        rule1MinTrailingSilence: mapVadSensitivityToRule1(msg.vadSensitivity ?? 2),
-        rule2MinTrailingSilence: mapVadSensitivityToRule2(msg.vadSensitivity ?? 2),
+        rule1MinTrailingSilence: mapVadSensitivityToRule1(vadSensitivity),
+        rule2MinTrailingSilence: mapVadSensitivityToRule2(vadSensitivity),
         rule3MinUtteranceLength: 2.0,
       };
 
-      recognizer = sherpaOnnx.createOnlineRecognizer(
-        sherpaOnnx.wasmModule,
-        cfg
-      );
-      if (!recognizer) {
-        return; // init failed — no ready message sent
+      if (!sherpaOnnx) return false;
+      try {
+        recognizer = (sherpaOnnx as Record<string, unknown>).createOnlineRecognizer(
+          (sherpaOnnx as Record<string, unknown>).wasmModule,
+          cfg
+        );
+        if (!recognizer) return false;
+        stream = recognizer.createStream();
+        return true;
+      } catch {
+        return false;
       }
-      stream = recognizer.createStream();
-      self.postMessage({ type: "ready" });
-      return;
-    }
+    },
 
-    case "audio": {
-      if (!recognizer || !stream || !msg.buffer) {
-        return; // no crash if audio arrives before init
+    processAudio(buffer: ArrayBuffer): { text: string; isEndpoint: boolean } {
+      if (!recognizer || !stream) {
+        return { text: "", isEndpoint: false };
       }
 
-      const samples = new Float32Array(msg.buffer);
+      const samples = new Float32Array(buffer);
       stream.acceptWaveform(16000, samples);
+
       while (recognizer.isReady(stream)) {
         recognizer.decode(stream);
       }
+
       const result = recognizer.getResult(stream);
       const text = result.text || "";
       const isEndpoint = recognizer.isEndpoint(stream);
-      self.postMessage({ type: "result", text, isEndpoint });
 
       if (isEndpoint) {
-        // RESEARCH Pitfall 5: reset after each endpoint to prevent memory accumulation
         recognizer.reset(stream);
       }
-      return;
-    }
 
-    case "reset": {
+      return { text, isEndpoint };
+    },
+
+    reset(): void {
       if (recognizer && stream) {
         recognizer.reset(stream);
       }
-      return;
-    }
+    },
 
-    case "destroy": {
+    destroy(): void {
       if (stream) {
         stream.free();
         stream = null;
@@ -134,8 +127,6 @@ self.onmessage = function (e: MessageEvent): void {
         recognizer.free();
         recognizer = null;
       }
-      self.postMessage({ type: "destroyed" });
-      return;
-    }
-  }
-};
+    },
+  };
+}

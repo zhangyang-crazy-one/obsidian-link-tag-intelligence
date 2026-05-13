@@ -1,9 +1,34 @@
 "use strict";
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/speech-worker.ts
-var sherpaOnnx = require("sherpa-onnx");
-var recognizer = null;
-var stream = null;
+var speech_worker_exports = {};
+__export(speech_worker_exports, {
+  createAsrEngine: () => createAsrEngine
+});
+module.exports = __toCommonJS(speech_worker_exports);
+var sherpaOnnx = null;
+try {
+  sherpaOnnx = require("sherpa-onnx");
+} catch {
+  sherpaOnnx = null;
+}
 function mapVadSensitivityToRule1(sensitivity) {
   const map = { 0: 1.6, 1: 1.2, 2: 0.8, 3: 0.5 };
   return map[sensitivity] ?? 0.8;
@@ -12,28 +37,21 @@ function mapVadSensitivityToRule2(sensitivity) {
   const map = { 0: 0.8, 1: 0.6, 2: 0.4, 3: 0.25 };
   return map[sensitivity] ?? 0.4;
 }
-self.onmessage = function(e) {
-  const msg = e.data;
-  switch (msg.type) {
-    case "init": {
-      if (!msg.modelDir || !msg.language) {
-        return;
-      }
-      const pathParts = msg.modelDir.split("/");
-      for (const part of pathParts) {
-        if (part === "..") {
-          return;
-        }
-      }
+function createAsrEngine() {
+  let recognizer = null;
+  let stream = null;
+  return {
+    init(modelDir, language, vadSensitivity) {
+      if (modelDir.split("/").some((p) => p === "..")) return false;
       const cfg = {
         modelConfig: {
           transducer: {
-            encoder: msg.modelDir + "encoder-epoch-99-avg-1.int8.onnx",
-            decoder: msg.modelDir + "decoder-epoch-99-avg-1.onnx",
-            joiner: msg.modelDir + "joiner-epoch-99-avg-1.int8.onnx"
+            encoder: modelDir + "encoder-epoch-99-avg-1.int8.onnx",
+            decoder: modelDir + "decoder-epoch-99-avg-1.onnx",
+            joiner: modelDir + "joiner-epoch-99-avg-1.int8.onnx"
           },
-          tokens: msg.modelDir + "tokens.txt",
-          modelingUnit: msg.language === "zh" ? "cjkchar" : "bpe",
+          tokens: modelDir + "tokens.txt",
+          modelingUnit: language === "zh" ? "cjkchar" : "bpe",
           numThreads: 1,
           provider: "cpu",
           debug: 0
@@ -42,26 +60,28 @@ self.onmessage = function(e) {
         decodingMethod: "greedy_search",
         maxActivePaths: 4,
         enableEndpoint: 1,
-        rule1MinTrailingSilence: mapVadSensitivityToRule1(msg.vadSensitivity ?? 2),
-        rule2MinTrailingSilence: mapVadSensitivityToRule2(msg.vadSensitivity ?? 2),
+        rule1MinTrailingSilence: mapVadSensitivityToRule1(vadSensitivity),
+        rule2MinTrailingSilence: mapVadSensitivityToRule2(vadSensitivity),
         rule3MinUtteranceLength: 2
       };
-      recognizer = sherpaOnnx.createOnlineRecognizer(
-        sherpaOnnx.wasmModule,
-        cfg
-      );
-      if (!recognizer) {
-        return;
+      if (!sherpaOnnx) return false;
+      try {
+        recognizer = sherpaOnnx.createOnlineRecognizer(
+          sherpaOnnx.wasmModule,
+          cfg
+        );
+        if (!recognizer) return false;
+        stream = recognizer.createStream();
+        return true;
+      } catch {
+        return false;
       }
-      stream = recognizer.createStream();
-      self.postMessage({ type: "ready" });
-      return;
-    }
-    case "audio": {
-      if (!recognizer || !stream || !msg.buffer) {
-        return;
+    },
+    processAudio(buffer) {
+      if (!recognizer || !stream) {
+        return { text: "", isEndpoint: false };
       }
-      const samples = new Float32Array(msg.buffer);
+      const samples = new Float32Array(buffer);
       stream.acceptWaveform(16e3, samples);
       while (recognizer.isReady(stream)) {
         recognizer.decode(stream);
@@ -69,19 +89,17 @@ self.onmessage = function(e) {
       const result = recognizer.getResult(stream);
       const text = result.text || "";
       const isEndpoint = recognizer.isEndpoint(stream);
-      self.postMessage({ type: "result", text, isEndpoint });
       if (isEndpoint) {
         recognizer.reset(stream);
       }
-      return;
-    }
-    case "reset": {
+      return { text, isEndpoint };
+    },
+    reset() {
       if (recognizer && stream) {
         recognizer.reset(stream);
       }
-      return;
-    }
-    case "destroy": {
+    },
+    destroy() {
       if (stream) {
         stream.free();
         stream = null;
@@ -90,8 +108,10 @@ self.onmessage = function(e) {
         recognizer.free();
         recognizer = null;
       }
-      self.postMessage({ type: "destroyed" });
-      return;
     }
-  }
-};
+  };
+}
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
+  createAsrEngine
+});

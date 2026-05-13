@@ -1,5 +1,6 @@
 import { FileSystemAdapter, Notice, type App } from "obsidian";
 import { startCapture, stopCapture, calculateRMS, rmsToDecibels, type CaptureState } from "./speech-capture";
+import { createAsrEngine, type AsrEngine } from "./speech-worker";
 import { debugLog } from "./debug-log";
 
 export type RecorderPhase = "idle" | "initializing" | "recording" | "processing" | "error";
@@ -20,14 +21,14 @@ export class SpeechRecorder {
   private errorKey: string | null = null;
   private deviceChangeHandler: (() => void) | null = null;
   private throttleTimer: ReturnType<typeof setTimeout> | null = null;
-  private worker: Worker | null = null;
-  private workerReady = false;
+  private engine: AsrEngine | null = null;
+  private engineReady = false;
   private pendingLanguage: "zh" | "en" | null = null;
   private appRef: App | null = null;
   private settingsLanguage: "zh" | "en" = "zh";
   private settingsVadSensitivity = 2;
 
-  /** Callback set by main.ts to receive ASR results from Worker. */
+  /** Callback set by main.ts to receive ASR results. */
   onAsrResult: ((text: string, isEndpoint: boolean) => void) | null = null;
 
   /** Snapshot for UI rendering (toolbar button state, VU meter). */
@@ -37,7 +38,7 @@ export class SpeechRecorder {
       audioLevel: this.audioLevel,
       dbValue: this.phase === "recording" ? rmsToDecibels(this.audioLevel) : -Infinity,
       errorKey: this.phase === "error" ? (this.errorKey ?? undefined) : undefined,
-      asrReady: this.workerReady
+      asrReady: this.engineReady
     };
   }
 
@@ -96,48 +97,37 @@ export class SpeechRecorder {
             this.audioLevel = calculateRMS(chunk);
           }, 60);
         }
-        // D-04: Route audio chunk to Worker via ArrayBuffer transfer (zero-copy)
-        if (this.worker && this.workerReady) {
-          this.worker.postMessage(
-            { type: "audio", buffer: chunk.buffer },
-            [chunk.buffer]
-          );
+        // D-04: Route audio chunk to ASR engine (main thread)
+        if (this.engine && this.engineReady) {
+          const result = this.engine.processAudio(chunk.buffer);
+          if (result.text) {
+            this.onAsrResult?.(result.text, result.isEndpoint);
+          }
         }
       });
 
       // Register device disconnect listener (D-03)
       this.registerDeviceChangeHandler(t);
 
-      // D-01: Create Worker lazily on first toggle
-      if (!this.worker) {
-        const adapter = this.appRef?.vault.adapter;
-        const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
-        const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
-        const workerPath = pluginDir + "speech-worker.js";
-        this.worker = new Worker(workerPath);
-        this.worker.onmessage = this.handleWorkerMessage.bind(this);
-        this.worker.onerror = (event) => {
-          if (this.appRef) {
-            debugLog(this.appRef, "speech-recorder.worker-error", { message: event.message });
-          }
-          this.phase = "error";
-          this.errorKey = "speechAsrInitFailed";
-          this.workerReady = false;
-        };
+      // D-01: Create engine lazily on first toggle
+      if (!this.engine) {
+        this.engine = createAsrEngine();
       }
 
-      // Initialize ASR recognizer in Worker
-      this.workerReady = false;
+      // Initialize ASR recognizer (main thread, no Worker)
+      this.engineReady = false;
       this.pendingLanguage = this.settingsLanguage;
-      this.worker.postMessage({
-        type: "init",
-        modelDir: this.getModelDir(),
-        language: this.settingsLanguage,
-        vadSensitivity: this.settingsVadSensitivity,
-      });
+      const initOk = this.engine.init(
+        this.getModelDir(),
+        this.settingsLanguage,
+        this.settingsVadSensitivity
+      );
 
-      // Wait for Worker ready signal with timeout
-      await this.waitForWorkerReady(10000);
+      if (!initOk) {
+        throw new Error("ASR Worker init failed — engine.init() returned false");
+      }
+
+      this.engineReady = true;
 
       this.phase = "recording";
       return null;
@@ -145,13 +135,13 @@ export class SpeechRecorder {
       // D-05: ASR init failure transitions to error state
       this.phase = "error";
       this.cleanupCapture();
-      if (this.worker) {
-        this.worker.terminate();
-        this.worker = null;
+      if (this.engine) {
+        this.engine.destroy();
+        this.engine = null;
       }
-      this.workerReady = false;
+      this.engineReady = false;
 
-      // Map to ASR-specific error key if it was a Worker timeout/error
+      // Map to ASR-specific error key if it was an engine init error
       // Otherwise fall through to standard microphone error mapping
       if (error instanceof Error && error.message.includes("ASR Worker")) {
         this.errorKey = "speechAsrInitFailed";
@@ -182,11 +172,9 @@ export class SpeechRecorder {
 
     this.removeDeviceChangeHandler();
 
-    // Send destroy to Worker (frees WASM memory per RESEARCH Pitfall 5)
-    if (this.worker && this.workerReady) {
-      this.worker.postMessage({ type: "destroy" });
-      this.workerReady = false;
-      // Don't terminate the Worker — reuse for next toggle
+    // D-01: Keep engine for reuse; just reset recognizer state
+    if (this.engine && this.engineReady) {
+      this.engine.reset();
     }
 
     this.cleanupCapture();
@@ -266,53 +254,6 @@ export class SpeechRecorder {
     return pluginDir + "models/" + (lang === "zh" ? "zh-14M" : "en") + "/";
   }
 
-  /** Handle messages from the ASR Worker thread. */
-  private handleWorkerMessage(event: MessageEvent): void {
-    const msg = event.data as { type: string; text?: string; isEndpoint?: boolean };
-    switch (msg.type) {
-      case "ready":
-        this.workerReady = true;
-        if (this.appRef) {
-          debugLog(this.appRef, "speech-recorder.worker-ready", {});
-        }
-        break;
-      case "result":
-        // D-06/D-09: Sentence boundary handling happens in main.ts (Plan 02)
-        this.onAsrResult?.(msg.text ?? "", msg.isEndpoint ?? false);
-        break;
-      case "destroyed":
-        if (this.appRef) {
-          debugLog(this.appRef, "speech-recorder.worker-destroyed", {});
-        }
-        break;
-    }
-  }
-
-  /** Wait for Worker to signal ready with timeout. */
-  private waitForWorkerReady(timeoutMs: number): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error("ASR Worker init timed out after " + timeoutMs + "ms"));
-      }, timeoutMs);
-      const checkInterval = setInterval(() => {
-        if (this.workerReady) {
-          clearTimeout(timeout);
-          clearInterval(checkInterval);
-          resolve();
-        }
-      }, 100);
-    });
-  }
-
-  /** D-10: Switch language by destroying current recognizer; rebuilt on next toggle. */
-  setLanguage(lang: "zh" | "en"): void {
-    this.pendingLanguage = lang;
-    if (this.workerReady && this.worker) {
-      this.worker.postMessage({ type: "destroy" });
-      this.workerReady = false;
-    }
-  }
-
   /** Sync settings language to SpeechRecorder (called from main.ts saveSettings). */
   setSettingsLanguage(lang: "zh" | "en"): void {
     if (this.settingsLanguage !== lang) {
@@ -328,13 +269,10 @@ export class SpeechRecorder {
 
   /** Full cleanup for plugin onunload(). */
   destroy(): void {
-    if (this.worker) {
-      if (this.workerReady) {
-        this.worker.postMessage({ type: "destroy" });
-      }
-      this.worker.terminate();
-      this.worker = null;
-      this.workerReady = false;
+    if (this.engine) {
+      this.engine.destroy();
+      this.engine = null;
+      this.engineReady = false;
     }
     this.removeDeviceChangeHandler();
     this.cleanupCapture();
@@ -346,10 +284,11 @@ export class SpeechRecorder {
   setSettingsLanguage(lang: "zh" | "en"): void {
     if (lang === this.settingsLanguage) return;
     this.settingsLanguage = lang;
-    // If not currently recording, destroy Worker so next toggle reinitializes with new language
-    if (!this.isActive && this.worker) {
-      this.worker.postMessage({ type: "destroy" });
-      this.workerReady = false;
+    // If not currently recording, destroy engine so next toggle reinitializes with new language
+    if (!this.isActive && this.engine) {
+      this.engine.destroy();
+      this.engine = null;
+      this.engineReady = false;
     }
   }
 
