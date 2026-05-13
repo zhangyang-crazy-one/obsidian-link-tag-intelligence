@@ -20,16 +20,20 @@
 - ✓ 中英双语 i18n 系统 — 现有
 - ✓ 插件设置系统 — 现有
 - ✓ 调试日志系统 — 现有
+- ✓ **SPEECH-01**: 用户可通过快捷键开始/停止语音识别 — Phase 1
+- ✓ **SPEECH-02**: 侧边栏工具栏显示录音按钮，带有收音状态动画 — Phase 1
+- ✓ **SPEECH-04**: 按钮显示录音状态（5 状态模型） — Phase 1
+- ✓ **SPEECH-05**: VU 电平表（5 段 + dB 数值） — Phase 1
+- ✓ **SPEECH-09**: 所有语音 UI 文本中英双语 — Phase 1
+- ✓ **SPEECH-10**: 设置面板语音配置（模型路径/语言/VAD/超时） — Phase 1
 
 ### Active
 
-- [ ] **SPEECH-01**: 用户可通过快捷键开始/停止语音识别
-- [ ] **SPEECH-02**: 侧边栏工具栏显示录音按钮，带有收音状态动画
 - [ ] **SPEECH-03**: 识别到的中文语音文字逐句实时插入编辑器光标位置
-- [ ] **SPEECH-04**: 录音过程中显示音频音量/电平指示
-- [ ] **SPEECH-05**: 用户可在中文和英文识别之间切换
-- [ ] **SPEECH-06**: 语音识别完全本地运行，无网络请求
-- [ ] **SPEECH-07**: 按钮样式匹配现有插件 CSS 规范（lti- 前缀、CSS 自定义属性）
+- [ ] **SPEECH-06**: 用户可在中文和英文识别之间切换
+- [ ] **SPEECH-07**: 语音识别完全本地运行，无网络请求
+- [ ] **SPEECH-08**: 可配置的静音超时后自动停止识别
+- [ ] **SPEECH-11**: 首次使用引导帮助用户下载模型文件
 
 ### Out of Scope
 
@@ -101,4 +105,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-12 after initialization*
+*Last updated: 2026-05-13 after Phase 1 completion*

@@ -25,9 +25,9 @@ This project adds real-time local Chinese speech-to-text to the existing Obsidia
 
 Plans:
 - [ ] 01-01-PLAN.md — i18n + Settings + Audio Capture Module (SPEECH-09, SPEECH-10, SPEECH-05)
-- [ ] 01-02-PLAN.md — Recording State Machine + Main Integration (SPEECH-01, SPEECH-04)
-- [ ] 01-03-PLAN.md — Toolbar UI + CSS Styling (SPEECH-02, SPEECH-05, SPEECH-04)
-- [ ] 01-04-PLAN.md — Unit Tests (SPEECH-01, SPEECH-04, SPEECH-05)
+- [x] 01-02-PLAN.md — Recording State Machine + Main Integration (SPEECH-01, SPEECH-04)
+- [x] 01-03-PLAN.md — Toolbar UI + CSS Styling (SPEECH-02, SPEECH-05, SPEECH-04)
+- [x] 01-04-PLAN.md — Unit Tests (SPEECH-01, SPEECH-04, SPEECH-05)
 **UI hint**: yes
 
 ### Phase 2: ASR Model & Transcription
