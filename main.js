@@ -4737,8 +4737,9 @@ function buildDefaultSettings(configDir = "") {
     smartConnectionsFolderExclusions: buildSmartConnectionsExclusions(configDir).join(", "),
     smartConnectionsHeadingExclusions: SMART_CONNECTIONS_HEADINGS.join(", "),
     smartConnectionsResultsLimit: DEFAULT_SMART_RESULTS_LIMIT,
+    speechModelPath: "",
     speechLanguage: "zh",
-    speechVadSensitivity: 1,
+    speechVadSensitivity: 2,
     speechAutoStopSec: 0
   };
 }
@@ -4867,6 +4868,7 @@ function normalizeLoadedSettings(data, configDir = "") {
     defaults.smartConnectionsHeadingExclusions
   );
   normalized.smartConnectionsResultsLimit = Number.isFinite(normalized.smartConnectionsResultsLimit) && normalized.smartConnectionsResultsLimit > 0 ? normalized.smartConnectionsResultsLimit : defaults.smartConnectionsResultsLimit;
+  normalized.speechModelPath = typeof normalized.speechModelPath === "string" ? normalized.speechModelPath.trim() : defaults.speechModelPath;
   normalized.speechLanguage = normalized.speechLanguage === "en" ? "en" : "zh";
   normalized.speechVadSensitivity = Number.isFinite(normalized.speechVadSensitivity) && normalized.speechVadSensitivity >= 0 && normalized.speechVadSensitivity <= 3 ? Math.round(normalized.speechVadSensitivity) : defaults.speechVadSensitivity;
   normalized.speechAutoStopSec = Number.isFinite(normalized.speechAutoStopSec) ? normalized.speechAutoStopSec === 0 ? 0 : Math.max(10, Math.min(300, Math.round(normalized.speechAutoStopSec))) : defaults.speechAutoStopSec;
@@ -5978,7 +5980,42 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSetting
       type: "button"
     });
     browseBtn.addEventListener("click", () => {
-      modelInput.focus();
+      try {
+        const desktopRequire = globalThis.require;
+        const electron = desktopRequire?.("electron");
+        const dialog = electron?.remote?.dialog;
+        if (dialog?.showOpenDialog) {
+          void dialog.showOpenDialog({ properties: ["openDirectory"] }).then((result) => {
+            if (!result.canceled && result.filePaths.length > 0) {
+              modelInput.value = result.filePaths[0] ?? "";
+              modelInput.dispatchEvent(new Event("change"));
+            }
+          });
+          return;
+        }
+      } catch {
+      }
+      const dirPicker = document.createElement("input");
+      dirPicker.type = "file";
+      dirPicker.setAttribute("webkitdirectory", "");
+      dirPicker.setAttribute("directory", "");
+      dirPicker.style.display = "none";
+      document.body.appendChild(dirPicker);
+      dirPicker.addEventListener("change", () => {
+        const files = dirPicker.files;
+        if (files && files.length > 0) {
+          const firstPath = files[0].webkitRelativePath || files[0].name;
+          const dirName = firstPath.split("/")[0] ?? "";
+          if (dirName) {
+            const adapter = this.plugin.app.vault.adapter;
+            const vaultRoot = adapter.getBasePath?.() ?? "";
+            modelInput.value = vaultRoot ? vaultRoot + "/" + dirName : dirName;
+            modelInput.dispatchEvent(new Event("change"));
+          }
+        }
+        document.body.removeChild(dirPicker);
+      });
+      dirPicker.click();
     });
     this.createSelectField(
       section,
