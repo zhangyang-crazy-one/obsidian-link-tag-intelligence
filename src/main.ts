@@ -57,6 +57,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    this.speechRecorder.setApp(this.app);
     const debugLogPath = await resetDebugLog(this.app);
     debugLog(this.app, "plugin.onload", {
       version: this.manifest.version,
@@ -343,6 +344,11 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   async saveSettings(): Promise<void> {
     const memory = Math.max(1, this.settings.recentLinkMemorySize);
     this.settings.recentLinkTargets = this.settings.recentLinkTargets.slice(0, memory);
+
+    // Sync ASR settings to SpeechRecorder
+    this.speechRecorder.setSettingsLanguage(this.settings.speechLanguage);
+    this.speechRecorder.setSettingsVadSensitivity(this.settings.speechVadSensitivity);
+
     await this.saveData(this.settings);
   }
 
@@ -1057,6 +1063,12 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   }
 
   async toggleSpeechRecording(): Promise<void> {
+    // Set ASR callback — will be handled in Plan 02 for actual text insertion.
+    // For now, log results to verify Worker protocol works end-to-end.
+    this.speechRecorder.onAsrResult = (text, isEndpoint) => {
+      debugLog(this.app, "speech.asr-result", { text, isEndpoint });
+    };
+
     if (!this.speechRecorder.canToggle()) {
       // If in error state, clicking the button acknowledges the error (D-02)
       if (this.speechRecorder.getSnapshot().phase === "error") {

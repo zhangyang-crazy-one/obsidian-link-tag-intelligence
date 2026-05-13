@@ -255,6 +255,7 @@ type TranslationKey =
   | "settingsWorkbenchPluginMissing"
   | "settingsWorkbenchSettingsUnavailable"
   | "settingsWorkbenchCommandUnavailable"
+  | "speechAsrInitFailed"
   | "speechAudioContextFailed"
   | "speechAutoStopTimeout"
   | "speechAutoStopTimeoutDescription"
@@ -603,6 +604,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsWorkbenchPluginMissing: "That companion plugin is not installed in the current vault.",
     settingsWorkbenchSettingsUnavailable: "Obsidian settings could not be opened programmatically.",
     settingsWorkbenchCommandUnavailable: "The companion command is not available in this vault.",
+    speechAsrInitFailed: "Speech recognition engine failed to initialize. Check model path in Voice settings.",
     speechAudioContextFailed: "Audio system initialization failed. Please restart Obsidian and try again.",
     speechAutoStopTimeout: "Auto-stop timeout (seconds)",
     speechAutoStopTimeoutDescription: "Automatically stop recording after this duration of silence. Set to 0 to disable. Range 10-300 seconds.",
@@ -950,6 +952,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsWorkbenchPluginMissing: "当前 vault 中没有安装这个 companion 插件。",
     settingsWorkbenchSettingsUnavailable: "无法通过程序方式打开 Obsidian 设置页。",
     settingsWorkbenchCommandUnavailable: "当前 vault 中没有找到可执行的 companion 命令。",
+    speechAsrInitFailed: "语音识别引擎初始化失败。请在语音设置中检查模型路径。",
     speechAudioContextFailed: "音频系统初始化失败，请重启 Obsidian 后重试。",
     speechAutoStopTimeout: "自动停止超时（秒）",
     speechAutoStopTimeoutDescription: "静音超过此时长后自动停止录音。设为 0 禁用自动停止。范围 10-300 秒。",
