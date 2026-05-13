@@ -4,15 +4,15 @@ import process from "node:process";
 const production = process.argv.includes("production");
 
 const context = await esbuild.context({
-  entryPoints: ["src/main.ts"],
+  entryPoints: { "main": "src/main.ts", "speech-worker": "src/speech-worker.ts" },
   bundle: true,
-  external: ["obsidian", "@codemirror/state", "@codemirror/view"],
+  external: ["obsidian", "@codemirror/state", "@codemirror/view", "sherpa-onnx"],
   format: "cjs",
   target: "es2021",
   logLevel: "info",
   sourcemap: production ? false : "inline",
   treeShaking: true,
-  outfile: "main.js",
+  outdir: ".",
   platform: "node"
 });
 
