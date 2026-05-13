@@ -1,4 +1,4 @@
-import { App, PluginSettingTab } from "obsidian";
+import { App, FileSystemAdapter, PluginSettingTab } from "obsidian";
 
 import {
   type CompanionPluginId,
@@ -42,6 +42,17 @@ const SMART_CONNECTIONS_HEADINGS = [
   "Acknowledgements"
 ];
 const DEFAULT_SMART_RESULTS_LIMIT = 20;
+
+/**
+ * Resolve the speech model directory to an absolute filesystem path.
+ * Model files are stored at: {vault}/.obsidian/plugins/link-tag-intelligence/models/{zh,en}/
+ */
+export function getSpeechModelDir(app: App, language: "zh" | "en"): string {
+  const adapter = app.vault.adapter;
+  const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
+  const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
+  return pluginDir + "models/" + (language === "zh" ? "zh-14M/" : "en/");
+}
 
 function normalizeConfigDir(configDir: string): string {
   return configDir

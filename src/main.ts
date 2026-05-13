@@ -44,6 +44,7 @@ import {
 import { LINK_TAG_INTELLIGENCE_VIEW, LinkTagIntelligenceView } from "./view";
 import type { ViewRefreshRequest } from "./view-refresh";
 import { SpeechRecorder, type RecorderSnapshot } from "./speech-recorder";
+import { downloadModelFiles, getModelFileList, getModelRepo } from "./speech-model";
 
 const SENTENCE_END_PUNCTUATION = /[。！？\.!\?]$/;
 
@@ -1116,6 +1117,105 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     new SemanticSearchModal(this).open();
   }
 
+  /**
+   * Ensure model files exist for the current language.
+   * Called before starting recording. Returns true if ready, false if download needed.
+   */
+  private async ensureSpeechModel(): Promise<boolean> {
+    const modelDir = this.speechRecorder.getModelDirInternal();
+    const fileList = getModelFileList(this.settings.speechLanguage);
+
+    // Check if all files exist
+    let allExist = true;
+    for (const file of fileList) {
+      const exists = await this.app.vault.adapter.exists(modelDir + file.filename);
+      if (!exists) {
+        allExist = false;
+        break;
+      }
+    }
+
+    if (allExist) return true;
+
+    // Files missing — trigger download flow
+    return this.downloadSpeechModel();
+  }
+
+  /**
+   * Download model files with progress Notice (D-15) and SHA256 verification (D-16).
+   * Shows manual download guide on failure (D-17).
+   */
+  private async downloadSpeechModel(): Promise<boolean> {
+    const lang = this.settings.speechLanguage;
+    const modelDir = this.speechRecorder.getModelDirInternal();
+
+    // Ensure model directory exists
+    try {
+      await this.app.vault.adapter.mkdir(modelDir);
+    } catch {
+      // Directory might already exist — that's fine
+    }
+
+    // D-15: Show progress Notice
+    const progressNotice = new Notice(
+      this.t("speechModelDownloadStart", { lang: lang === "zh" ? "中文" : "English" }),
+      0  // duration 0 = stays until replaced
+    );
+
+    const results = await downloadModelFiles(
+      lang,
+      async (filename, data) => {
+        const path = modelDir + filename;
+        await this.app.vault.adapter.writeBinary(path, data);
+      },
+      (progress) => {
+        const pct = Math.round(progress.fileProgress.percent * 100);
+        const loadedMB = (progress.fileProgress.loadedBytes / (1024 * 1024)).toFixed(1);
+        const totalMB = (progress.fileProgress.totalBytes / (1024 * 1024)).toFixed(1);
+        progressNotice.setMessage(
+          this.t("speechModelDownloadProgress", {
+            filename: progress.currentFile,
+            percent: pct,
+            current: progress.fileIndex + 1,
+            total: progress.totalFiles,
+            loadedMB,
+            totalMB,
+          })
+        );
+      }
+    );
+
+    // Check results
+    const failed = results.filter((r) => !r.success);
+    progressNotice.hide();
+
+    if (failed.length === 0) {
+      new Notice(this.t("speechModelDownloadComplete", { lang: lang === "zh" ? "中文" : "English" }));
+      return true;
+    }
+
+    // D-17: Some files failed — show manual download instructions
+    this.showManualDownloadGuide(lang, failed.map((r) => r.filename));
+    return false;
+  }
+
+  /**
+   * Show manual download guide after automatic download fails (D-17).
+   */
+  private showManualDownloadGuide(lang: "zh" | "en", failedFiles: string[]): void {
+    const repo = getModelRepo(lang);
+    const modelDir = this.speechRecorder.getModelDirInternal();
+    const baseUrl = `https://huggingface.co/${repo}/resolve/main/`;
+
+    const message = this.t("speechModelManualDownloadTitle") + "\n\n" +
+      this.t("speechModelManualDownloadSteps", {
+        modelDir,
+        baseUrl,
+        files: failedFiles.join(", "),
+      });
+    new Notice(message, 15000);  // 15 second duration for reading
+  }
+
   async toggleSpeechRecording(): Promise<void> {
     // Set ASR callback — will be handled in Plan 02 for actual text insertion.
     // For now, log results to verify Worker protocol works end-to-end.
@@ -1130,6 +1230,15 @@ export default class LinkTagIntelligencePlugin extends Plugin {
         this.refreshAllViews();
       }
       return;
+    }
+
+    // If starting recording (currently idle), ensure model files exist
+    if (this.speechRecorder.getSnapshot().phase === "idle") {
+      const modelReady = await this.ensureSpeechModel();
+      if (!modelReady) {
+        // Download failed — abort toggle
+        return;
+      }
     }
 
     const errorKey = await this.speechRecorder.toggle((key, vars) => this.t(key as Parameters<typeof tr>[1], vars));

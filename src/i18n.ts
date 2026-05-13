@@ -347,7 +347,20 @@ type TranslationKey =
   | "pickBlockRefTarget"
   | "pickLineRefTarget"
   | "blockRefInserted"
-  | "lineRefInserted";
+  | "lineRefInserted"
+  | "speechRecord"
+  | "speechRecordTooltipIdle"
+  | "speechRecordTooltipInitializing"
+  | "speechRecordTooltipProcessing"
+  | "speechRecordTooltipRecording"
+  | "speechRecordTooltipError"
+  | "speechAsrLoading"
+  | "speechAsrReady"
+  | "speechAsrError"
+  | "speechAsrAutoStopCountdown"
+  | "speechAutoStopTimeout"
+  | "speechAutoStopTimeoutDescription"
+  | "speechAutoStopTimeoutReached";
 
 const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
   en: {
@@ -696,7 +709,20 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     pickBlockRefTarget: "Choose a note for block reference",
     pickLineRefTarget: "Choose a note for line reference",
     blockRefInserted: "Inserted block reference to {title}.",
-    lineRefInserted: "Inserted line reference to {title}."
+    lineRefInserted: "Inserted line reference to {title}.",
+    speechRecord: "Rec",
+    speechRecordTooltipIdle: "Start speech recording",
+    speechRecordTooltipInitializing: "Initializing speech engine...",
+    speechRecordTooltipProcessing: "Processing audio...",
+    speechRecordTooltipRecording: "Recording — click to stop",
+    speechRecordTooltipError: "Speech recognition error — click to retry",
+    speechAsrLoading: "Loading speech model...",
+    speechAsrReady: "Speech recognition ready",
+    speechAsrError: "Speech recognition error",
+    speechAsrAutoStopCountdown: "Auto-stop in {seconds}s",
+    speechAutoStopTimeout: "Auto-stop timeout",
+    speechAutoStopTimeoutDescription: "Seconds of silence before recording stops automatically (0 = disabled, recommended 10–300s).",
+    speechAutoStopTimeoutReached: "Auto-stop: recording stopped after silence timeout."
   },
   zh: {
     pluginName: "链接与标签智能",
@@ -1044,7 +1070,20 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     pickBlockRefTarget: "选择块引用目标笔记",
     pickLineRefTarget: "选择行引用目标笔记",
     blockRefInserted: "已插入指向 {title} 的块引用。",
-    lineRefInserted: "已插入指向 {title} 的行引用。"
+    lineRefInserted: "已插入指向 {title} 的行引用。",
+    speechRecord: "录音",
+    speechRecordTooltipIdle: "开始语音录音",
+    speechRecordTooltipInitializing: "正在初始化语音引擎...",
+    speechRecordTooltipProcessing: "正在处理音频...",
+    speechRecordTooltipRecording: "录音中 — 点击停止",
+    speechRecordTooltipError: "语音识别错误 — 点击重试",
+    speechAsrLoading: "正在加载语音模型...",
+    speechAsrReady: "语音识别就绪",
+    speechAsrError: "语音识别错误",
+    speechAsrAutoStopCountdown: "{seconds}秒后自动停止",
+    speechAutoStopTimeout: "自动停止超时",
+    speechAutoStopTimeoutDescription: "录音静止多少秒后自动停止（0 = 禁用，建议 10–300 秒）。",
+    speechAutoStopTimeoutReached: "自动停止：静音超时，录音已停止。"
   }
 };
 
