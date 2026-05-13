@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   MockOnlineRecognizer,
   MockOnlineStream,
@@ -11,7 +11,16 @@ let postedMessages: unknown[] = [];
 let workerOnMessage: ((event: MessageEvent) => void) | null = null;
 let recognizer: MockOnlineRecognizer | null = null;
 let stream: MockOnlineStream | null = null;
-let lastInitConfig: Record<string, unknown> | null = null;
+type InitConfig = {
+  modelConfig: {
+    modelingUnit: string;
+    [key: string]: unknown;
+  };
+  enableEndpoint: number;
+  [key: string]: unknown;
+};
+
+let lastInitConfig: InitConfig | null = null;
 
 function mapVadSensitivityToRule1(sensitivity: number): number {
   const map: Record<number, number> = { 0: 1.6, 1: 1.2, 2: 0.8, 3: 0.5 };
@@ -64,7 +73,7 @@ function workerOnMessageHandler(e: MessageEvent): void {
         rule3MinUtteranceLength: 2.0,
       };
 
-      lastInitConfig = cfg;
+      lastInitConfig = cfg as unknown as InitConfig;
       recognizer = createOnlineRecognizer({}, cfg);
       stream = recognizer.createStream();
       postedMessages.push({ type: 'ready' });

@@ -23,7 +23,7 @@ __export(main_exports, {
   default: () => LinkTagIntelligencePlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian11 = require("obsidian");
+var import_obsidian12 = require("obsidian");
 
 // src/editor-extension.ts
 var import_state = require("@codemirror/state");
@@ -1069,6 +1069,33 @@ var TRANSLATIONS = {
     settingsWorkbenchPluginMissing: "That companion plugin is not installed in the current vault.",
     settingsWorkbenchSettingsUnavailable: "Obsidian settings could not be opened programmatically.",
     settingsWorkbenchCommandUnavailable: "The companion command is not available in this vault.",
+    speechAsrInitFailed: "Speech recognition engine failed to initialize. Check model path in Voice settings.",
+    speechAudioContextFailed: "Audio system initialization failed. Please restart Obsidian and try again.",
+    speechAutoStopTimeout: "Auto-stop timeout (seconds)",
+    speechAutoStopTimeoutDescription: "Automatically stop recording after this duration of silence. Set to 0 to disable. Range 10-300 seconds.",
+    speechBrowse: "Browse...",
+    speechLanguage: "Recognition language",
+    speechLanguageEn: "English (en)",
+    speechLanguageZh: "Chinese (zh)",
+    speechMicDisconnected: "Microphone disconnected. Recording stopped.",
+    speechMicNotFound: "No microphone detected. Please connect a microphone and try again.",
+    speechMicPermissionDenied: "Microphone permission denied. Please allow Obsidian in System Settings > Privacy & Security > Microphone.",
+    speechModelPath: "Model file path",
+    speechModelPathDescription: "Path to the sherpa-onnx streaming model directory. Supports Zipformer Chinese or bilingual Chinese-English models.",
+    speechNoEditor: "Open a Markdown note to use voice input.",
+    speechRecordingError: "Recording error: {message}. Please try again.",
+    speechRecord: "Voice",
+    speechRecordTooltipError: "Recording error, click for details",
+    speechRecordTooltipIdle: "Start voice input (Ctrl+Shift+V)",
+    speechRecordTooltipInitializing: "Initializing microphone...",
+    speechRecordTooltipProcessing: "Processing...",
+    speechRecordTooltipRecording: "Recording... Click to stop",
+    speechSettingsDescription: "Configure speech recognition model, language, and recording behavior. All processing is local.",
+    speechSettingsHeading: "Voice",
+    speechShortcutConflict: "Shortcut Ctrl+Shift+V is already in use. Please configure manually in Obsidian hotkey settings.",
+    speechToggleCommand: "Toggle voice input",
+    speechVadSensitivity: "VAD sensitivity",
+    speechVadSensitivityDescription: "0 = least sensitive (requires clearer speech), 3 = most sensitive (triggers more easily)",
     mentionsExplanation: "Notes that mention this note title or aliases without already linking to it.",
     selected: "Selected",
     notSelected: "Not selected",
@@ -1390,6 +1417,33 @@ var TRANSLATIONS = {
     settingsWorkbenchPluginMissing: "\u5F53\u524D vault \u4E2D\u6CA1\u6709\u5B89\u88C5\u8FD9\u4E2A companion \u63D2\u4EF6\u3002",
     settingsWorkbenchSettingsUnavailable: "\u65E0\u6CD5\u901A\u8FC7\u7A0B\u5E8F\u65B9\u5F0F\u6253\u5F00 Obsidian \u8BBE\u7F6E\u9875\u3002",
     settingsWorkbenchCommandUnavailable: "\u5F53\u524D vault \u4E2D\u6CA1\u6709\u627E\u5230\u53EF\u6267\u884C\u7684 companion \u547D\u4EE4\u3002",
+    speechAsrInitFailed: "\u8BED\u97F3\u8BC6\u522B\u5F15\u64CE\u521D\u59CB\u5316\u5931\u8D25\u3002\u8BF7\u5728\u8BED\u97F3\u8BBE\u7F6E\u4E2D\u68C0\u67E5\u6A21\u578B\u8DEF\u5F84\u3002",
+    speechAudioContextFailed: "\u97F3\u9891\u7CFB\u7EDF\u521D\u59CB\u5316\u5931\u8D25\uFF0C\u8BF7\u91CD\u542F Obsidian \u540E\u91CD\u8BD5\u3002",
+    speechAutoStopTimeout: "\u81EA\u52A8\u505C\u6B62\u8D85\u65F6\uFF08\u79D2\uFF09",
+    speechAutoStopTimeoutDescription: "\u9759\u97F3\u8D85\u8FC7\u6B64\u65F6\u957F\u540E\u81EA\u52A8\u505C\u6B62\u5F55\u97F3\u3002\u8BBE\u4E3A 0 \u7981\u7528\u81EA\u52A8\u505C\u6B62\u3002\u8303\u56F4 10-300 \u79D2\u3002",
+    speechBrowse: "\u6D4F\u89C8...",
+    speechLanguage: "\u8BC6\u522B\u8BED\u8A00",
+    speechLanguageEn: "English (en)",
+    speechLanguageZh: "\u4E2D\u6587 (zh)",
+    speechMicDisconnected: "\u9EA6\u514B\u98CE\u5DF2\u65AD\u5F00\uFF0C\u5F55\u97F3\u5DF2\u505C\u6B62\u3002",
+    speechMicNotFound: "\u672A\u68C0\u6D4B\u5230\u9EA6\u514B\u98CE\u8BBE\u5907\u3002\u8BF7\u8FDE\u63A5\u9EA6\u514B\u98CE\u540E\u91CD\u8BD5\u3002",
+    speechMicPermissionDenied: "\u9EA6\u514B\u98CE\u6743\u9650\u672A\u6388\u4E88\uFF0C\u8BF7\u5728\u7CFB\u7EDF\u504F\u597D\u8BBE\u7F6E > \u5B89\u5168\u6027\u4E0E\u9690\u79C1 > \u9EA6\u514B\u98CE \u4E2D\u5141\u8BB8 Obsidian\u3002",
+    speechModelPath: "\u6A21\u578B\u6587\u4EF6\u8DEF\u5F84",
+    speechModelPathDescription: "sherpa-onnx \u6D41\u5F0F\u6A21\u578B\u76EE\u5F55\u7684\u8DEF\u5F84\u3002\u652F\u6301 Zipformer \u4E2D\u6587\u6216\u4E2D\u82F1\u53CC\u8BED\u6A21\u578B\u3002",
+    speechNoEditor: "\u8BF7\u6253\u5F00 Markdown \u7B14\u8BB0\u4EE5\u4F7F\u7528\u8BED\u97F3\u8F93\u5165\u3002",
+    speechRecordingError: "\u5F55\u97F3\u51FA\u9519\uFF1A{message}\u3002\u8BF7\u91CD\u8BD5\u3002",
+    speechRecord: "\u8BED\u97F3",
+    speechRecordTooltipError: "\u5F55\u97F3\u51FA\u9519\uFF0C\u70B9\u51FB\u67E5\u770B\u8BE6\u60C5",
+    speechRecordTooltipIdle: "\u5F00\u59CB\u8BED\u97F3\u8F93\u5165 (Ctrl+Shift+V)",
+    speechRecordTooltipInitializing: "\u6B63\u5728\u521D\u59CB\u5316\u9EA6\u514B\u98CE...",
+    speechRecordTooltipProcessing: "\u6B63\u5728\u5904\u7406...",
+    speechRecordTooltipRecording: "\u6B63\u5728\u5F55\u97F3... \u70B9\u51FB\u505C\u6B62",
+    speechSettingsDescription: "\u914D\u7F6E\u8BED\u97F3\u8BC6\u522B\u6A21\u578B\u3001\u8BED\u8A00\u548C\u5F55\u97F3\u884C\u4E3A\u3002\u6240\u6709\u5904\u7406\u5747\u5728\u672C\u5730\u5B8C\u6210\u3002",
+    speechSettingsHeading: "\u8BED\u97F3",
+    speechShortcutConflict: "\u5FEB\u6377\u952E Ctrl+Shift+V \u5DF2\u88AB\u5360\u7528\uFF0C\u8BF7\u5728 Obsidian \u5FEB\u6377\u952E\u8BBE\u7F6E\u4E2D\u624B\u52A8\u914D\u7F6E\u3002",
+    speechToggleCommand: "\u5207\u6362\u8BED\u97F3\u8F93\u5165",
+    speechVadSensitivity: "VAD \u7075\u654F\u5EA6",
+    speechVadSensitivityDescription: "0 = \u6700\u4E0D\u654F\u611F\uFF08\u9700\u8981\u66F4\u6E05\u6670\u7684\u58F0\u97F3\uFF09, 3 = \u6700\u654F\u611F\uFF08\u66F4\u5BB9\u6613\u89E6\u53D1\uFF09",
     mentionsExplanation: "\u5217\u51FA\u63D0\u53CA\u5F53\u524D\u7B14\u8BB0\u6807\u9898\u6216\u522B\u540D\u3001\u4F46\u5C1A\u672A\u5EFA\u7ACB\u94FE\u63A5\u7684\u7B14\u8BB0\u3002",
     selected: "\u5DF2\u9009",
     notSelected: "\u672A\u9009",
@@ -4671,7 +4725,11 @@ function buildDefaultSettings(configDir = "") {
     researchOpenNoteAfterImport: true,
     smartConnectionsFolderExclusions: buildSmartConnectionsExclusions(configDir).join(", "),
     smartConnectionsHeadingExclusions: SMART_CONNECTIONS_HEADINGS.join(", "),
-    smartConnectionsResultsLimit: DEFAULT_SMART_RESULTS_LIMIT
+    smartConnectionsResultsLimit: DEFAULT_SMART_RESULTS_LIMIT,
+    speechModelPath: "",
+    speechLanguage: "zh",
+    speechVadSensitivity: 2,
+    speechAutoStopSec: 60
   };
 }
 var DEFAULT_SETTINGS = buildDefaultSettings();
@@ -4799,6 +4857,10 @@ function normalizeLoadedSettings(data, configDir = "") {
     defaults.smartConnectionsHeadingExclusions
   );
   normalized.smartConnectionsResultsLimit = Number.isFinite(normalized.smartConnectionsResultsLimit) && normalized.smartConnectionsResultsLimit > 0 ? normalized.smartConnectionsResultsLimit : defaults.smartConnectionsResultsLimit;
+  normalized.speechModelPath = typeof normalized.speechModelPath === "string" ? normalized.speechModelPath.trim() : "";
+  normalized.speechLanguage = normalized.speechLanguage === "en" ? "en" : "zh";
+  normalized.speechVadSensitivity = Number.isFinite(normalized.speechVadSensitivity) ? Math.max(0, Math.min(3, Math.round(normalized.speechVadSensitivity))) : 2;
+  normalized.speechAutoStopSec = Number.isFinite(normalized.speechAutoStopSec) ? Math.max(0, Math.min(300, Math.round(normalized.speechAutoStopSec))) : 60;
   return normalized;
 }
 var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSettingTab {
@@ -4813,6 +4875,7 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSetting
     const { containerEl } = this;
     containerEl.empty();
     containerEl.addClass("lti-settings-root");
+    this.renderVoiceSection(containerEl);
     const shell = containerEl.createDiv({ cls: "lti-workbench" });
     shell.createDiv({
       text: this.plugin.t("loading"),
@@ -5884,6 +5947,75 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSetting
   booleanText(value) {
     return value === true ? this.plugin.t("settingsWorkbenchOn") : this.plugin.t("settingsWorkbenchOff");
   }
+  renderVoiceSection(containerEl) {
+    const section = this.createSectionCard(
+      containerEl,
+      this.plugin.t("speechSettingsHeading"),
+      this.plugin.t("speechSettingsDescription")
+    );
+    const modelRow = section.createDiv({ cls: "lti-voice-field-row" });
+    const modelField = this.createFieldShell(modelRow, this.plugin.t("speechModelPath"), this.plugin.t("speechModelPathDescription"));
+    const modelInputRow = modelField.createDiv({ cls: "lti-voice-input-row" });
+    const modelInput = modelInputRow.createEl("input", { cls: "lti-workbench-input lti-voice-path-input", type: "text" });
+    modelInput.value = this.plugin.settings.speechModelPath;
+    modelInput.placeholder = "/path/to/sherpa-onnx/model";
+    modelInput.addEventListener("change", () => {
+      this.plugin.settings.speechModelPath = modelInput.value.trim();
+      void this.plugin.saveSettings();
+    });
+    const browseBtn = modelInputRow.createEl("button", {
+      cls: "lti-workbench-button lti-voice-browse-btn",
+      text: this.plugin.t("speechBrowse"),
+      type: "button"
+    });
+    browseBtn.addEventListener("click", () => {
+      modelInput.focus();
+    });
+    this.createSelectField(
+      section,
+      this.plugin.t("speechLanguage"),
+      "",
+      [
+        { value: "zh", label: this.plugin.t("speechLanguageZh") },
+        { value: "en", label: this.plugin.t("speechLanguageEn") }
+      ],
+      this.plugin.settings.speechLanguage,
+      async (value) => {
+        this.plugin.settings.speechLanguage = value;
+        await this.plugin.saveSettings();
+      }
+    );
+    const vadField = this.createFieldShell(section, this.plugin.t("speechVadSensitivity"), this.plugin.t("speechVadSensitivityDescription"));
+    const vadRow = vadField.createDiv({ cls: "lti-voice-slider-row" });
+    const vadSlider = vadRow.createEl("input", { type: "range", cls: "lti-voice-slider" });
+    vadSlider.min = "0";
+    vadSlider.max = "3";
+    vadSlider.step = "1";
+    vadSlider.value = String(this.plugin.settings.speechVadSensitivity);
+    const vadLabel = vadRow.createSpan({ cls: "lti-voice-slider-value", text: String(this.plugin.settings.speechVadSensitivity) });
+    vadSlider.addEventListener("input", () => {
+      const val = Number.parseInt(vadSlider.value, 10);
+      vadLabel.textContent = String(val);
+    });
+    vadSlider.addEventListener("change", () => {
+      this.plugin.settings.speechVadSensitivity = Number.parseInt(vadSlider.value, 10);
+      void this.plugin.saveSettings();
+    });
+    const autoStopField = this.createFieldShell(section, this.plugin.t("speechAutoStopTimeout"), this.plugin.t("speechAutoStopTimeoutDescription"));
+    const autoStopInput = autoStopField.createEl("input", { cls: "lti-workbench-input", type: "number" });
+    autoStopInput.min = "0";
+    autoStopInput.max = "300";
+    autoStopInput.step = "10";
+    autoStopInput.value = String(this.plugin.settings.speechAutoStopSec);
+    autoStopInput.addEventListener("change", () => {
+      const parsed = Number.parseInt(autoStopInput.value, 10);
+      if (Number.isFinite(parsed)) {
+        this.plugin.settings.speechAutoStopSec = Math.max(0, Math.min(300, parsed));
+        autoStopInput.value = String(this.plugin.settings.speechAutoStopSec);
+        void this.plugin.saveSettings();
+      }
+    });
+  }
 };
 
 // src/view.ts
@@ -5968,6 +6100,9 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
     this.dependencyPaths = /* @__PURE__ */ new Set();
     this.toolbarSignature = null;
     this.sectionsContainerEl = null;
+    this.vuMeterEl = null;
+    this.vuMeterBars = [];
+    this.vuMeterDbLabel = null;
     this.plugin = plugin;
   }
   getViewType() {
@@ -6050,6 +6185,16 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
       button.addEventListener("click", handler);
       this.toolbarButtons.set(key, button);
     }
+    const vuMeter = toolbar.createDiv({ cls: "lti-vu-meter" });
+    vuMeter.hidden = true;
+    this.vuMeterEl = vuMeter;
+    this.vuMeterBars = [];
+    for (let i = 0; i < 5; i++) {
+      const bar = vuMeter.createDiv({ cls: "lti-vu-bar" });
+      bar.dataset.index = String(i);
+      this.vuMeterBars.push(bar);
+    }
+    this.vuMeterDbLabel = vuMeter.createSpan({ cls: "lti-vu-db-label", text: "" });
     const sections = this.contentEl.createDiv({ cls: "lti-sidebar-sections" });
     this.sectionsContainerEl = sections;
     for (const definition of SECTION_DEFINITIONS) {
@@ -6066,7 +6211,8 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
       ["addRelation", () => this.plugin.openRelationFlow()],
       ["manageTags", () => this.plugin.openTagManager()],
       ["suggestTags", () => this.plugin.openTagSuggestion()],
-      ["semanticSearch", () => this.plugin.openSemanticSearch()]
+      ["semanticSearch", () => this.plugin.openSemanticSearch()],
+      ["speechRecord", () => this.plugin.toggleSpeechRecording()]
     ];
   }
   createSectionShell(parent, definition) {
@@ -6185,7 +6331,11 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
   }
   buildToolbarSnapshot() {
     const hasContext = Boolean(this.plugin.getContextNoteFile());
+    const recorderSnapshot = this.plugin.getSpeechRecorderSnapshot();
     return this.getToolbarActions().map(([key]) => {
+      if (key === "speechRecord") {
+        return this.buildSpeechButtonSnapshot(key, recorderSnapshot);
+      }
       const disabled = FILE_REQUIRED_ACTIONS.has(key) && !hasContext;
       return {
         key,
@@ -6194,6 +6344,20 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
         title: disabled ? this.plugin.t("noActiveNote") : void 0
       };
     });
+  }
+  buildSpeechButtonSnapshot(key, snapshot) {
+    const tooltipKey = snapshot.phase === "error" ? "speechRecordTooltipError" : snapshot.phase === "processing" ? "speechRecordTooltipProcessing" : snapshot.phase === "recording" ? "speechRecordTooltipRecording" : snapshot.phase === "initializing" ? "speechRecordTooltipInitializing" : "speechRecordTooltipIdle";
+    const isError = snapshot.phase === "error";
+    return {
+      key,
+      label: this.plugin.t("speechRecord"),
+      disabled: isError ? false : false,
+      // error button is clickable for acknowledgment
+      title: this.plugin.t(tooltipKey),
+      state: snapshot.phase,
+      audioLevel: snapshot.phase === "recording" ? snapshot.audioLevel : void 0,
+      dbValue: snapshot.phase === "recording" ? snapshot.dbValue : void 0
+    };
   }
   buildFileSectionSnapshot(title, files, dependencyPaths) {
     const items = files.map((file) => {
@@ -6378,6 +6542,9 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
       if (!button) {
         continue;
       }
+      if (item.key === "speechRecord") {
+        continue;
+      }
       button.textContent = item.label;
       button.disabled = item.disabled;
       if (item.title) {
@@ -6386,6 +6553,54 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
         button.removeAttribute("title");
       }
       button.classList.toggle("lti-toolbar-button-disabled", item.disabled);
+    }
+    const speechButton = this.toolbarButtons.get("speechRecord");
+    if (speechButton) {
+      const speechItem = toolbar.find((item) => item.key === "speechRecord");
+      speechButton.classList.remove(
+        "is-idle",
+        "is-initializing",
+        "is-recording",
+        "is-processing",
+        "is-error"
+      );
+      if (speechItem?.state) {
+        speechButton.classList.add(`is-${speechItem.state}`);
+      }
+      this.updateVuMeter(speechItem?.state === "recording" ? speechItem : null);
+    }
+  }
+  /**
+   * Update VU meter display based on recording state audio level.
+   * VU meter is hidden unless in recording state (D-07).
+   * Bar thresholds from UI-SPEC:
+   *   Bar 1: green  when level > -50 dBFS
+   *   Bar 2: green  when level > -36 dBFS
+   *   Bar 3: green  when level > -24 dBFS
+   *   Bar 4: yellow when level > -18 dBFS
+   *   Bar 5: red    when level >  -6 dBFS
+   */
+  updateVuMeter(snapshot) {
+    if (!this.vuMeterEl) {
+      return;
+    }
+    const show = snapshot !== null && typeof snapshot.dbValue === "number" && isFinite(snapshot.dbValue);
+    this.vuMeterEl.hidden = !show;
+    if (!show) {
+      return;
+    }
+    const dbValue = snapshot.dbValue;
+    const thresholds = [-50, -36, -24, -18, -6];
+    const colors = ["is-active-green", "is-active-green", "is-active-green", "is-active-yellow", "is-active-red"];
+    for (let i = 0; i < this.vuMeterBars.length; i++) {
+      const bar = this.vuMeterBars[i];
+      bar.classList.remove("is-active-green", "is-active-yellow", "is-active-red");
+      if (dbValue > thresholds[i]) {
+        bar.classList.add(colors[i]);
+      }
+    }
+    if (this.vuMeterDbLabel) {
+      this.vuMeterDbLabel.textContent = dbValue === -Infinity ? "-\u221E" : `${Math.round(dbValue)} dB`;
     }
   }
   applyContextVisibility(snapshot) {
@@ -6655,12 +6870,404 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
     }
     this.pendingRefresh = null;
     this.refreshPromise = null;
+    this.vuMeterEl = null;
+    this.vuMeterBars = [];
+    this.vuMeterDbLabel = null;
     this.contentEl.empty();
   }
 };
 
+// src/speech-recorder.ts
+var import_obsidian11 = require("obsidian");
+
+// src/speech-capture.ts
+var WORKLET_CODE = `
+class MicProcessor extends AudioWorkletProcessor {
+  process(inputs) {
+    var input = inputs[0];
+    if (input && input.length > 0 && input[0] && input[0].length > 0) {
+      this.port.postMessage(input[0]);
+    }
+    return true;
+  }
+}
+registerProcessor('mic-processor', MicProcessor);
+`;
+async function tryAudioWorklet(audioContext, mediaStream, onAudioChunk) {
+  const blob = new Blob([WORKLET_CODE], { type: "application/javascript" });
+  const blobUrl = URL.createObjectURL(blob);
+  await audioContext.audioWorklet.addModule(blobUrl);
+  const node = new AudioWorkletNode(audioContext, "mic-processor");
+  node.port.onmessage = (event) => onAudioChunk(event.data);
+  const source = audioContext.createMediaStreamSource(mediaStream);
+  source.connect(node);
+  return { node, source, blobUrl };
+}
+function createScriptProcessorFallback(audioContext, mediaStream, onAudioChunk) {
+  const node = audioContext.createScriptProcessor(4096, 1, 1);
+  node.onaudioprocess = (event) => {
+    const input = event.inputBuffer.getChannelData(0);
+    onAudioChunk(new Float32Array(input));
+  };
+  const source = audioContext.createMediaStreamSource(mediaStream);
+  source.connect(node);
+  node.connect(audioContext.destination);
+  return { node, source, blobUrl: null };
+}
+async function startCapture(onAudioChunk) {
+  const audioContext = new AudioContext({ sampleRate: 16e3 });
+  if (audioContext.state === "suspended") {
+    await audioContext.resume();
+  }
+  const mediaStream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      channelCount: 1,
+      sampleRate: 16e3,
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false
+    },
+    video: false
+  });
+  let processorNode = null;
+  let sourceNode = null;
+  let blobUrl = null;
+  try {
+    const result = await tryAudioWorklet(audioContext, mediaStream, onAudioChunk);
+    processorNode = result.node;
+    sourceNode = result.source;
+    blobUrl = result.blobUrl;
+  } catch (_workletError) {
+    const fallback = createScriptProcessorFallback(audioContext, mediaStream, onAudioChunk);
+    processorNode = fallback.node;
+    sourceNode = fallback.source;
+    blobUrl = fallback.blobUrl;
+  }
+  const cleanup = () => {
+    if (processorNode) {
+      try {
+        processorNode.disconnect();
+      } catch {
+      }
+    }
+    if (sourceNode) {
+      try {
+        sourceNode.disconnect();
+      } catch {
+      }
+    }
+    mediaStream.getTracks().forEach((track) => track.stop());
+    void audioContext.close();
+    if (blobUrl) {
+      URL.revokeObjectURL(blobUrl);
+    }
+  };
+  return { audioContext, mediaStream, processorNode, sourceNode, blobUrl, cleanup };
+}
+function stopCapture(state) {
+  state.cleanup();
+}
+function calculateRMS(samples) {
+  if (samples.length === 0) {
+    return 0;
+  }
+  let sum = 0;
+  for (let i = 0; i < samples.length; i++) {
+    sum += samples[i] * samples[i];
+  }
+  return Math.sqrt(sum / samples.length);
+}
+function rmsToDecibels(rms) {
+  if (Number.isNaN(rms) || rms <= 0) {
+    return -Infinity;
+  }
+  return 20 * Math.log10(rms);
+}
+
+// src/speech-recorder.ts
+var SpeechRecorder = class {
+  constructor() {
+    this.phase = "idle";
+    this.audioLevel = 0;
+    this.capture = null;
+    this.errorKey = null;
+    this.deviceChangeHandler = null;
+    this.throttleTimer = null;
+    this.worker = null;
+    this.workerReady = false;
+    this.pendingLanguage = null;
+    this.appRef = null;
+    this.settingsLanguage = "zh";
+    this.settingsVadSensitivity = 2;
+    /** Callback set by main.ts to receive ASR results from Worker. */
+    this.onAsrResult = null;
+  }
+  /** Snapshot for UI rendering (toolbar button state, VU meter). */
+  getSnapshot() {
+    return {
+      phase: this.phase,
+      audioLevel: this.audioLevel,
+      dbValue: this.phase === "recording" ? rmsToDecibels(this.audioLevel) : -Infinity,
+      errorKey: this.phase === "error" ? this.errorKey ?? void 0 : void 0,
+      asrReady: this.workerReady
+    };
+  }
+  /** Whether a toggle is allowed (only from idle or recording). */
+  canToggle() {
+    return this.phase === "idle" || this.phase === "recording";
+  }
+  get isActive() {
+    return this.phase === "initializing" || this.phase === "recording" || this.phase === "processing";
+  }
+  /**
+   * Toggle recording start/stop. Returns the Notice message key for errors,
+   * or null on success.
+   */
+  async toggle(t) {
+    if (this.phase === "idle") {
+      return this.start(t);
+    }
+    if (this.phase === "recording") {
+      return this.stop();
+    }
+    return null;
+  }
+  /** Acknowledge error state and return to idle (D-02). */
+  acknowledgeError() {
+    if (this.phase === "error") {
+      this.phase = "idle";
+      this.errorKey = null;
+    }
+  }
+  /**
+   * Force-stop recording (used for device disconnect — D-03, and onunload cleanup).
+   * Does not transition through processing — goes directly to idle.
+   */
+  forceStop() {
+    if (this.phase === "initializing" || this.phase === "recording") {
+      this.cleanupCapture();
+      this.phase = "idle";
+    }
+  }
+  async start(t) {
+    this.phase = "initializing";
+    try {
+      this.capture = await startCapture((chunk) => {
+        if (!this.throttleTimer) {
+          this.throttleTimer = setTimeout(() => {
+            this.throttleTimer = null;
+            this.audioLevel = calculateRMS(chunk);
+          }, 60);
+        }
+        if (this.worker && this.workerReady) {
+          this.worker.postMessage(
+            { type: "audio", buffer: chunk.buffer },
+            [chunk.buffer]
+          );
+        }
+      });
+      this.registerDeviceChangeHandler(t);
+      if (!this.worker) {
+        const adapter = this.appRef?.vault.adapter;
+        const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
+        const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
+        const workerPath = pluginDir + "speech-worker.js";
+        this.worker = new Worker(workerPath);
+        this.worker.onmessage = this.handleWorkerMessage.bind(this);
+        this.worker.onerror = (event) => {
+          if (this.appRef) {
+            debugLog(this.appRef, "speech-recorder.worker-error", { message: event.message });
+          }
+          this.phase = "error";
+          this.errorKey = "speechAsrInitFailed";
+          this.workerReady = false;
+        };
+      }
+      this.workerReady = false;
+      this.pendingLanguage = this.settingsLanguage;
+      this.worker.postMessage({
+        type: "init",
+        modelDir: this.getModelDir(),
+        language: this.settingsLanguage,
+        vadSensitivity: this.settingsVadSensitivity
+      });
+      await this.waitForWorkerReady(1e4);
+      this.phase = "recording";
+      return null;
+    } catch (error) {
+      this.phase = "error";
+      this.cleanupCapture();
+      if (this.worker) {
+        this.worker.terminate();
+        this.worker = null;
+      }
+      this.workerReady = false;
+      if (error instanceof Error && error.message.includes("ASR Worker")) {
+        this.errorKey = "speechAsrInitFailed";
+        if (this.appRef) {
+          debugLog(this.appRef, "speech-recorder.asr-init-failed", { error: String(error) });
+        }
+        return "speechAsrInitFailed";
+      }
+      if (error instanceof DOMException) {
+        if (error.name === "NotAllowedError" || error.name === "PermissionDeniedError") {
+          this.errorKey = "speechMicPermissionDenied";
+          return "speechMicPermissionDenied";
+        }
+        if (error.name === "NotFoundError" || error.name === "DevicesNotFoundError") {
+          this.errorKey = "speechMicNotFound";
+          return "speechMicNotFound";
+        }
+      }
+      this.errorKey = "speechAudioContextFailed";
+      return "speechAudioContextFailed";
+    }
+  }
+  async stop() {
+    this.phase = "processing";
+    this.removeDeviceChangeHandler();
+    if (this.worker && this.workerReady) {
+      this.worker.postMessage({ type: "destroy" });
+      this.workerReady = false;
+    }
+    this.cleanupCapture();
+    this.phase = "idle";
+    return null;
+  }
+  cleanupCapture() {
+    if (this.throttleTimer) {
+      clearTimeout(this.throttleTimer);
+      this.throttleTimer = null;
+    }
+    this.audioLevel = 0;
+    if (this.capture) {
+      stopCapture(this.capture);
+      this.capture = null;
+    }
+  }
+  /** Monitor device disconnect during recording (D-03). */
+  registerDeviceChangeHandler(t) {
+    if (typeof navigator?.mediaDevices?.addEventListener !== "function") {
+      return;
+    }
+    const handler = async () => {
+      if (this.phase !== "recording") {
+        return;
+      }
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const hasAudioInput = devices.some((device) => device.kind === "audioinput");
+        if (!hasAudioInput) {
+          this.phase = "error";
+          this.errorKey = "speechMicDisconnected";
+          this.cleanupCapture();
+          this.removeDeviceChangeHandler();
+          new import_obsidian11.Notice(t("speechMicDisconnected"));
+        }
+      } catch {
+        if (this.phase === "recording") {
+          this.phase = "error";
+          this.errorKey = "speechMicDisconnected";
+          this.cleanupCapture();
+          this.removeDeviceChangeHandler();
+          new import_obsidian11.Notice(t("speechMicDisconnected"));
+        }
+      }
+    };
+    this.deviceChangeHandler = handler;
+    navigator.mediaDevices.addEventListener("devicechange", handler);
+  }
+  removeDeviceChangeHandler() {
+    if (this.deviceChangeHandler && typeof navigator?.mediaDevices?.removeEventListener === "function") {
+      navigator.mediaDevices.removeEventListener("devicechange", this.deviceChangeHandler);
+    }
+    this.deviceChangeHandler = null;
+  }
+  /** Set the Obsidian App reference for path resolution. Called once from main.ts onload. */
+  setApp(app) {
+    this.appRef = app;
+  }
+  /** Resolve the absolute model directory path. */
+  getModelDir() {
+    const adapter = this.appRef?.vault.adapter;
+    const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
+    const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
+    const lang = this.pendingLanguage ?? "zh";
+    return pluginDir + "models/" + (lang === "zh" ? "zh-14M" : "en") + "/";
+  }
+  /** Handle messages from the ASR Worker thread. */
+  handleWorkerMessage(event) {
+    const msg = event.data;
+    switch (msg.type) {
+      case "ready":
+        this.workerReady = true;
+        if (this.appRef) {
+          debugLog(this.appRef, "speech-recorder.worker-ready", {});
+        }
+        break;
+      case "result":
+        this.onAsrResult?.(msg.text ?? "", msg.isEndpoint ?? false);
+        break;
+      case "destroyed":
+        if (this.appRef) {
+          debugLog(this.appRef, "speech-recorder.worker-destroyed", {});
+        }
+        break;
+    }
+  }
+  /** Wait for Worker to signal ready with timeout. */
+  waitForWorkerReady(timeoutMs) {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error("ASR Worker init timed out after " + timeoutMs + "ms"));
+      }, timeoutMs);
+      const checkInterval = setInterval(() => {
+        if (this.workerReady) {
+          clearTimeout(timeout);
+          clearInterval(checkInterval);
+          resolve();
+        }
+      }, 100);
+    });
+  }
+  /** D-10: Switch language by destroying current recognizer; rebuilt on next toggle. */
+  setLanguage(lang) {
+    this.pendingLanguage = lang;
+    if (this.workerReady && this.worker) {
+      this.worker.postMessage({ type: "destroy" });
+      this.workerReady = false;
+    }
+  }
+  /** Sync settings language to SpeechRecorder (called from main.ts saveSettings). */
+  setSettingsLanguage(lang) {
+    if (this.settingsLanguage !== lang) {
+      this.settingsLanguage = lang;
+      this.setLanguage(lang);
+    }
+  }
+  /** Sync VAD sensitivity setting (0-3). */
+  setSettingsVadSensitivity(sensitivity) {
+    this.settingsVadSensitivity = Math.max(0, Math.min(3, Math.round(sensitivity)));
+  }
+  /** Full cleanup for plugin onunload(). */
+  destroy() {
+    if (this.worker) {
+      if (this.workerReady) {
+        this.worker.postMessage({ type: "destroy" });
+      }
+      this.worker.terminate();
+      this.worker = null;
+      this.workerReady = false;
+    }
+    this.removeDeviceChangeHandler();
+    this.cleanupCapture();
+    this.phase = "idle";
+    this.errorKey = null;
+  }
+};
+
 // src/main.ts
-var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
+var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
   constructor() {
     super(...arguments);
     this.settings = DEFAULT_SETTINGS;
@@ -6670,9 +7277,11 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
     this.lastExcalidrawFilePath = null;
     this.referencePreview = new ReferencePreviewPopover();
     this.referencePreviewToken = 0;
+    this.speechRecorder = new SpeechRecorder();
   }
   async onload() {
     await this.loadSettings();
+    this.speechRecorder.setApp(this.app);
     const debugLogPath = await resetDebugLog(this.app);
     debugLog(this.app, "plugin.onload", {
       version: this.manifest.version,
@@ -6777,7 +7386,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
       name: this.t("suggestTags"),
       checkCallback: (checking) => {
         const activeFile2 = this.getContextNoteFile();
-        if (!(activeFile2 instanceof import_obsidian11.TFile)) {
+        if (!(activeFile2 instanceof import_obsidian12.TFile)) {
           return false;
         }
         if (!checking) {
@@ -6796,6 +7405,21 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
       name: this.t("semanticSearch"),
       callback: () => this.openSemanticSearch()
     });
+    this.addCommand({
+      id: "toggle-speech-recording",
+      name: this.t("speechToggleCommand"),
+      hotkeys: [{ modifiers: ["Ctrl", "Shift"], key: "V" }],
+      checkCallback: (checking) => {
+        const editorView = this.app.workspace.activeEditor;
+        if (!editorView?.editor) {
+          return false;
+        }
+        if (!checking) {
+          void this.toggleSpeechRecording();
+        }
+        return true;
+      }
+    });
     this.addSettingTab(new LinkTagIntelligenceSettingTab(this.app, this));
     this.registerHoverLinkSource("link-tag-intelligence", {
       display: this.t("pluginName"),
@@ -6813,11 +7437,11 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
       debugLog(this.app, "file-open", {
         file: file?.path ?? null,
         isSupported: isSupportedNoteFile(file),
-        isExcalidraw: file instanceof import_obsidian11.TFile ? isExcalidrawFile(file) : false,
+        isExcalidraw: file instanceof import_obsidian12.TFile ? isExcalidrawFile(file) : false,
         lastSupportedFilePath: this.lastSupportedFilePath,
         lastExcalidrawFilePath: this.lastExcalidrawFilePath
       });
-      if (file instanceof import_obsidian11.TFile && isSupportedNoteFile(file)) {
+      if (file instanceof import_obsidian12.TFile && isSupportedNoteFile(file)) {
         this.captureSupportedFileContext(file);
         this.lastSupportedFilePath = file.path;
         if (isExcalidrawFile(file)) {
@@ -6827,12 +7451,12 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
       this.refreshAllViews({
         reason: "context",
         force: true,
-        changedPaths: file instanceof import_obsidian11.TFile ? [file.path] : void 0
+        changedPaths: file instanceof import_obsidian12.TFile ? [file.path] : void 0
       });
     }));
     this.registerEvent(this.app.metadataCache.on("changed", (file) => {
       const currentFile = this.getContextNoteFile();
-      if (!(file instanceof import_obsidian11.TFile) || !(currentFile instanceof import_obsidian11.TFile) || file.path !== currentFile.path) {
+      if (!(file instanceof import_obsidian12.TFile) || !(currentFile instanceof import_obsidian12.TFile) || file.path !== currentFile.path) {
         return;
       }
       this.refreshAllViews({
@@ -6842,7 +7466,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
     }));
     this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => {
       const viewType = leaf?.view?.getViewType() ?? null;
-      const viewFile = leaf?.view instanceof import_obsidian11.FileView ? leaf.view.file?.path ?? null : null;
+      const viewFile = leaf?.view instanceof import_obsidian12.FileView ? leaf.view.file?.path ?? null : null;
       debugLog(this.app, "active-leaf-change:before-timeout", {
         viewType,
         viewFile,
@@ -6853,16 +7477,16 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
         const view = leaf?.view;
         let leafFile = null;
         let isExcalidrawViewReady = false;
-        if (view instanceof import_obsidian11.FileView) {
+        if (view instanceof import_obsidian12.FileView) {
           leafFile = view.file;
           const isExcalidraw = view.getViewType() === "excalidraw";
           if (isExcalidraw) {
-            if (leafFile instanceof import_obsidian11.TFile) {
+            if (leafFile instanceof import_obsidian12.TFile) {
               this.lastExcalidrawFilePath = leafFile.path;
               isExcalidrawViewReady = true;
             } else if (this.lastExcalidrawFilePath) {
               const lastFile = this.app.vault.getAbstractFileByPath(this.lastExcalidrawFilePath);
-              if (lastFile instanceof import_obsidian11.TFile && isSupportedNoteFile(lastFile)) {
+              if (lastFile instanceof import_obsidian12.TFile && isSupportedNoteFile(lastFile)) {
                 leafFile = lastFile;
                 isExcalidrawViewReady = true;
               }
@@ -6882,13 +7506,13 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
           this.refreshAllViews({
             reason: "context",
             force: true,
-            changedPaths: leafFile instanceof import_obsidian11.TFile ? [leafFile.path] : void 0
+            changedPaths: leafFile instanceof import_obsidian12.TFile ? [leafFile.path] : void 0
           });
         }
       }, 0);
     }));
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
-      if (!(file instanceof import_obsidian11.TFile)) {
+      if (!(file instanceof import_obsidian12.TFile)) {
         return;
       }
       this.refreshAllViews({
@@ -6910,6 +7534,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
     this.registerEditorExtension(buildReferenceEditorExtension(this));
   }
   onunload() {
+    this.speechRecorder.destroy();
     this.referencePreview.destroy();
   }
   async loadSettings() {
@@ -6918,6 +7543,8 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
   async saveSettings() {
     const memory = Math.max(1, this.settings.recentLinkMemorySize);
     this.settings.recentLinkTargets = this.settings.recentLinkTargets.slice(0, memory);
+    this.speechRecorder.setSettingsLanguage(this.settings.speechLanguage);
+    this.speechRecorder.setSettingsVadSensitivity(this.settings.speechVadSensitivity);
     await this.saveData(this.settings);
   }
   getResearchWorkbenchState() {
@@ -6936,30 +7563,30 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
       await applyCompanionPresetToVault(this.app, companionId, state.profile);
     }
     this.refreshAllViews();
-    new import_obsidian11.Notice(this.t("settingsWorkbenchPresetApplied"));
+    new import_obsidian12.Notice(this.t("settingsWorkbenchPresetApplied"));
   }
   async applyCompanionPreset(id) {
     if (id === "semantic-bridge") {
       await this.saveSettings();
       this.refreshAllViews();
-      new import_obsidian11.Notice(this.t("settingsWorkbenchCompanionApplied", { name: "Semantic bridge" }));
+      new import_obsidian12.Notice(this.t("settingsWorkbenchCompanionApplied", { name: "Semantic bridge" }));
       return true;
     }
     const state = await this.getResearchWorkbenchState();
     const status = state.companions.find((item) => item.id === id);
     if (!status?.installed) {
-      new import_obsidian11.Notice(this.t("settingsWorkbenchPluginMissing"));
+      new import_obsidian12.Notice(this.t("settingsWorkbenchPluginMissing"));
       return false;
     }
     await applyCompanionPresetToVault(this.app, id, state.profile);
     this.refreshAllViews();
-    new import_obsidian11.Notice(this.t("settingsWorkbenchCompanionApplied", { name: this.getCompanionDisplayName(id) }));
+    new import_obsidian12.Notice(this.t("settingsWorkbenchCompanionApplied", { name: this.getCompanionDisplayName(id) }));
     return true;
   }
   openCompanionSettings(id) {
     const settingApi = this.app.setting;
     if (!settingApi?.open || !settingApi.openTabById) {
-      new import_obsidian11.Notice(this.t("settingsWorkbenchSettingsUnavailable"));
+      new import_obsidian12.Notice(this.t("settingsWorkbenchSettingsUnavailable"));
       return false;
     }
     settingApi.open();
@@ -6995,7 +7622,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
       return parseTagAliasMap(this.settings.tagAliasMapText);
     } catch (error) {
       console.warn(error);
-      new import_obsidian11.Notice(this.t("invalidAliasMap"));
+      new import_obsidian12.Notice(this.t("invalidAliasMap"));
       return /* @__PURE__ */ new Map();
     }
   }
@@ -7005,7 +7632,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
     } catch (error) {
       console.warn(error);
       if (!options.suppressNotice) {
-        new import_obsidian11.Notice(this.t("invalidFacetMap"));
+        new import_obsidian12.Notice(this.t("invalidFacetMap"));
       }
       return /* @__PURE__ */ new Map();
     }
@@ -7061,8 +7688,8 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
     return isSupportedNoteFile(activeFile) ? activeFile : null;
   }
   getActiveEditorLeaf() {
-    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian11.MarkdownView);
-    if (!(activeView?.file instanceof import_obsidian11.TFile) || !isSupportedNoteFile(activeView.file)) {
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian12.MarkdownView);
+    if (!(activeView?.file instanceof import_obsidian12.TFile) || !isSupportedNoteFile(activeView.file)) {
       return null;
     }
     return activeView.leaf;
@@ -7077,7 +7704,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
   }
   captureEditorContext(leaf) {
     const view = leaf?.view;
-    if (!(view instanceof import_obsidian11.MarkdownView) || !(view.file instanceof import_obsidian11.TFile) || !isSupportedNoteFile(view.file)) {
+    if (!(view instanceof import_obsidian12.MarkdownView) || !(view.file instanceof import_obsidian12.TFile) || !isSupportedNoteFile(view.file)) {
       return false;
     }
     const editorChanged = this.lastEditorLeaf !== leaf || this.lastEditorFilePath !== view.file.path;
@@ -7087,8 +7714,8 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
     return editorChanged || fileChanged;
   }
   getContextEditorView() {
-    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian11.MarkdownView);
-    if (activeView?.file instanceof import_obsidian11.TFile && isSupportedNoteFile(activeView.file)) {
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian12.MarkdownView);
+    if (activeView?.file instanceof import_obsidian12.TFile && isSupportedNoteFile(activeView.file)) {
       this.captureEditorContext(activeView.leaf);
       return activeView;
     }
@@ -7097,13 +7724,13 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
       return null;
     }
     const rememberedView = this.lastEditorLeaf?.view;
-    if (rememberedView instanceof import_obsidian11.MarkdownView && rememberedView.file instanceof import_obsidian11.TFile && isSupportedNoteFile(rememberedView.file)) {
+    if (rememberedView instanceof import_obsidian12.MarkdownView && rememberedView.file instanceof import_obsidian12.TFile && isSupportedNoteFile(rememberedView.file)) {
       this.lastEditorFilePath = rememberedView.file.path;
       return rememberedView;
     }
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
       const view = leaf.view;
-      if (!(view instanceof import_obsidian11.MarkdownView) || !(view.file instanceof import_obsidian11.TFile) || !isSupportedNoteFile(view.file)) {
+      if (!(view instanceof import_obsidian12.MarkdownView) || !(view.file instanceof import_obsidian12.TFile) || !isSupportedNoteFile(view.file)) {
         continue;
       }
       if (!this.lastEditorFilePath || view.file.path === this.lastEditorFilePath) {
@@ -7118,17 +7745,17 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
   }
   getContextNoteFile() {
     const activeFile = this.app.workspace.getActiveFile();
-    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian11.FileView);
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian12.FileView);
     const leafViewFile = activeView?.file ?? null;
     debugLog(this.app, "getContextNoteFile", {
       getActiveFile_result: activeFile?.path ?? null,
       leafViewFile: leafViewFile?.path ?? null,
       isSupported_activeFile: isSupportedNoteFile(activeFile),
-      isExcalidraw_leafViewFile: leafViewFile instanceof import_obsidian11.TFile ? isExcalidrawFile(leafViewFile) : false,
+      isExcalidraw_leafViewFile: leafViewFile instanceof import_obsidian12.TFile ? isExcalidrawFile(leafViewFile) : false,
       lastSupportedFilePath: this.lastSupportedFilePath,
       lastExcalidrawFilePath: this.lastExcalidrawFilePath
     });
-    if (activeFile instanceof import_obsidian11.TFile) {
+    if (activeFile instanceof import_obsidian12.TFile) {
       if (isSupportedNoteFile(activeFile)) {
         this.captureSupportedFileContext(activeFile);
         return activeFile;
@@ -7136,7 +7763,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
     }
     if (activeView) {
       const leafFile = activeView.file;
-      if (leafFile instanceof import_obsidian11.TFile && isSupportedNoteFile(leafFile)) {
+      if (leafFile instanceof import_obsidian12.TFile && isSupportedNoteFile(leafFile)) {
         this.captureSupportedFileContext(leafFile);
         if (isExcalidrawFile(leafFile)) {
           this.lastExcalidrawFilePath = leafFile.path;
@@ -7145,20 +7772,20 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
       }
       if (!leafFile && activeView.getViewType() === "excalidraw" && this.lastExcalidrawFilePath) {
         const lastFile = this.app.vault.getAbstractFileByPath(this.lastExcalidrawFilePath);
-        if (lastFile instanceof import_obsidian11.TFile && isSupportedNoteFile(lastFile)) {
+        if (lastFile instanceof import_obsidian12.TFile && isSupportedNoteFile(lastFile)) {
           return lastFile;
         }
       }
     }
     const view = this.getContextEditorView();
-    if (view?.file instanceof import_obsidian11.TFile && isSupportedNoteFile(view.file)) {
+    if (view?.file instanceof import_obsidian12.TFile && isSupportedNoteFile(view.file)) {
       return view.file;
     }
     if (!this.lastSupportedFilePath) {
       return null;
     }
     const file = this.app.vault.getAbstractFileByPath(this.lastSupportedFilePath);
-    return file instanceof import_obsidian11.TFile && isSupportedNoteFile(file) ? file : null;
+    return file instanceof import_obsidian12.TFile && isSupportedNoteFile(file) ? file : null;
   }
   getContextMarkdownFile() {
     return this.getContextNoteFile();
@@ -7171,7 +7798,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
     const activeFile = this.getActiveSupportedFile();
     if (mostRecentLeaf && activeFile) {
       this.captureSupportedFileContext(activeFile);
-      if (mostRecentLeaf.view instanceof import_obsidian11.MarkdownView) {
+      if (mostRecentLeaf.view instanceof import_obsidian12.MarkdownView) {
         this.captureEditorContext(mostRecentLeaf);
         return mostRecentLeaf;
       }
@@ -7242,14 +7869,14 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
     }
     const file = this.getContextNoteFile();
     if (!file) {
-      new import_obsidian11.Notice(this.t("noActiveNote"));
+      new import_obsidian12.Notice(this.t("noActiveNote"));
       return false;
     }
     await this.app.vault.process(
       file,
       (content) => appendTextToMarkdownSection(content, text, isExcalidrawFile(file))
     );
-    new import_obsidian11.Notice(this.t("appendedToFile", { title: file.basename }));
+    new import_obsidian12.Notice(this.t("appendedToFile", { title: file.basename }));
     this.refreshAllViews();
     return true;
   }
@@ -7287,14 +7914,14 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
         ea.addEmbeddable(100, 100, 200, 50, void 0, file, void 0);
         await ea.addElementsToView(true, true);
         this.pushRecentTarget(file.path);
-        new import_obsidian11.Notice(this.t("insertedLink", { title: file.basename }));
+        new import_obsidian12.Notice(this.t("insertedLink", { title: file.basename }));
         this.refreshAllViews();
         return;
       }
     }
     if (await this.insertTextIntoFile(linkText)) {
       this.pushRecentTarget(file.path);
-      new import_obsidian11.Notice(this.t("insertedLink", { title: file.basename }));
+      new import_obsidian12.Notice(this.t("insertedLink", { title: file.basename }));
     }
   }
   async insertBlockReferenceIntoEditor(file, startLine, endLine) {
@@ -7303,7 +7930,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
     const text = formatLegacyBlockReference(target, startLine, endLine);
     if (await this.insertTextIntoFile(text)) {
       this.pushRecentTarget(file.path);
-      new import_obsidian11.Notice(this.t("blockRefInserted", { title: file.basename }));
+      new import_obsidian12.Notice(this.t("blockRefInserted", { title: file.basename }));
     }
   }
   async insertLineReferenceIntoEditor(file, startLine, endLine) {
@@ -7312,7 +7939,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
     const text = formatLegacyLineReference(target, startLine, endLine);
     if (await this.insertTextIntoFile(text)) {
       this.pushRecentTarget(file.path);
-      new import_obsidian11.Notice(this.t("lineRefInserted", { title: file.basename }));
+      new import_obsidian12.Notice(this.t("lineRefInserted", { title: file.basename }));
     }
   }
   async getReferenceTooltip(options) {
@@ -7439,7 +8066,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
   }
   openRelationFlow() {
     const currentFile = this.getContextNoteFile();
-    if (!(currentFile instanceof import_obsidian11.TFile)) {
+    if (!(currentFile instanceof import_obsidian12.TFile)) {
       return;
     }
     new RelationKeyModal(this, (relationKey) => {
@@ -7450,7 +8077,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
           frontmatter[relationKey] = next;
         });
         this.pushRecentTarget(candidate.file.path);
-        new import_obsidian11.Notice(this.t("savedRelation", { relation: this.relationLabel(relationKey) }));
+        new import_obsidian12.Notice(this.t("savedRelation", { relation: this.relationLabel(relationKey) }));
         this.refreshAllViews();
       }).open();
     }).open();
@@ -7460,7 +8087,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
   }
   openTagSuggestion() {
     const currentFile = this.getContextNoteFile();
-    if (!(currentFile instanceof import_obsidian11.TFile)) {
+    if (!(currentFile instanceof import_obsidian12.TFile)) {
       return;
     }
     new TagSuggestionModal(this, currentFile).open();
@@ -7470,6 +8097,28 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
   }
   openSemanticSearch() {
     new SemanticSearchModal(this).open();
+  }
+  async toggleSpeechRecording() {
+    this.speechRecorder.onAsrResult = (text, isEndpoint) => {
+      debugLog(this.app, "speech.asr-result", { text, isEndpoint });
+    };
+    if (!this.speechRecorder.canToggle()) {
+      if (this.speechRecorder.getSnapshot().phase === "error") {
+        this.speechRecorder.acknowledgeError();
+        this.refreshAllViews();
+      }
+      return;
+    }
+    const errorKey = await this.speechRecorder.toggle((key, vars) => this.t(key, vars));
+    if (errorKey) {
+      new import_obsidian12.Notice(this.t(errorKey));
+      this.refreshAllViews();
+      return;
+    }
+    this.refreshAllViews();
+  }
+  getSpeechRecorderSnapshot() {
+    return this.speechRecorder.getSnapshot();
   }
   async runResearchIngestion(request) {
     const result = await runIngestionCommand(
@@ -7487,7 +8136,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
         this.openFile(importedFile);
       }
     }
-    new import_obsidian11.Notice(
+    new import_obsidian12.Notice(
       result.warnings.length > 0 ? this.t("ingestionCreatedWithWarnings", { title: result.title, count: result.warnings.length }) : this.t("ingestionCreated", { title: result.title })
     );
     return result;
@@ -7496,7 +8145,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
     const startedAt = Date.now();
     while (Date.now() - startedAt <= timeoutMs) {
       const file = this.app.vault.getAbstractFileByPath(path);
-      if (file instanceof import_obsidian11.TFile) {
+      if (file instanceof import_obsidian12.TFile) {
         return file;
       }
       await new Promise((resolve) => window.setTimeout(resolve, 150));
@@ -7564,7 +8213,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
       this.captureSupportedFileContext(file);
       this.captureEditorContext(leaf);
       const view = leaf.view;
-      if (view instanceof import_obsidian11.MarkdownView) {
+      if (view instanceof import_obsidian12.MarkdownView) {
         const editor = view.editor;
         const start = Math.max(0, startLine - 1);
         const safeEndLine = Math.max(start, (endLine ?? startLine) - 1);
@@ -7582,9 +8231,9 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
       this.captureSupportedFileContext(file);
       this.captureEditorContext(leaf);
       const view = leaf.view;
-      if (view instanceof import_obsidian11.MarkdownView) {
+      if (view instanceof import_obsidian12.MarkdownView) {
         const cache = this.app.metadataCache.getFileCache(file);
-        const resolved = cache ? (0, import_obsidian11.resolveSubpath)(cache, `#^${blockId}`) : null;
+        const resolved = cache ? (0, import_obsidian12.resolveSubpath)(cache, `#^${blockId}`) : null;
         if (resolved?.type === "block") {
           const editor = view.editor;
           const start = Math.max(0, resolved.start.line);
@@ -7603,7 +8252,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
       this.openFile(file);
       return;
     }
-    new import_obsidian11.Notice(path);
+    new import_obsidian12.Notice(path);
   }
   openResolvedLineReference(target, sourcePath, startLine, endLine) {
     const file = resolveNoteTarget(this.app, target, sourcePath);
@@ -7611,7 +8260,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
       this.openFileAtLine(file, startLine, endLine);
       return;
     }
-    new import_obsidian11.Notice(target);
+    new import_obsidian12.Notice(target);
   }
   openResolvedBlockReference(target, sourcePath, blockId) {
     const file = resolveNoteTarget(this.app, target, sourcePath);
@@ -7619,7 +8268,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
       this.openFileAtBlock(file, blockId);
       return;
     }
-    new import_obsidian11.Notice(target);
+    new import_obsidian12.Notice(target);
   }
   async insertLinkFromPath(path) {
     const file = resolveNoteTarget(this.app, path);
@@ -7630,7 +8279,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
   }
   async addSuggestedTags(tags) {
     const currentFile = this.getContextNoteFile();
-    if (!(currentFile instanceof import_obsidian11.TFile)) {
+    if (!(currentFile instanceof import_obsidian12.TFile)) {
       return;
     }
     await appendTagsToFrontmatter(this.app, currentFile, tags);
@@ -7666,12 +8315,12 @@ var LinkTagIntelligencePlugin = class extends import_obsidian11.Plugin {
     const commandIds = commandRegistry ? Object.keys(commandRegistry) : [];
     const resolved = candidates.find((candidate) => commandIds.includes(candidate)) ?? candidates.map((candidate) => commandIds.find((commandId) => commandId.endsWith(`:${candidate}`) || commandId.includes(candidate))).find(Boolean);
     if (!resolved || typeof commands?.executeCommandById !== "function") {
-      new import_obsidian11.Notice(this.t("settingsWorkbenchCommandUnavailable"));
+      new import_obsidian12.Notice(this.t("settingsWorkbenchCommandUnavailable"));
       return false;
     }
     const result = await commands.executeCommandById(resolved);
     if (result === false) {
-      new import_obsidian11.Notice(this.t("settingsWorkbenchCommandUnavailable"));
+      new import_obsidian12.Notice(this.t("settingsWorkbenchCommandUnavailable"));
       return false;
     }
     return true;

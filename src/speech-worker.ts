@@ -88,6 +88,9 @@ self.onmessage = function (e: MessageEvent): void {
         sherpaOnnx.wasmModule,
         cfg
       );
+      if (!recognizer) {
+        return; // init failed — no ready message sent
+      }
       stream = recognizer.createStream();
       self.postMessage({ type: "ready" });
       return;
