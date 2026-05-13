@@ -1,6 +1,5 @@
 import { FileSystemAdapter, Notice, type App } from "obsidian";
 import { startCapture, stopCapture, calculateRMS, rmsToDecibels, type CaptureState } from "./speech-capture";
-import { createAsrEngine, type AsrEngine } from "./speech-worker";
 import { debugLog } from "./debug-log";
 
 export type RecorderPhase = "idle" | "initializing" | "recording" | "processing" | "error";
@@ -21,8 +20,9 @@ export class SpeechRecorder {
   private errorKey: string | null = null;
   private deviceChangeHandler: (() => void) | null = null;
   private throttleTimer: ReturnType<typeof setTimeout> | null = null;
-  private engine: AsrEngine | null = null;
-  private engineReady = false;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private asrProcess: any = null;
+  private asrReady = false;
   private pendingLanguage: "zh" | "en" | null = null;
   private appRef: App | null = null;
   private settingsLanguage: "zh" | "en" = "zh";
@@ -38,7 +38,7 @@ export class SpeechRecorder {
       audioLevel: this.audioLevel,
       dbValue: this.phase === "recording" ? rmsToDecibels(this.audioLevel) : -Infinity,
       errorKey: this.phase === "error" ? (this.errorKey ?? undefined) : undefined,
-      asrReady: this.engineReady
+      asrReady: this.asrReady
     };
   }
 
@@ -97,37 +97,68 @@ export class SpeechRecorder {
             this.audioLevel = calculateRMS(chunk);
           }, 60);
         }
-        // D-04: Route audio chunk to ASR engine (main thread)
-        if (this.engine && this.engineReady) {
-          const result = this.engine.processAudio(chunk.buffer);
-          if (result.text) {
-            this.onAsrResult?.(result.text, result.isEndpoint);
-          }
+        // Route audio chunk to ASR child process
+        if (this.asrProcess && this.asrReady) {
+          this.asrProcess.send({ type: "audio", buffer: chunk.buffer });
         }
       });
 
       // Register device disconnect listener (D-03)
       this.registerDeviceChangeHandler(t);
 
-      // D-01: Create engine lazily on first toggle
-      if (!this.engine) {
-        this.engine = createAsrEngine();
+      // D-01: Fork ASR child process lazily on first toggle
+      if (!this.asrProcess) {
+        const adapter = this.appRef?.vault.adapter;
+        const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
+        const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence";
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+          // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+          const cp = require("child_process") as { fork: (m: string, args?: string[], opts?: { cwd?: string; stdio?: string }) => { send: (m: Record<string, unknown>) => void; on: (e: string, cb: (m: Record<string, unknown>) => void) => void; kill: () => void } };
+          const workerPath = pluginDir + "/asr-worker.js";
+          this.asrProcess = cp.fork(workerPath, [], { cwd: pluginDir, stdio: "ipc" });
+        } catch (e) {
+          throw new Error("ASR Worker init failed — cannot fork child process: " + String(e));
+        }
+        this.asrProcess.on("message", (msg: { type: string; ok?: boolean; text?: string; isEndpoint?: boolean }) => {
+          switch (msg.type) {
+            case "started":
+              break;
+            case "ready":
+              this.asrReady = !!msg.ok;
+              break;
+            case "result":
+              this.onAsrResult?.(msg.text ?? "", msg.isEndpoint ?? false);
+              break;
+            case "destroyed":
+              break;
+            case "error":
+              if (this.appRef) debugLog(this.appRef, "asr-worker.error", { message: msg.text ?? "" });
+              break;
+          }
+        });
+        this.asrProcess.on("error", (err: Error) => {
+          if (this.appRef) debugLog(this.appRef, "asr-worker.process-error", { message: err.message });
+        });
       }
 
-      // Initialize ASR recognizer (main thread, no Worker)
-      this.engineReady = false;
+      // Initialize ASR recognizer in child process
+      this.asrReady = false;
       this.pendingLanguage = this.settingsLanguage;
-      const initOk = this.engine.init(
-        this.getModelDir(),
-        this.settingsLanguage,
-        this.settingsVadSensitivity
-      );
+      this.asrProcess.send({
+        type: "init",
+        modelDir: this.getModelDir(),
+        language: this.settingsLanguage,
+        vadSensitivity: this.settingsVadSensitivity,
+      });
 
-      if (!initOk) {
-        throw new Error("ASR Worker init failed — engine.init() returned false");
-      }
-
-      this.engineReady = true;
+      // Wait for ready signal
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error("ASR Worker init timed out")), 15000);
+        const check = setInterval(() => {
+          if (this.asrReady) { clearTimeout(timeout); clearInterval(check); resolve(); }
+        }, 100);
+      });
 
       this.phase = "recording";
       return null;
@@ -135,11 +166,12 @@ export class SpeechRecorder {
       // D-05: ASR init failure transitions to error state
       this.phase = "error";
       this.cleanupCapture();
-      if (this.engine) {
-        this.engine.destroy();
-        this.engine = null;
+      if (this.asrProcess) {
+        this.asrProcess.send({ type: "destroy" });
+        this.asrProcess.kill();
+        this.asrProcess = null;
       }
-      this.engineReady = false;
+      this.asrReady = false;
 
       // Map to ASR-specific error key if it was an engine init error
       // Otherwise fall through to standard microphone error mapping
@@ -172,9 +204,9 @@ export class SpeechRecorder {
 
     this.removeDeviceChangeHandler();
 
-    // D-01: Keep engine for reuse; just reset recognizer state
-    if (this.engine && this.engineReady) {
-      this.engine.reset();
+    // Reset recognizer state in child process for next toggle
+    if (this.asrProcess && this.asrReady) {
+      this.asrProcess.send({ type: "reset" });
     }
 
     this.cleanupCapture();
@@ -269,10 +301,11 @@ export class SpeechRecorder {
 
   /** Full cleanup for plugin onunload(). */
   destroy(): void {
-    if (this.engine) {
-      this.engine.destroy();
-      this.engine = null;
-      this.engineReady = false;
+    if (this.asrProcess) {
+      this.asrProcess.send({ type: "destroy" });
+      this.asrProcess.kill();
+      this.asrProcess = null;
+      this.asrReady = false;
     }
     this.removeDeviceChangeHandler();
     this.cleanupCapture();
@@ -284,11 +317,12 @@ export class SpeechRecorder {
   setSettingsLanguage(lang: "zh" | "en"): void {
     if (lang === this.settingsLanguage) return;
     this.settingsLanguage = lang;
-    // If not currently recording, destroy engine so next toggle reinitializes with new language
-    if (!this.isActive && this.engine) {
-      this.engine.destroy();
-      this.engine = null;
-      this.engineReady = false;
+    // If not currently recording, destroy child process so next toggle forks with new language
+    if (!this.isActive && this.asrProcess) {
+      this.asrProcess.send({ type: "destroy" });
+      this.asrProcess.kill();
+      this.asrProcess = null;
+      this.asrReady = false;
     }
   }
 

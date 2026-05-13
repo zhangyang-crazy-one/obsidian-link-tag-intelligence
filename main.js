@@ -7082,96 +7082,6 @@ function rmsToDecibels(rms) {
   return 20 * Math.log10(rms);
 }
 
-// src/speech-worker.ts
-var sherpaOnnx = null;
-try {
-  sherpaOnnx = require("sherpa-onnx");
-} catch {
-  sherpaOnnx = null;
-}
-function mapVadSensitivityToRule1(sensitivity) {
-  const map = { 0: 1.6, 1: 1.2, 2: 0.8, 3: 0.5 };
-  return map[sensitivity] ?? 0.8;
-}
-function mapVadSensitivityToRule2(sensitivity) {
-  const map = { 0: 0.8, 1: 0.6, 2: 0.4, 3: 0.25 };
-  return map[sensitivity] ?? 0.4;
-}
-function createAsrEngine() {
-  let recognizer = null;
-  let stream = null;
-  return {
-    init(modelDir, language, vadSensitivity) {
-      if (modelDir.split("/").some((p) => p === "..")) return false;
-      const cfg = {
-        modelConfig: {
-          transducer: {
-            encoder: modelDir + "encoder-epoch-99-avg-1.int8.onnx",
-            decoder: modelDir + "decoder-epoch-99-avg-1.onnx",
-            joiner: modelDir + "joiner-epoch-99-avg-1.int8.onnx"
-          },
-          tokens: modelDir + "tokens.txt",
-          modelingUnit: language === "zh" ? "cjkchar" : "bpe",
-          numThreads: 1,
-          provider: "cpu",
-          debug: 0
-        },
-        featConfig: { sampleRate: 16e3, featureDim: 80 },
-        decodingMethod: "greedy_search",
-        maxActivePaths: 4,
-        enableEndpoint: 1,
-        rule1MinTrailingSilence: mapVadSensitivityToRule1(vadSensitivity),
-        rule2MinTrailingSilence: mapVadSensitivityToRule2(vadSensitivity),
-        rule3MinUtteranceLength: 2
-      };
-      if (!sherpaOnnx) return false;
-      try {
-        recognizer = sherpaOnnx.createOnlineRecognizer(
-          sherpaOnnx.wasmModule,
-          cfg
-        );
-        if (!recognizer) return false;
-        stream = recognizer.createStream();
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    processAudio(buffer) {
-      if (!recognizer || !stream) {
-        return { text: "", isEndpoint: false };
-      }
-      const samples = new Float32Array(buffer);
-      stream.acceptWaveform(16e3, samples);
-      while (recognizer.isReady(stream)) {
-        recognizer.decode(stream);
-      }
-      const result = recognizer.getResult(stream);
-      const text = result.text || "";
-      const isEndpoint = recognizer.isEndpoint(stream);
-      if (isEndpoint) {
-        recognizer.reset(stream);
-      }
-      return { text, isEndpoint };
-    },
-    reset() {
-      if (recognizer && stream) {
-        recognizer.reset(stream);
-      }
-    },
-    destroy() {
-      if (stream) {
-        stream.free();
-        stream = null;
-      }
-      if (recognizer) {
-        recognizer.free();
-        recognizer = null;
-      }
-    }
-  };
-}
-
 // src/speech-recorder.ts
 var SpeechRecorder = class {
   constructor() {
@@ -7181,8 +7091,9 @@ var SpeechRecorder = class {
     this.errorKey = null;
     this.deviceChangeHandler = null;
     this.throttleTimer = null;
-    this.engine = null;
-    this.engineReady = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    this.asrProcess = null;
+    this.asrReady = false;
     this.pendingLanguage = null;
     this.appRef = null;
     this.settingsLanguage = "zh";
@@ -7197,7 +7108,7 @@ var SpeechRecorder = class {
       audioLevel: this.audioLevel,
       dbValue: this.phase === "recording" ? rmsToDecibels(this.audioLevel) : -Infinity,
       errorKey: this.phase === "error" ? this.errorKey ?? void 0 : void 0,
-      asrReady: this.engineReady
+      asrReady: this.asrReady
     };
   }
   /** Whether a toggle is allowed (only from idle or recording). */
@@ -7247,38 +7158,72 @@ var SpeechRecorder = class {
             this.audioLevel = calculateRMS(chunk);
           }, 60);
         }
-        if (this.engine && this.engineReady) {
-          const result = this.engine.processAudio(chunk.buffer);
-          if (result.text) {
-            this.onAsrResult?.(result.text, result.isEndpoint);
-          }
+        if (this.asrProcess && this.asrReady) {
+          this.asrProcess.send({ type: "audio", buffer: chunk.buffer });
         }
       });
       this.registerDeviceChangeHandler(t);
-      if (!this.engine) {
-        this.engine = createAsrEngine();
+      if (!this.asrProcess) {
+        const adapter = this.appRef?.vault.adapter;
+        const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
+        const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence";
+        try {
+          const cp = require("child_process");
+          const workerPath = pluginDir + "/asr-worker.js";
+          this.asrProcess = cp.fork(workerPath, [], { cwd: pluginDir, stdio: "ipc" });
+        } catch (e) {
+          throw new Error("ASR Worker init failed \u2014 cannot fork child process: " + String(e));
+        }
+        this.asrProcess.on("message", (msg) => {
+          switch (msg.type) {
+            case "started":
+              break;
+            case "ready":
+              this.asrReady = !!msg.ok;
+              break;
+            case "result":
+              this.onAsrResult?.(msg.text ?? "", msg.isEndpoint ?? false);
+              break;
+            case "destroyed":
+              break;
+            case "error":
+              if (this.appRef) debugLog(this.appRef, "asr-worker.error", { message: msg.text ?? "" });
+              break;
+          }
+        });
+        this.asrProcess.on("error", (err) => {
+          if (this.appRef) debugLog(this.appRef, "asr-worker.process-error", { message: err.message });
+        });
       }
-      this.engineReady = false;
+      this.asrReady = false;
       this.pendingLanguage = this.settingsLanguage;
-      const initOk = this.engine.init(
-        this.getModelDir(),
-        this.settingsLanguage,
-        this.settingsVadSensitivity
-      );
-      if (!initOk) {
-        throw new Error("ASR Worker init failed \u2014 engine.init() returned false");
-      }
-      this.engineReady = true;
+      this.asrProcess.send({
+        type: "init",
+        modelDir: this.getModelDir(),
+        language: this.settingsLanguage,
+        vadSensitivity: this.settingsVadSensitivity
+      });
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error("ASR Worker init timed out")), 15e3);
+        const check = setInterval(() => {
+          if (this.asrReady) {
+            clearTimeout(timeout);
+            clearInterval(check);
+            resolve();
+          }
+        }, 100);
+      });
       this.phase = "recording";
       return null;
     } catch (error) {
       this.phase = "error";
       this.cleanupCapture();
-      if (this.engine) {
-        this.engine.destroy();
-        this.engine = null;
+      if (this.asrProcess) {
+        this.asrProcess.send({ type: "destroy" });
+        this.asrProcess.kill();
+        this.asrProcess = null;
       }
-      this.engineReady = false;
+      this.asrReady = false;
       if (error instanceof Error && error.message.includes("ASR Worker")) {
         this.errorKey = "speechAsrInitFailed";
         if (this.appRef) {
@@ -7303,8 +7248,8 @@ var SpeechRecorder = class {
   async stop() {
     this.phase = "processing";
     this.removeDeviceChangeHandler();
-    if (this.engine && this.engineReady) {
-      this.engine.reset();
+    if (this.asrProcess && this.asrReady) {
+      this.asrProcess.send({ type: "reset" });
     }
     this.cleanupCapture();
     this.phase = "idle";
@@ -7384,10 +7329,11 @@ var SpeechRecorder = class {
   }
   /** Full cleanup for plugin onunload(). */
   destroy() {
-    if (this.engine) {
-      this.engine.destroy();
-      this.engine = null;
-      this.engineReady = false;
+    if (this.asrProcess) {
+      this.asrProcess.send({ type: "destroy" });
+      this.asrProcess.kill();
+      this.asrProcess = null;
+      this.asrReady = false;
     }
     this.removeDeviceChangeHandler();
     this.cleanupCapture();
@@ -7398,10 +7344,11 @@ var SpeechRecorder = class {
   setSettingsLanguage(lang) {
     if (lang === this.settingsLanguage) return;
     this.settingsLanguage = lang;
-    if (!this.isActive && this.engine) {
-      this.engine.destroy();
-      this.engine = null;
-      this.engineReady = false;
+    if (!this.isActive && this.asrProcess) {
+      this.asrProcess.send({ type: "destroy" });
+      this.asrProcess.kill();
+      this.asrProcess = null;
+      this.asrReady = false;
     }
   }
   setSettingsVadSensitivity(sensitivity) {
