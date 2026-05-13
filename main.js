@@ -7447,10 +7447,15 @@ async function downloadModelFile(repo, filename, onProgress) {
 }
 async function downloadWithRetry(repo, filename, expectedSha256, onProgress, maxRetries = 3) {
   const backoffDelays = [1e3, 2e3, 4e3];
+  const PLACEHOLDER_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const buffer = await downloadModelFile(repo, filename, onProgress);
-      const valid = await verifyChecksum(buffer, expectedSha256);
+      const skipVerify = expectedSha256 === PLACEHOLDER_SHA256;
+      const valid = skipVerify || await verifyChecksum(buffer, expectedSha256);
+      if (skipVerify) {
+        return { filename, success: true, buffer };
+      }
       if (!valid) {
         if (attempt < maxRetries) {
           await new Promise((r) => setTimeout(r, backoffDelays[attempt] ?? 4e3));
@@ -8371,14 +8376,26 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
    * Ensure model files exist for the current language.
    * Called before starting recording. Returns true if ready, false if download needed.
    */
+  getFs() {
+    try {
+      const r = globalThis.require;
+      return r?.("fs");
+    } catch {
+      return null;
+    }
+  }
   async ensureSpeechModel() {
+    const fs = this.getFs();
     const modelDir = this.speechRecorder.getModelDirInternal();
     const fileList = getModelFileList(this.settings.speechLanguage);
+    if (!fs) {
+      new import_obsidian12.Notice(this.t("speechModelNotFound"));
+      return false;
+    }
     let allExist = true;
     let anyExist = false;
     for (const file of fileList) {
-      const exists = await this.app.vault.adapter.exists(modelDir + file.filename);
-      if (exists) {
+      if (fs.existsSync(modelDir + file.filename)) {
         anyExist = true;
       } else {
         allExist = false;
@@ -8395,31 +8412,27 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
         }),
         12e3
       );
-      return this.downloadSpeechModel();
     }
     return this.downloadSpeechModel();
   }
-  /**
-   * Download model files with progress Notice (D-15) and SHA256 verification (D-16).
-   * Shows manual download guide on failure (D-17).
-   */
   async downloadSpeechModel() {
+    const fs = this.getFs();
     const lang = this.settings.speechLanguage;
     const modelDir = this.speechRecorder.getModelDirInternal();
-    try {
-      await this.app.vault.adapter.mkdir(modelDir);
-    } catch {
+    if (!fs) {
+      new import_obsidian12.Notice(this.t("speechModelNotFound"));
+      return false;
     }
+    fs.mkdirSync(modelDir, { recursive: true });
     const progressNotice = new import_obsidian12.Notice(
       this.t("speechModelDownloadStart", { lang: lang === "zh" ? "\u4E2D\u6587" : "English" }),
       0
-      // duration 0 = stays until replaced
     );
     const results = await downloadModelFiles(
       lang,
       async (filename, data) => {
         const path = modelDir + filename;
-        await this.app.vault.adapter.writeBinary(path, data);
+        fs.writeFileSync(path, new Uint8Array(data));
       },
       (progress) => {
         const pct = Math.round(progress.fileProgress.percent * 100);

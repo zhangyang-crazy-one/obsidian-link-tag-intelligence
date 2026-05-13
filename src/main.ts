@@ -1121,16 +1121,28 @@ export default class LinkTagIntelligencePlugin extends Plugin {
    * Ensure model files exist for the current language.
    * Called before starting recording. Returns true if ready, false if download needed.
    */
+  private getFs(): { existsSync(path: string): boolean; mkdirSync(path: string, opts?: { recursive?: boolean }): void; writeFileSync(path: string, data: Uint8Array): void } | null {
+    try {
+      const r = (globalThis as Record<string, unknown>).require as ((m: string) => Record<string, unknown>) | undefined;
+      return r?.("fs") as { existsSync: (p: string) => boolean; mkdirSync: (p: string, o?: { recursive?: boolean }) => void; writeFileSync: (p: string, d: Uint8Array) => void } | null;
+    } catch { return null; }
+  }
+
   private async ensureSpeechModel(): Promise<boolean> {
+    const fs = this.getFs();
     const modelDir = this.speechRecorder.getModelDirInternal();
     const fileList = getModelFileList(this.settings.speechLanguage);
 
-    // Check if all files exist
+    // Use Node.js fs for model files (outside vault scope)
+    if (!fs) {
+      new Notice(this.t("speechModelNotFound"));
+      return false;
+    }
+
     let allExist = true;
     let anyExist = false;
     for (const file of fileList) {
-      const exists = await this.app.vault.adapter.exists(modelDir + file.filename);
-      if (exists) {
+      if (fs.existsSync(modelDir + file.filename)) {
         anyExist = true;
       } else {
         allExist = false;
@@ -1151,40 +1163,35 @@ export default class LinkTagIntelligencePlugin extends Plugin {
         }),
         12000
       );
-      // Auto-start download
-      return this.downloadSpeechModel();
     }
 
-    // Some files missing — trigger download for missing ones
     return this.downloadSpeechModel();
   }
 
-  /**
-   * Download model files with progress Notice (D-15) and SHA256 verification (D-16).
-   * Shows manual download guide on failure (D-17).
-   */
   private async downloadSpeechModel(): Promise<boolean> {
+    const fs = this.getFs();
     const lang = this.settings.speechLanguage;
     const modelDir = this.speechRecorder.getModelDirInternal();
 
-    // Ensure model directory exists
-    try {
-      await this.app.vault.adapter.mkdir(modelDir);
-    } catch {
-      // Directory might already exist — that's fine
+    if (!fs) {
+      new Notice(this.t("speechModelNotFound"));
+      return false;
     }
+
+    // Ensure model directory exists (Node.js fs, outside vault scope)
+    fs.mkdirSync(modelDir, { recursive: true });
 
     // D-15: Show progress Notice
     const progressNotice = new Notice(
       this.t("speechModelDownloadStart", { lang: lang === "zh" ? "中文" : "English" }),
-      0  // duration 0 = stays until replaced
+      0
     );
 
     const results = await downloadModelFiles(
       lang,
       async (filename, data) => {
         const path = modelDir + filename;
-        await this.app.vault.adapter.writeBinary(path, data);
+        fs.writeFileSync(path, new Uint8Array(data));
       },
       (progress) => {
         const pct = Math.round(progress.fileProgress.percent * 100);
@@ -1203,7 +1210,6 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       }
     );
 
-    // Check results
     const failed = results.filter((r) => !r.success);
     progressNotice.hide();
 
@@ -1212,7 +1218,6 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       return true;
     }
 
-    // D-17: Some files failed — show manual download instructions
     this.showManualDownloadGuide(lang, failed.map((r) => r.filename));
     return false;
   }
