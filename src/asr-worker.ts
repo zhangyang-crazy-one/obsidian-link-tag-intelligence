@@ -30,6 +30,7 @@ function mapVadToRule2(s: number): number {
 
 let recognizer: Recognizer | null = null;
 let stream: Stream | null = null;
+let lastWasEndpoint = false;
 
 const rl = require("readline").createInterface({ input: process.stdin });
 rl.on("line", (raw: string) => {
@@ -61,6 +62,7 @@ rl.on("line", (raw: string) => {
             rule3MinUtteranceLength: 4.0,
           });
           stream = recognizer ? recognizer.createStream() : null;
+          lastWasEndpoint = false;
           process.stdout.write(JSON.stringify({ type: "ready", ok: !!recognizer }) + "\n");
         } catch (e) {
           process.stdout.write(JSON.stringify({ type: "ready", ok: false, error: String(e) }) + "\n");
@@ -74,12 +76,18 @@ rl.on("line", (raw: string) => {
         stream.acceptWaveform(16000, samples);
         let decoded = false;
         while (recognizer.isReady(stream)) { recognizer.decode(stream); decoded = true; }
-        // Only emit result when new audio was actually decoded (not silence)
         if (decoded) {
           const r = recognizer.getResult(stream);
           const isEndpoint = recognizer.isEndpoint(stream);
+          // Debounce: endpoint fires once then stays true until reset.
+          // Only emit endpoint on the first occurrence, then reset so
+          // subsequent speech produces fresh results.
+          const endpointNow = isEndpoint && !lastWasEndpoint;
+          lastWasEndpoint = isEndpoint;
           if (isEndpoint) recognizer.reset(stream);
-          process.stdout.write(JSON.stringify({ type: "result", text: r.text || "", isEndpoint }) + "\n");
+          if (r.text) {
+            process.stdout.write(JSON.stringify({ type: "result", text: r.text, isEndpoint: endpointNow }) + "\n");
+          }
         }
         break;
       }

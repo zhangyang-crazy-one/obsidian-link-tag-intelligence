@@ -7094,6 +7094,8 @@ var SpeechRecorder = class {
     this.asrProcess = null;
     this.asrStdin = null;
     this.asrReady = false;
+    this.audioBatch = [];
+    this.batchSampleCount = 0;
     this.pendingLanguage = null;
     this.appRef = null;
     this.settingsLanguage = "zh";
@@ -7159,11 +7161,23 @@ var SpeechRecorder = class {
             this.audioLevel = rms;
           }, 60);
         }
-        if (rms < 4e-3) return;
+        if (rms > 5e-4) {
+          this.audioBatch.push(chunk);
+          this.batchSampleCount += chunk.length;
+        }
+        if (this.batchSampleCount < 8e3) return;
         if (this.asrProcess && this.asrReady) {
-          const b64 = Buffer.from(new Uint8Array(chunk.buffer)).toString("base64");
+          const merged = new Float32Array(this.batchSampleCount);
+          let offset = 0;
+          for (const c of this.audioBatch) {
+            merged.set(c, offset);
+            offset += c.length;
+          }
+          const b64 = Buffer.from(new Uint8Array(merged.buffer)).toString("base64");
           this.asrStdin?.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");
         }
+        this.audioBatch = [];
+        this.batchSampleCount = 0;
       });
       this.registerDeviceChangeHandler(t);
       if (!this.asrProcess) {
@@ -7268,6 +7282,18 @@ var SpeechRecorder = class {
   async stop() {
     this.phase = "processing";
     this.removeDeviceChangeHandler();
+    if (this.asrProcess && this.asrReady && this.audioBatch.length > 0) {
+      const merged = new Float32Array(this.batchSampleCount);
+      let offset = 0;
+      for (const c of this.audioBatch) {
+        merged.set(c, offset);
+        offset += c.length;
+      }
+      const b64 = Buffer.from(new Uint8Array(merged.buffer)).toString("base64");
+      this.asrStdin?.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");
+      this.audioBatch = [];
+      this.batchSampleCount = 0;
+    }
     if (this.asrProcess && this.asrReady) {
       this.asrStdin?.write(JSON.stringify({ type: "reset" }) + "\n");
     }
@@ -7281,6 +7307,8 @@ var SpeechRecorder = class {
       this.throttleTimer = null;
     }
     this.audioLevel = 0;
+    this.audioBatch = [];
+    this.batchSampleCount = 0;
     if (this.capture) {
       stopCapture(this.capture);
       this.capture = null;
@@ -8417,40 +8445,42 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     const archivePath = modelDir + archiveName;
     const notice = new import_obsidian12.Notice(this.t("speechModelDownloadStart", { lang: "\u4E2D\u6587" }), 0);
     try {
-      const { https } = require("https");
-      const { https: _h } = { https };
-      const resp = await fetch(url);
-      if (!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);
-      const contentLength = Number(resp.headers.get("content-length") || "0");
-      const reader = resp.body.getReader();
-      const chunks = [];
-      let loaded = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        loaded += value.length;
-        const pct = contentLength > 0 ? Math.round(loaded / contentLength * 100) : 0;
-        const loadedMB = (loaded / (1024 * 1024)).toFixed(1);
-        const totalMB = (contentLength / (1024 * 1024)).toFixed(1);
-        notice.setMessage(this.t("speechModelDownloadProgress", {
-          filename: archiveName,
-          percent: pct,
-          current: 1,
-          total: 1,
-          loadedMB,
-          totalMB
-        }));
-      }
-      const total = chunks.reduce((s, c) => s + c.length, 0);
-      const buf = new Uint8Array(total);
-      let offset = 0;
-      for (const c of chunks) {
-        buf.set(c, offset);
-        offset += c.length;
-      }
-      const fs = this.getFs();
-      fs.writeFileSync(archivePath, buf);
+      const https = require("https");
+      const fs2 = require("fs");
+      const buf = await new Promise((resolve, reject) => {
+        const req = https.get(url, { headers: { "User-Agent": "Obsidian-LTI" } }, (res) => {
+          if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            const req2 = https.get(res.headers.location, (res2) => {
+              const chunks2 = [];
+              const total2 = Number(res2.headers["content-length"] || "0");
+              let loaded2 = 0;
+              res2.on("data", (chunk) => {
+                chunks2.push(chunk);
+                loaded2 += chunk.length;
+                const pct = total2 > 0 ? Math.round(loaded2 / total2 * 100) : 0;
+                notice.setMessage(`Downloading zh model: ${pct}% (${(loaded2 / (1024 * 1024)).toFixed(1)}/${(total2 / (1024 * 1024)).toFixed(1)} MB)`);
+              });
+              res2.on("end", () => resolve(Buffer.concat(chunks2)));
+              res2.on("error", reject);
+            });
+            req2.on("error", reject);
+            return;
+          }
+          const chunks = [];
+          const total = Number(res.headers["content-length"] || "0");
+          let loaded = 0;
+          res.on("data", (chunk) => {
+            chunks.push(chunk);
+            loaded += chunk.length;
+            const pct = total > 0 ? Math.round(loaded / total * 100) : 0;
+            notice.setMessage(`Downloading zh model: ${pct}% (${(loaded / (1024 * 1024)).toFixed(1)}/${(total / (1024 * 1024)).toFixed(1)} MB)`);
+          });
+          res.on("end", () => resolve(Buffer.concat(chunks)));
+          res.on("error", reject);
+        });
+        req.on("error", reject);
+      });
+      fs2.writeFileSync(archivePath, buf);
       notice.setMessage("Extracting model files...");
       try {
         const cp = require("child_process");
@@ -8461,15 +8491,15 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
         return false;
       }
       try {
-        require("fs").unlinkSync(archivePath);
+        fs2.unlinkSync(archivePath);
       } catch {
       }
       notice.hide();
-      new import_obsidian12.Notice(this.t("speechModelDownloadComplete", { lang: "\u4E2D\u6587" }));
+      new import_obsidian12.Notice("\u4E2D\u6587\u8BED\u97F3\u6A21\u578B\u5C31\u7EEA (~167 MB)\u3002\u73B0\u5728\u53EF\u4EE5\u5F00\u59CB\u5F55\u97F3\u3002");
       return true;
     } catch (e) {
       notice.hide();
-      new import_obsidian12.Notice(this.t("speechModelDownloadFailed", { error: String(e) }), 8e3);
+      new import_obsidian12.Notice("\u6A21\u578B\u4E0B\u8F7D\u5931\u8D25: " + String(e), 8e3);
       return false;
     }
   }

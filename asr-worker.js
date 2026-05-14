@@ -12,6 +12,7 @@ function mapVadToRule2(s) {
 }
 var recognizer = null;
 var stream = null;
+var lastWasEndpoint = false;
 var rl = require("readline").createInterface({ input: process.stdin });
 rl.on("line", (raw) => {
   let msg;
@@ -54,6 +55,7 @@ rl.on("line", (raw) => {
             rule3MinUtteranceLength: 4
           });
           stream = recognizer ? recognizer.createStream() : null;
+          lastWasEndpoint = false;
           process.stdout.write(JSON.stringify({ type: "ready", ok: !!recognizer }) + "\n");
         } catch (e) {
           process.stdout.write(JSON.stringify({ type: "ready", ok: false, error: String(e) }) + "\n");
@@ -73,8 +75,12 @@ rl.on("line", (raw) => {
         if (decoded) {
           const r = recognizer.getResult(stream);
           const isEndpoint = recognizer.isEndpoint(stream);
+          const endpointNow = isEndpoint && !lastWasEndpoint;
+          lastWasEndpoint = isEndpoint;
           if (isEndpoint) recognizer.reset(stream);
-          process.stdout.write(JSON.stringify({ type: "result", text: r.text || "", isEndpoint }) + "\n");
+          if (r.text) {
+            process.stdout.write(JSON.stringify({ type: "result", text: r.text, isEndpoint: endpointNow }) + "\n");
+          }
         }
         break;
       }

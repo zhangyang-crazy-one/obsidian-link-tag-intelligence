@@ -1170,35 +1170,44 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     const notice = new Notice(this.t("speechModelDownloadStart", { lang: "中文" }), 0);
 
     try {
-      // Download tar.bz2 with progress
-      const { https } = require("https") as { https: { get: (u: string, cb: (r: { on: (e: string, cb: (d: Buffer) => void) => void }) => void) => { on: (e: string, cb: () => void) => void } } };
-      const { https: _h } = { https };
-      // Use simpler approach: fetch + fs.writeFileSync
-      const resp = await fetch(url);
-      if (!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);
-      const contentLength = Number(resp.headers.get("content-length") || "0");
-      const reader = resp.body.getReader();
-      const chunks: Uint8Array[] = [];
-      let loaded = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        loaded += value.length;
-        const pct = contentLength > 0 ? Math.round((loaded / contentLength) * 100) : 0;
-        const loadedMB = (loaded / (1024 * 1024)).toFixed(1);
-        const totalMB = (contentLength / (1024 * 1024)).toFixed(1);
-        notice.setMessage(this.t("speechModelDownloadProgress", {
-          filename: archiveName, percent: pct, current: 1, total: 1, loadedMB, totalMB,
-        }));
-      }
-      // Write archive to disk
-      const total = chunks.reduce((s, c) => s + c.length, 0);
-      const buf = new Uint8Array(total);
-      let offset = 0;
-      for (const c of chunks) { buf.set(c, offset); offset += c.length; }
-      const fs = this.getFs()!;
-      fs.writeFileSync(archivePath, buf);
+      // Use Node.js https (not fetch) to avoid CORS from app://obsidian.md origin
+      const https = require("https") as typeof import("https");
+      const fs2 = require("fs") as typeof import("fs");
+      const buf = await new Promise<Buffer>((resolve, reject) => {
+        const req = https.get(url, { headers: { "User-Agent": "Obsidian-LTI" } }, (res) => {
+          if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            // Follow redirect (GitHub CDN)
+            const req2 = https.get(res.headers.location, (res2) => {
+              const chunks2: Buffer[] = [];
+              const total2 = Number(res2.headers["content-length"] || "0");
+              let loaded2 = 0;
+              res2.on("data", (chunk: Buffer) => {
+                chunks2.push(chunk);
+                loaded2 += chunk.length;
+                const pct = total2 > 0 ? Math.round((loaded2 / total2) * 100) : 0;
+                notice.setMessage(`Downloading zh model: ${pct}% (${(loaded2/(1024*1024)).toFixed(1)}/${(total2/(1024*1024)).toFixed(1)} MB)`);
+              });
+              res2.on("end", () => resolve(Buffer.concat(chunks2)));
+              res2.on("error", reject);
+            });
+            req2.on("error", reject);
+            return;
+          }
+          const chunks: Buffer[] = [];
+          const total = Number(res.headers["content-length"] || "0");
+          let loaded = 0;
+          res.on("data", (chunk: Buffer) => {
+            chunks.push(chunk);
+            loaded += chunk.length;
+            const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
+            notice.setMessage(`Downloading zh model: ${pct}% (${(loaded/(1024*1024)).toFixed(1)}/${(total/(1024*1024)).toFixed(1)} MB)`);
+          });
+          res.on("end", () => resolve(Buffer.concat(chunks)));
+          res.on("error", reject);
+        });
+        req.on("error", reject);
+      });
+      fs2.writeFileSync(archivePath, buf);
 
       // Extract with tar (strip top-level directory)
       notice.setMessage("Extracting model files...");
@@ -1214,13 +1223,13 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       }
 
       // Clean up archive file
-      try { require("fs").unlinkSync(archivePath); } catch { /* ok if can't delete */ }
+      try { fs2.unlinkSync(archivePath); } catch { /* ok */ }
       notice.hide();
-      new Notice(this.t("speechModelDownloadComplete", { lang: "中文" }));
+      new Notice("中文语音模型就绪 (~167 MB)。现在可以开始录音。");
       return true;
     } catch (e) {
       notice.hide();
-      new Notice(this.t("speechModelDownloadFailed", { error: String(e) }), 8000);
+      new Notice("模型下载失败: " + String(e), 8000);
       return false;
     }
   }
