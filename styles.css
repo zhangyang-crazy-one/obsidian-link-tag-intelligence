@@ -4978,65 +4978,58 @@ button[lvl="primary"]:hover {
    Phase 1+2: Speech Recording UI
    ============================================ */
 
-/* ── Speech Button Base ── */
-.lti-toolbar button[data-action="speechRecord"] {
-  background: transparent !important;
-  box-shadow: none !important;
-  border-color: transparent !important;
-}
-.lti-toolbar button[data-action="speechRecord"]::before { display: none; }
+/* ── Speech Button States (inherits .lti-toolbar button base) ── */
 
-/* ── Button State: Idle ── */
+/* Idle: normal button with muted text */
 .lti-toolbar button[data-action="speechRecord"].is-idle {
   color: var(--text-muted);
-  border-color: transparent;
 }
 
-/* ── Button State: Initializing (spinner) ── */
+/* Initializing: pulse animation on button */
 .lti-toolbar button[data-action="speechRecord"].is-initializing {
-  color: var(--text-muted);
-  opacity: 0.7;
   animation: lti-speech-spin 1s linear infinite;
 }
 
-/* ── Button State: Recording (pulsing accent border) ── */
+/* Recording: pulsing accent border glow */
 .lti-toolbar button[data-action="speechRecord"].is-recording {
-  color: var(--interactive-accent);
-  border-color: var(--interactive-accent);
   animation: lti-speech-pulse 1.5s ease-in-out infinite;
 }
+.lti-toolbar button[data-action="speechRecord"].is-recording::before {
+  background: var(--interactive-accent) !important;
+  opacity: 1;
+}
 
-/* ── Button State: Processing ── */
+/* Processing: fade pulse */
 .lti-toolbar button[data-action="speechRecord"].is-processing {
-  color: var(--text-muted);
-  opacity: 0.6;
   animation: lti-speech-fade-pulse 1s ease-in-out infinite;
 }
 
-/* ── Button State: Error ── */
+/* Error: red border + red accent line */
 .lti-toolbar button[data-action="speechRecord"].is-error {
-  color: #e93147 !important;
   border-color: #e93147 !important;
-  background: color-mix(in srgb, #e93147 15%, transparent) !important;
+}
+.lti-toolbar button[data-action="speechRecord"].is-error::before {
+  background: #e93147 !important;
+  opacity: 1;
 }
 
-/* ── Countdown Flash ── */
-.lti-toolbar-button.is-recording.is-countdown-flash {
+/* Countdown flash */
+.lti-toolbar button.is-recording.is-countdown-flash {
   animation: lti-countdown-flash 0.5s ease-in-out infinite alternate;
 }
 
 /* ── Keyframe Animations ── */
 @keyframes lti-speech-pulse {
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--interactive-accent) 40%, transparent); }
-  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--interactive-accent) 0%, transparent); }
+  50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--interactive-accent) 0%, transparent); }
 }
 @keyframes lti-speech-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
 @keyframes lti-speech-fade-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.8; }
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.9; }
 }
 @keyframes lti-countdown-flash {
   0% { opacity: 1; }
@@ -5046,18 +5039,19 @@ button[lvl="primary"]:hover {
 /* ── VU Meter ── */
 .lti-vu-meter {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 2px;
-  margin-left: 6px;
-  flex-shrink: 0;
+  margin-top: 0.4rem;
+  padding: 0.3rem 0;
+  height: 1.2rem;
 }
 .lti-vu-meter[hidden] { display: none !important; }
 
 .lti-vu-bar {
-  width: 4px;
-  height: 18px;
+  width: 5px;
+  height: 100%;
   border-radius: 2px;
-  background: color-mix(in srgb, var(--text-faint) 25%, transparent);
+  background: color-mix(in srgb, var(--text-faint) 18%, transparent);
   transition: background-color 80ms ease;
 }
 .lti-vu-bar.is-active-green  { background: #4caf50 !important; }
@@ -5065,13 +5059,14 @@ button[lvl="primary"]:hover {
 .lti-vu-bar.is-active-red    { background: #f44336 !important; }
 
 .lti-vu-db-label {
-  margin-left: 4px;
-  font-size: 11px;
+  margin-left: 6px;
+  font-size: 0.65rem;
   line-height: 1;
   color: var(--text-muted);
   font-family: var(--font-monospace);
-  min-width: 40px;
+  min-width: 38px;
   white-space: nowrap;
+  align-self: center;
 }
 
 /* ── Voice Settings Section ── */
