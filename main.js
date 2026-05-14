@@ -7020,9 +7020,12 @@ async function startCapture(onAudioChunk) {
     audio: {
       channelCount: 1,
       sampleRate: 16e3,
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false
+      echoCancellation: true,
+      // removes speaker/headphone echo
+      noiseSuppression: true,
+      // browser built-in denoising (WebRTC)
+      autoGainControl: true
+      // normalizes input volume
     },
     video: false
   });
@@ -7161,7 +7164,17 @@ var SpeechRecorder = class {
         }
         if (rms < 1e-3) return;
         if (this.asrProcess && this.asrReady) {
-          const b64 = Buffer.from(new Uint8Array(chunk.buffer)).toString("base64");
+          const processed = new Float32Array(chunk.length);
+          processed[0] = chunk[0];
+          const alpha = 0.97;
+          for (let i = 1; i < chunk.length; i++) {
+            processed[i] = chunk[i] - alpha * chunk[i - 1];
+          }
+          let sum = 0;
+          for (let i = 0; i < processed.length; i++) sum += processed[i];
+          const dc = sum / processed.length;
+          for (let i = 0; i < processed.length; i++) processed[i] -= dc;
+          const b64 = Buffer.from(new Uint8Array(processed.buffer)).toString("base64");
           this.asrStdin?.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");
         }
       });

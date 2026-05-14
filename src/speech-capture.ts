@@ -76,9 +76,9 @@ export async function startCapture(
     audio: {
       channelCount: 1,
       sampleRate: 16000,
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false
+      echoCancellation: true,    // removes speaker/headphone echo
+      noiseSuppression: true,    // browser built-in denoising (WebRTC)
+      autoGainControl: true      // normalizes input volume
     },
     video: false
   });

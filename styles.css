@@ -5043,14 +5043,14 @@ button[lvl="primary"]:hover {
   gap: 2px;
   margin-top: 0.4rem;
   padding: 0.3rem 0;
-  height: 1.2rem;
+  height: 1.8rem;
 }
 .lti-vu-meter[hidden] { display: none !important; }
 
 .lti-vu-bar {
-  width: 5px;
+  width: 8px;
   height: 100%;
-  border-radius: 2px;
+  border-radius: 3px;
   background: color-mix(in srgb, var(--text-faint) 18%, transparent);
   transition: background-color 80ms ease;
 }

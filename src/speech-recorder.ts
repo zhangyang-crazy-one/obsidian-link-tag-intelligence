@@ -99,10 +99,23 @@ export class SpeechRecorder {
             this.audioLevel = rms;
           }, 60);
         }
-        // Send audio chunk to ASR child process (skip near-silence)
+        // Send audio to ASR child process (skip near-silence)
         if (rms < 0.001) return;
         if (this.asrProcess && this.asrReady) {
-          const b64 = Buffer.from(new Uint8Array(chunk.buffer)).toString("base64");
+          // Pre-emphasis + DC removal: boosts high frequencies, removes DC bias.
+          // y[n] = x[n] - 0.97*x[n-1], with y[0] = x[0] (no history)
+          const processed = new Float32Array(chunk.length);
+          processed[0] = chunk[0];
+          const alpha = 0.97;
+          for (let i = 1; i < chunk.length; i++) {
+            processed[i] = chunk[i] - alpha * chunk[i - 1];
+          }
+          // Remove DC offset
+          let sum = 0;
+          for (let i = 0; i < processed.length; i++) sum += processed[i];
+          const dc = sum / processed.length;
+          for (let i = 0; i < processed.length; i++) processed[i] -= dc;
+          const b64 = Buffer.from(new Uint8Array(processed.buffer)).toString("base64");
           this.asrStdin?.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");
         }
       });
