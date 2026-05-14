@@ -37,7 +37,7 @@ export class SpeechRecorder {
     return {
       phase: this.phase,
       audioLevel: this.audioLevel,
-      dbValue: this.phase === "recording" ? rmsToDecibels(this.audioLevel) : -Infinity,
+      dbValue: this.phase === "recording" ? Math.max(rmsToDecibels(this.audioLevel), -60) : -Infinity,
       errorKey: this.phase === "error" ? (this.errorKey ?? undefined) : undefined,
       asrReady: this.asrReady
     };
@@ -92,12 +92,16 @@ export class SpeechRecorder {
     try {
       this.capture = await startCapture((chunk) => {
         // Throttled RMS update: ~60ms (16fps) for visual stability
+        const rms = calculateRMS(chunk);
         if (!this.throttleTimer) {
           this.throttleTimer = setTimeout(() => {
             this.throttleTimer = null;
-            this.audioLevel = calculateRMS(chunk);
+            this.audioLevel = rms;
           }, 60);
         }
+        // Silence gate: skip chunks below -48 dBFS (~0.004 RMS) to reduce
+        // unnecessary ASR processing and prevent noise-triggered false recognition.
+        if (rms < 0.004) return;
         // Route audio chunk to ASR child process via stdin pipe
         if (this.asrProcess && this.asrReady) {
           const b64 = Buffer.from(new Uint8Array(chunk.buffer)).toString("base64");
@@ -309,7 +313,7 @@ export class SpeechRecorder {
     const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
     const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
     const lang = this.pendingLanguage ?? "zh";
-    return pluginDir + "models/" + (lang === "zh" ? "zh-14M" : "en") + "/";
+    return pluginDir + "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
   }
 
   /** Sync settings language to SpeechRecorder (called from main.ts saveSettings). */
@@ -365,6 +369,6 @@ export class SpeechRecorder {
     const adapter = this.appRef?.vault.adapter;
     const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
     const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
-    return pluginDir + "models/" + (lang === "zh" ? "zh-14M" : "en") + "/";
+    return pluginDir + "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
   }
 }

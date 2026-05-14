@@ -7106,7 +7106,7 @@ var SpeechRecorder = class {
     return {
       phase: this.phase,
       audioLevel: this.audioLevel,
-      dbValue: this.phase === "recording" ? rmsToDecibels(this.audioLevel) : -Infinity,
+      dbValue: this.phase === "recording" ? Math.max(rmsToDecibels(this.audioLevel), -60) : -Infinity,
       errorKey: this.phase === "error" ? this.errorKey ?? void 0 : void 0,
       asrReady: this.asrReady
     };
@@ -7152,12 +7152,14 @@ var SpeechRecorder = class {
     this.phase = "initializing";
     try {
       this.capture = await startCapture((chunk) => {
+        const rms = calculateRMS(chunk);
         if (!this.throttleTimer) {
           this.throttleTimer = setTimeout(() => {
             this.throttleTimer = null;
-            this.audioLevel = calculateRMS(chunk);
+            this.audioLevel = rms;
           }, 60);
         }
+        if (rms < 4e-3) return;
         if (this.asrProcess && this.asrReady) {
           const b64 = Buffer.from(new Uint8Array(chunk.buffer)).toString("base64");
           this.asrStdin?.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");
@@ -7332,7 +7334,7 @@ var SpeechRecorder = class {
     const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
     const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
     const lang = this.pendingLanguage ?? "zh";
-    return pluginDir + "models/" + (lang === "zh" ? "zh-14M" : "en") + "/";
+    return pluginDir + "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
   }
   /** Sync settings language to SpeechRecorder (called from main.ts saveSettings). */
   setSettingsLanguage(lang) {
@@ -7381,23 +7383,19 @@ var SpeechRecorder = class {
     const adapter = this.appRef?.vault.adapter;
     const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
     const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
-    return pluginDir + "models/" + (lang === "zh" ? "zh-14M" : "en") + "/";
+    return pluginDir + "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
   }
 };
 
 // src/speech-model.ts
-var ZH_MODEL_REPO = "csukuangfj/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23";
-var EN_MODEL_REPO = "csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26";
-var ZH_MODEL_FILES = [
+var ZH_MODEL_ARCHIVE = "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2";
+var ZH_MODEL_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/" + ZH_MODEL_ARCHIVE;
+var ZH_MODEL_FILENAMES = ["encoder.int8.onnx", "decoder.onnx", "joiner.int8.onnx", "tokens.txt"];
+var EN_MODEL_REPO = "csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20";
+var EN_MODEL_FILES = [
   { filename: "encoder-epoch-99-avg-1.int8.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
   { filename: "decoder-epoch-99-avg-1.int8.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
   { filename: "joiner-epoch-99-avg-1.int8.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
-  { filename: "tokens.txt", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" }
-];
-var EN_MODEL_FILES = [
-  { filename: "encoder-epoch-99-avg-1.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
-  { filename: "decoder-epoch-99-avg-1.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
-  { filename: "joiner-epoch-99-avg-1.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
   { filename: "tokens.txt", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" }
 ];
 async function sha256Hex(buffer) {
@@ -7410,10 +7408,13 @@ async function verifyChecksum(buffer, expectedSha256) {
   return actual === expectedSha256;
 }
 function getModelFileList(language) {
-  return language === "zh" ? [...ZH_MODEL_FILES] : [...EN_MODEL_FILES];
+  return language === "zh" ? [...ZH_MODEL_FILENAMES] : EN_MODEL_FILES.map((f) => f.filename);
 }
 function getModelRepo(language) {
-  return language === "zh" ? ZH_MODEL_REPO : EN_MODEL_REPO;
+  return language === "zh" ? ZH_MODEL_URL : EN_MODEL_REPO;
+}
+function isArchiveDownload(language) {
+  return language === "zh";
 }
 async function downloadModelFile(repo, filename, onProgress) {
   const url = `https://huggingface.co/${repo}/resolve/main/${filename}`;
@@ -7501,7 +7502,6 @@ async function downloadModelFiles(language, writeFile, onProgress) {
 }
 
 // src/main.ts
-var SENTENCE_END_PUNCTUATION = /[。！？\.!\?]$/;
 var SentenceManager = class {
   constructor(plugin) {
     this.partialText = "";
@@ -7511,17 +7511,13 @@ var SentenceManager = class {
   addPartialText(text) {
     this.partialText += text;
   }
-  /** Called when isEndpoint=true — finalizes the current sentence. */
+  /** Called when isEndpoint=true or recording stops — flushes accumulated text. */
   finalizeSentence(text) {
     const sentence = text ?? this.partialText;
     this.partialText = "";
     const trimmed = sentence.trim();
     if (!trimmed) return "";
-    if (SENTENCE_END_PUNCTUATION.test(trimmed)) {
-      return trimmed;
-    }
-    const lang = this.plugin.settings.speechLanguage;
-    return trimmed + (lang === "zh" ? "\u3002" : ".");
+    return trimmed;
   }
   /** Get current accumulated partial text (for debugging). */
   getPartialText() {
@@ -8387,15 +8383,16 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
   async ensureSpeechModel() {
     const fs = this.getFs();
     const modelDir = this.speechRecorder.getModelDirInternal();
-    const fileList = getModelFileList(this.settings.speechLanguage);
+    const lang = this.settings.speechLanguage;
+    const fileList = getModelFileList(lang);
     if (!fs) {
       new import_obsidian12.Notice(this.t("speechModelNotFound"));
       return false;
     }
     let allExist = true;
     let anyExist = false;
-    for (const file of fileList) {
-      if (fs.existsSync(modelDir + file.filename)) {
+    for (const fn of fileList) {
+      if (fs.existsSync(modelDir + fn)) {
         anyExist = true;
       } else {
         allExist = false;
@@ -8403,17 +8400,78 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     }
     if (allExist) return true;
     if (!anyExist) {
-      const lang = this.settings.speechLanguage;
       new import_obsidian12.Notice(
         this.t("speechModelFirstRunTitle") + "\n\n" + this.t("speechModelFirstRunGuide", {
           modelDir,
-          zhSize: "~25 MB",
+          zhSize: "~167 MB",
           enSize: "~70 MB"
         }),
         12e3
       );
     }
     return this.downloadSpeechModel();
+  }
+  async downloadZhArchive(modelDir) {
+    const url = getModelRepo("zh");
+    const archiveName = "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2";
+    const archivePath = modelDir + archiveName;
+    const notice = new import_obsidian12.Notice(this.t("speechModelDownloadStart", { lang: "\u4E2D\u6587" }), 0);
+    try {
+      const { https } = require("https");
+      const { https: _h } = { https };
+      const resp = await fetch(url);
+      if (!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);
+      const contentLength = Number(resp.headers.get("content-length") || "0");
+      const reader = resp.body.getReader();
+      const chunks = [];
+      let loaded = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        loaded += value.length;
+        const pct = contentLength > 0 ? Math.round(loaded / contentLength * 100) : 0;
+        const loadedMB = (loaded / (1024 * 1024)).toFixed(1);
+        const totalMB = (contentLength / (1024 * 1024)).toFixed(1);
+        notice.setMessage(this.t("speechModelDownloadProgress", {
+          filename: archiveName,
+          percent: pct,
+          current: 1,
+          total: 1,
+          loadedMB,
+          totalMB
+        }));
+      }
+      const total = chunks.reduce((s, c) => s + c.length, 0);
+      const buf = new Uint8Array(total);
+      let offset = 0;
+      for (const c of chunks) {
+        buf.set(c, offset);
+        offset += c.length;
+      }
+      const fs = this.getFs();
+      fs.writeFileSync(archivePath, buf);
+      notice.setMessage("Extracting model files...");
+      try {
+        const cp = require("child_process");
+        cp.execSync(`tar -xjf "${archiveName}" --strip-components=1`, { cwd: modelDir });
+      } catch {
+        notice.hide();
+        new import_obsidian12.Notice("Download complete. Please extract " + archivePath + " manually.", 1e4);
+        return false;
+      }
+      try {
+        require("fs").unlinkSync(archivePath);
+      } catch {
+      }
+      notice.hide();
+      new import_obsidian12.Notice(this.t("speechModelDownloadComplete", { lang: "\u4E2D\u6587" }));
+      return true;
+    } catch (e) {
+      notice.hide();
+      new import_obsidian12.Notice(this.t("speechModelDownloadFailed", { error: String(e) }), 8e3);
+      return false;
+    }
   }
   async downloadSpeechModel() {
     const fs = this.getFs();
@@ -8424,6 +8482,9 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       return false;
     }
     fs.mkdirSync(modelDir, { recursive: true });
+    if (isArchiveDownload(lang)) {
+      return this.downloadZhArchive(modelDir);
+    }
     const progressNotice = new import_obsidian12.Notice(
       this.t("speechModelDownloadStart", { lang: lang === "zh" ? "\u4E2D\u6587" : "English" }),
       0

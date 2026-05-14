@@ -20,12 +20,12 @@ type Stream = {
 };
 
 function mapVadToRule1(s: number): number {
-  const m: Record<number, number> = { 0: 1.6, 1: 1.2, 2: 0.8, 3: 0.5 };
-  return m[s] ?? 0.8;
+  const m: Record<number, number> = { 0: 2.4, 1: 1.8, 2: 1.5, 3: 0.8 };
+  return m[s] ?? 1.5;
 }
 function mapVadToRule2(s: number): number {
-  const m: Record<number, number> = { 0: 0.8, 1: 0.6, 2: 0.4, 3: 0.25 };
-  return m[s] ?? 0.4;
+  const m: Record<number, number> = { 0: 1.2, 1: 0.8, 2: 0.6, 3: 0.4 };
+  return m[s] ?? 0.6;
 }
 
 let recognizer: Recognizer | null = null;
@@ -45,9 +45,9 @@ rl.on("line", (raw: string) => {
           recognizer = sherpaOnnx.createOnlineRecognizer({
             modelConfig: {
               transducer: {
-                encoder: msg.modelDir + "encoder-epoch-99-avg-1.int8.onnx",
-                decoder: msg.modelDir + "decoder-epoch-99-avg-1.int8.onnx",
-                joiner: msg.modelDir + "joiner-epoch-99-avg-1.int8.onnx",
+                encoder: msg.modelDir + "encoder.int8.onnx",
+                decoder: msg.modelDir + "decoder.onnx",
+                joiner: msg.modelDir + "joiner.int8.onnx",
               },
               tokens: msg.modelDir + "tokens.txt",
               modelingUnit: msg.language === "zh" ? "cjkchar" : "bpe",
@@ -58,7 +58,7 @@ rl.on("line", (raw: string) => {
             enableEndpoint: 1,
             rule1MinTrailingSilence: mapVadToRule1(msg.vadSensitivity ?? 2),
             rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
-            rule3MinUtteranceLength: 2.0,
+            rule3MinUtteranceLength: 4.0,
           });
           stream = recognizer ? recognizer.createStream() : null;
           process.stdout.write(JSON.stringify({ type: "ready", ok: !!recognizer }) + "\n");

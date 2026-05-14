@@ -2,34 +2,19 @@
 // Model repository constants (D-14)
 // ---------------------------------------------------------------------------
 
-/** Chinese streaming Zipformer model repo on huggingface.co. */
-const ZH_MODEL_REPO = "csukuangfj/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23";
+// 2025-06-30 Chinese Zipformer INT8 (streaming) — best accuracy on CPU
+// Source: GitHub Releases (single tar.bz2 archive)
+const ZH_MODEL_ARCHIVE = "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2";
+const ZH_MODEL_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/" + ZH_MODEL_ARCHIVE;
+const ZH_MODEL_FILENAMES = ["encoder.int8.onnx", "decoder.onnx", "joiner.int8.onnx", "tokens.txt"];
 
-/** English streaming Zipformer model repo on HuggingFace. */
-const EN_MODEL_REPO = "csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26";
-
-/**
- * Chinese model file list with expected SHA256 checksums.
- * SHA256 values should be verified against the HuggingFace repo file listing.
- * Replace these placeholders with actual values from the HF repo page.
- */
-const ZH_MODEL_FILES: ModelFileEntry[] = [
+// 2023-02-20 Bilingual zh-en Zipformer (streaming) — for English mode
+const EN_MODEL_REPO = "csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20";
+const EN_MODEL_FILES: ModelFileEntry[] = [
   { filename: "encoder-epoch-99-avg-1.int8.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
   { filename: "decoder-epoch-99-avg-1.int8.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
   { filename: "joiner-epoch-99-avg-1.int8.onnx",   sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
   { filename: "tokens.txt",                          sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
-];
-
-/**
- * English model file list with expected SHA256 checksums.
- * SHA256 values should be verified against the HuggingFace repo file listing.
- * Replace these placeholders with actual values from the HF repo page.
- */
-const EN_MODEL_FILES: ModelFileEntry[] = [
-  { filename: "encoder-epoch-99-avg-1.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
-  { filename: "decoder-epoch-99-avg-1.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
-  { filename: "joiner-epoch-99-avg-1.onnx",   sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
-  { filename: "tokens.txt",                    sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -82,14 +67,19 @@ export async function verifyChecksum(buffer: ArrayBuffer, expectedSha256: string
 // Model file list accessors
 // ---------------------------------------------------------------------------
 
-/** Return the list of model files for a given language. */
-export function getModelFileList(language: "zh" | "en"): ModelFileEntry[] {
-  return language === "zh" ? [...ZH_MODEL_FILES] : [...EN_MODEL_FILES];
+/** Return the list of model filenames for a given language. */
+export function getModelFileList(language: "zh" | "en"): string[] {
+  return language === "zh" ? [...ZH_MODEL_FILENAMES] : EN_MODEL_FILES.map((f) => f.filename);
 }
 
-/** Return the HuggingFace repo identifier for a given language. */
+/** Return the HuggingFace repo identifier (en only; zh uses GitHub Releases). */
 export function getModelRepo(language: "zh" | "en"): string {
-  return language === "zh" ? ZH_MODEL_REPO : EN_MODEL_REPO;
+  return language === "zh" ? ZH_MODEL_URL : EN_MODEL_REPO;
+}
+
+/** Whether this language uses a tar.bz2 archive download (zh) vs individual files (en). */
+export function isArchiveDownload(language: "zh" | "en"): boolean {
+  return language === "zh";
 }
 
 // ---------------------------------------------------------------------------

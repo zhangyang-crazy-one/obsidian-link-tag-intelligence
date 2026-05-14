@@ -44,7 +44,7 @@ import {
 import { LINK_TAG_INTELLIGENCE_VIEW, LinkTagIntelligenceView } from "./view";
 import type { ViewRefreshRequest } from "./view-refresh";
 import { SpeechRecorder, type RecorderSnapshot } from "./speech-recorder";
-import { downloadModelFiles, getModelFileList, getModelRepo } from "./speech-model";
+import { downloadModelFiles, getModelFileList, getModelRepo, isArchiveDownload } from "./speech-model";
 
 const SENTENCE_END_PUNCTUATION = /[。！？\.!\?]$/;
 
@@ -61,19 +61,15 @@ export class SentenceManager {
     this.partialText += text;
   }
 
-  /** Called when isEndpoint=true — finalizes the current sentence. */
+  /** Called when isEndpoint=true or recording stops — flushes accumulated text. */
   finalizeSentence(text?: string): string {
     const sentence = text ?? this.partialText;
     this.partialText = "";
-
     const trimmed = sentence.trim();
     if (!trimmed) return "";
-
-    if (SENTENCE_END_PUNCTUATION.test(trimmed)) {
-      return trimmed;
-    }
-    const lang = this.plugin.settings.speechLanguage;
-    return trimmed + (lang === "zh" ? "。" : ".");
+    // Don't auto-append punctuation — let the ASR output be raw.
+    // Users can type punctuation themselves.
+    return trimmed;
   }
 
   /** Get current accumulated partial text (for debugging). */
@@ -1131,9 +1127,9 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   private async ensureSpeechModel(): Promise<boolean> {
     const fs = this.getFs();
     const modelDir = this.speechRecorder.getModelDirInternal();
-    const fileList = getModelFileList(this.settings.speechLanguage);
+    const lang = this.settings.speechLanguage;
+    const fileList = getModelFileList(lang);
 
-    // Use Node.js fs for model files (outside vault scope)
     if (!fs) {
       new Notice(this.t("speechModelNotFound"));
       return false;
@@ -1141,8 +1137,8 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
     let allExist = true;
     let anyExist = false;
-    for (const file of fileList) {
-      if (fs.existsSync(modelDir + file.filename)) {
+    for (const fn of fileList) {
+      if (fs.existsSync(modelDir + fn)) {
         anyExist = true;
       } else {
         allExist = false;
@@ -1151,14 +1147,12 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
     if (allExist) return true;
 
-    // First-run: no model files at all — show setup guide
     if (!anyExist) {
-      const lang = this.settings.speechLanguage;
       new Notice(
         this.t("speechModelFirstRunTitle") + "\n\n" +
         this.t("speechModelFirstRunGuide", {
           modelDir,
-          zhSize: "~25 MB",
+          zhSize: "~167 MB",
           enSize: "~70 MB",
         }),
         12000
@@ -1166,6 +1160,69 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     }
 
     return this.downloadSpeechModel();
+  }
+
+  private async downloadZhArchive(modelDir: string): Promise<boolean> {
+    const url = getModelRepo("zh");
+    const archiveName = "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2";
+    const archivePath = modelDir + archiveName;
+
+    const notice = new Notice(this.t("speechModelDownloadStart", { lang: "中文" }), 0);
+
+    try {
+      // Download tar.bz2 with progress
+      const { https } = require("https") as { https: { get: (u: string, cb: (r: { on: (e: string, cb: (d: Buffer) => void) => void }) => void) => { on: (e: string, cb: () => void) => void } } };
+      const { https: _h } = { https };
+      // Use simpler approach: fetch + fs.writeFileSync
+      const resp = await fetch(url);
+      if (!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);
+      const contentLength = Number(resp.headers.get("content-length") || "0");
+      const reader = resp.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let loaded = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        loaded += value.length;
+        const pct = contentLength > 0 ? Math.round((loaded / contentLength) * 100) : 0;
+        const loadedMB = (loaded / (1024 * 1024)).toFixed(1);
+        const totalMB = (contentLength / (1024 * 1024)).toFixed(1);
+        notice.setMessage(this.t("speechModelDownloadProgress", {
+          filename: archiveName, percent: pct, current: 1, total: 1, loadedMB, totalMB,
+        }));
+      }
+      // Write archive to disk
+      const total = chunks.reduce((s, c) => s + c.length, 0);
+      const buf = new Uint8Array(total);
+      let offset = 0;
+      for (const c of chunks) { buf.set(c, offset); offset += c.length; }
+      const fs = this.getFs()!;
+      fs.writeFileSync(archivePath, buf);
+
+      // Extract with tar (strip top-level directory)
+      notice.setMessage("Extracting model files...");
+      try {
+        const cp = require("child_process") as { execSync: (c: string, o?: { cwd?: string }) => Buffer };
+        cp.execSync(`tar -xjf "${archiveName}" --strip-components=1`, { cwd: modelDir });
+      } catch {
+        // tar might not be available on Windows; try Node.js extraction
+        // For now, just leave the archive for manual extraction
+        notice.hide();
+        new Notice("Download complete. Please extract " + archivePath + " manually.", 10000);
+        return false;
+      }
+
+      // Clean up archive file
+      try { require("fs").unlinkSync(archivePath); } catch { /* ok if can't delete */ }
+      notice.hide();
+      new Notice(this.t("speechModelDownloadComplete", { lang: "中文" }));
+      return true;
+    } catch (e) {
+      notice.hide();
+      new Notice(this.t("speechModelDownloadFailed", { error: String(e) }), 8000);
+      return false;
+    }
   }
 
   private async downloadSpeechModel(): Promise<boolean> {
@@ -1178,8 +1235,14 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       return false;
     }
 
-    // Ensure model directory exists (Node.js fs, outside vault scope)
     fs.mkdirSync(modelDir, { recursive: true });
+
+    // Chinese model: single tar.bz2 from GitHub Releases
+    if (isArchiveDownload(lang)) {
+      return this.downloadZhArchive(modelDir);
+    }
+
+    // English model: individual files from HuggingFace (fallback)
 
     // D-15: Show progress Notice
     const progressNotice = new Notice(
