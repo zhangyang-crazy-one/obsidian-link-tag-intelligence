@@ -4975,14 +4975,125 @@ button[lvl="primary"]:hover {
 }
 
 /* ============================================
-   Phase 2: Speech Auto-stop Countdown (D-12)
+   Phase 1+2: Speech Recording UI
    ============================================ */
 
+/* ── Speech Button Base ── */
+.lti-toolbar button[data-action="speechRecord"] {
+  background: transparent !important;
+  box-shadow: none !important;
+  border-color: transparent !important;
+}
+.lti-toolbar button[data-action="speechRecord"]::before { display: none; }
+
+/* ── Button State: Idle ── */
+.lti-toolbar button[data-action="speechRecord"].is-idle {
+  color: var(--text-muted);
+  border-color: transparent;
+}
+
+/* ── Button State: Initializing (spinner) ── */
+.lti-toolbar button[data-action="speechRecord"].is-initializing {
+  color: var(--text-muted);
+  opacity: 0.7;
+  animation: lti-speech-spin 1s linear infinite;
+}
+
+/* ── Button State: Recording (pulsing accent border) ── */
+.lti-toolbar button[data-action="speechRecord"].is-recording {
+  color: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  animation: lti-speech-pulse 1.5s ease-in-out infinite;
+}
+
+/* ── Button State: Processing ── */
+.lti-toolbar button[data-action="speechRecord"].is-processing {
+  color: var(--text-muted);
+  opacity: 0.6;
+  animation: lti-speech-fade-pulse 1s ease-in-out infinite;
+}
+
+/* ── Button State: Error ── */
+.lti-toolbar button[data-action="speechRecord"].is-error {
+  color: #e93147 !important;
+  border-color: #e93147 !important;
+  background: color-mix(in srgb, #e93147 15%, transparent) !important;
+}
+
+/* ── Countdown Flash ── */
 .lti-toolbar-button.is-recording.is-countdown-flash {
   animation: lti-countdown-flash 0.5s ease-in-out infinite alternate;
 }
 
+/* ── Keyframe Animations ── */
+@keyframes lti-speech-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--interactive-accent) 40%, transparent); }
+  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--interactive-accent) 0%, transparent); }
+}
+@keyframes lti-speech-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes lti-speech-fade-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
 @keyframes lti-countdown-flash {
   0% { opacity: 1; }
   100% { opacity: 0.3; }
 }
+
+/* ── VU Meter ── */
+.lti-vu-meter {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+.lti-vu-meter[hidden] { display: none !important; }
+
+.lti-vu-bar {
+  width: 4px;
+  height: 18px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text-faint) 25%, transparent);
+  transition: background-color 80ms ease;
+}
+.lti-vu-bar.is-active-green  { background: #4caf50 !important; }
+.lti-vu-bar.is-active-yellow { background: #ff9800 !important; }
+.lti-vu-bar.is-active-red    { background: #f44336 !important; }
+
+.lti-vu-db-label {
+  margin-left: 4px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  min-width: 40px;
+  white-space: nowrap;
+}
+
+/* ── Voice Settings Section ── */
+.lti-voice-field-row { display: block; }
+.lti-voice-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.lti-voice-path-input { flex: 1; min-width: 0; }
+.lti-voice-browse-btn { flex-shrink: 0; }
+.lti-voice-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lti-voice-slider { flex: 1; min-width: 0; }
+.lti-voice-slider-value {
+  min-width: 1.5em;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+.lti-voice-dir-input { display: none; }

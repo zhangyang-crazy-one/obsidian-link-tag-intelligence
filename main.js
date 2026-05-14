@@ -7094,8 +7094,6 @@ var SpeechRecorder = class {
     this.asrProcess = null;
     this.asrStdin = null;
     this.asrReady = false;
-    this.audioBatch = [];
-    this.batchSampleCount = 0;
     this.pendingLanguage = null;
     this.appRef = null;
     this.settingsLanguage = "zh";
@@ -7161,23 +7159,11 @@ var SpeechRecorder = class {
             this.audioLevel = rms;
           }, 60);
         }
-        if (rms > 5e-4) {
-          this.audioBatch.push(chunk);
-          this.batchSampleCount += chunk.length;
-        }
-        if (this.batchSampleCount < 8e3) return;
+        if (rms < 1e-3) return;
         if (this.asrProcess && this.asrReady) {
-          const merged = new Float32Array(this.batchSampleCount);
-          let offset = 0;
-          for (const c of this.audioBatch) {
-            merged.set(c, offset);
-            offset += c.length;
-          }
-          const b64 = Buffer.from(new Uint8Array(merged.buffer)).toString("base64");
+          const b64 = Buffer.from(new Uint8Array(chunk.buffer)).toString("base64");
           this.asrStdin?.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");
         }
-        this.audioBatch = [];
-        this.batchSampleCount = 0;
       });
       this.registerDeviceChangeHandler(t);
       if (!this.asrProcess) {
@@ -7282,18 +7268,6 @@ var SpeechRecorder = class {
   async stop() {
     this.phase = "processing";
     this.removeDeviceChangeHandler();
-    if (this.asrProcess && this.asrReady && this.audioBatch.length > 0) {
-      const merged = new Float32Array(this.batchSampleCount);
-      let offset = 0;
-      for (const c of this.audioBatch) {
-        merged.set(c, offset);
-        offset += c.length;
-      }
-      const b64 = Buffer.from(new Uint8Array(merged.buffer)).toString("base64");
-      this.asrStdin?.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");
-      this.audioBatch = [];
-      this.batchSampleCount = 0;
-    }
     if (this.asrProcess && this.asrReady) {
       this.asrStdin?.write(JSON.stringify({ type: "reset" }) + "\n");
     }
@@ -7307,8 +7281,6 @@ var SpeechRecorder = class {
       this.throttleTimer = null;
     }
     this.audioLevel = 0;
-    this.audioBatch = [];
-    this.batchSampleCount = 0;
     if (this.capture) {
       stopCapture(this.capture);
       this.capture = null;

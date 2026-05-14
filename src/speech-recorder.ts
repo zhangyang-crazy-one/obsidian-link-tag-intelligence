@@ -24,8 +24,6 @@ export class SpeechRecorder {
   private asrProcess: any = null;
   private asrStdin: { write: (d: string) => void } | null = null;
   private asrReady = false;
-  private audioBatch: Float32Array[] = [];
-  private batchSampleCount = 0;
   private pendingLanguage: "zh" | "en" | null = null;
   private appRef: App | null = null;
   private settingsLanguage: "zh" | "en" = "zh";
@@ -101,23 +99,12 @@ export class SpeechRecorder {
             this.audioLevel = rms;
           }, 60);
         }
-        // Batch audio chunks (~256ms each) into 0.5-1s batches before ASR inference
-        // to reduce per-chunk overhead (base64 encoding, pipe I/O, WASM invocation)
-        if (rms > 0.0005) { // only batch non-silent audio (-66 dBFS floor)
-          this.audioBatch.push(chunk);
-          this.batchSampleCount += chunk.length;
-        }
-        if (this.batchSampleCount < 8000) return;
-        // Send batched chunk to ASR child process
+        // Send audio chunk to ASR child process (skip near-silence)
+        if (rms < 0.001) return;
         if (this.asrProcess && this.asrReady) {
-          const merged = new Float32Array(this.batchSampleCount);
-          let offset = 0;
-          for (const c of this.audioBatch) { merged.set(c, offset); offset += c.length; }
-          const b64 = Buffer.from(new Uint8Array(merged.buffer)).toString("base64");
+          const b64 = Buffer.from(new Uint8Array(chunk.buffer)).toString("base64");
           this.asrStdin?.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");
         }
-        this.audioBatch = [];
-        this.batchSampleCount = 0;
       });
 
       // Register device disconnect listener (D-03)
@@ -245,16 +232,6 @@ export class SpeechRecorder {
 
     this.removeDeviceChangeHandler();
 
-    // Flush remaining batched audio before reset
-    if (this.asrProcess && this.asrReady && this.audioBatch.length > 0) {
-      const merged = new Float32Array(this.batchSampleCount);
-      let offset = 0;
-      for (const c of this.audioBatch) { merged.set(c, offset); offset += c.length; }
-      const b64 = Buffer.from(new Uint8Array(merged.buffer)).toString("base64");
-      this.asrStdin?.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");
-      this.audioBatch = [];
-      this.batchSampleCount = 0;
-    }
     // Reset recognizer state for next toggle
     if (this.asrProcess && this.asrReady) {
       this.asrStdin?.write(JSON.stringify({ type: "reset" }) + "\n");
@@ -271,8 +248,6 @@ export class SpeechRecorder {
       this.throttleTimer = null;
     }
     this.audioLevel = 0;
-    this.audioBatch = [];
-    this.batchSampleCount = 0;
     if (this.capture) {
       stopCapture(this.capture);
       this.capture = null;
