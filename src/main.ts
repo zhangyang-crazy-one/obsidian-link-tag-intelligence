@@ -1165,7 +1165,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
   private async downloadZhArchive(modelDir: string): Promise<boolean> {
     const url = getModelRepo("zh");
-    const archiveName = "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2";
+    const archiveName = "sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2";
     const archivePath = modelDir + archiveName;
 
     const notice = new Notice(this.t("speechModelDownloadStart", { lang: "中文" }), 0);

@@ -7355,7 +7355,7 @@ var SpeechRecorder = class {
     const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
     const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
     const lang = this.pendingLanguage ?? "zh";
-    return pluginDir + "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
+    return pluginDir + "models/" + (lang === "zh" ? "zh-bilingual" : "en") + "/";
   }
   /** Sync settings language to SpeechRecorder (called from main.ts saveSettings). */
   setSettingsLanguage(lang) {
@@ -7425,14 +7425,20 @@ var SpeechRecorder = class {
     const adapter = this.appRef?.vault.adapter;
     const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
     const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
-    return pluginDir + "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
+    return pluginDir + "models/" + (lang === "zh" ? "zh-bilingual" : "en") + "/";
   }
 };
 
 // src/speech-model.ts
-var ZH_MODEL_ARCHIVE = "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2";
+var ZH_MODEL_ARCHIVE = "sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2";
 var ZH_MODEL_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/" + ZH_MODEL_ARCHIVE;
-var ZH_MODEL_FILENAMES = ["encoder.int8.onnx", "decoder.onnx", "joiner.int8.onnx", "tokens.txt"];
+var ZH_MODEL_FILENAMES = [
+  "encoder-epoch-99-avg-1.int8.onnx",
+  "decoder-epoch-99-avg-1.int8.onnx",
+  "joiner-epoch-99-avg-1.int8.onnx",
+  "tokens.txt",
+  "bpe.model"
+];
 var EN_MODEL_REPO = "csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20";
 var EN_MODEL_FILES = [
   { filename: "encoder-epoch-99-avg-1.int8.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
@@ -8457,7 +8463,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
   }
   async downloadZhArchive(modelDir) {
     const url = getModelRepo("zh");
-    const archiveName = "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2";
+    const archiveName = "sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2";
     const archivePath = modelDir + archiveName;
     const notice = new import_obsidian12.Notice(this.t("speechModelDownloadStart", { lang: "\u4E2D\u6587" }), 0);
     try {

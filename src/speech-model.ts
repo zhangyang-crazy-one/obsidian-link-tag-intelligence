@@ -2,11 +2,18 @@
 // Model repository constants (D-14)
 // ---------------------------------------------------------------------------
 
-// 2025-06-30 Chinese Zipformer INT8 (streaming) — best accuracy on CPU
-// Source: GitHub Releases (single tar.bz2 archive)
-const ZH_MODEL_ARCHIVE = "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2";
+// Bilingual zh-en Zipformer INT8 (streaming, byte-level BPE) — full CJK coverage
+// ALL Chinese chars encodable via UTF-8 bytes → hotwords work for any character.
+// Includes bpe.model for hotwords tokenization.
+const ZH_MODEL_ARCHIVE = "sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2";
 const ZH_MODEL_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/" + ZH_MODEL_ARCHIVE;
-const ZH_MODEL_FILENAMES = ["encoder.int8.onnx", "decoder.onnx", "joiner.int8.onnx", "tokens.txt"];
+const ZH_MODEL_FILENAMES = [
+  "encoder-epoch-99-avg-1.int8.onnx",
+  "decoder-epoch-99-avg-1.int8.onnx",
+  "joiner-epoch-99-avg-1.int8.onnx",
+  "tokens.txt",
+  "bpe.model",
+];
 
 // 2023-02-20 Bilingual zh-en Zipformer (streaming) — for English mode
 const EN_MODEL_REPO = "csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20";

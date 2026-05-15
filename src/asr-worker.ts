@@ -46,14 +46,15 @@ rl.on("line", (raw: string) => {
           recognizer = sherpaOnnx.createOnlineRecognizer({
             modelConfig: {
               transducer: {
-                encoder: msg.modelDir + "encoder.int8.onnx",
-                decoder: msg.modelDir + "decoder.onnx",
-                joiner: msg.modelDir + "joiner.int8.onnx",
+                encoder: msg.modelDir + "encoder-epoch-99-avg-1.int8.onnx",
+                decoder: msg.modelDir + "decoder-epoch-99-avg-1.int8.onnx",
+                joiner: msg.modelDir + "joiner-epoch-99-avg-1.int8.onnx",
               },
               tokens: msg.modelDir + "tokens.txt",
-              // Model: icefall multi-zh-hans zipformer-large, char-based CJK.
-              // Hotwords need cjkchar tokenization; tokens.txt has 1740 chars + 256 byte fallbacks.
-              modelingUnit: "cjkchar",
+              // Byte-level BPE model — ALL CJK chars encodable via UTF-8 bytes.
+              // bpe.model enables full hotwords tokenization.
+              modelingUnit: "bpe",
+              bpeVocab: msg.modelDir + "bpe.model",
               numThreads: 1, provider: "cpu", debug: 0,
             },
             featConfig: { sampleRate: 16000, featureDim: 80 },
