@@ -391,10 +391,11 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     // Sync ASR settings to SpeechRecorder
     this.speechRecorder.setSettingsLanguage(this.settings.speechLanguage);
     this.speechRecorder.setSettingsVadSensitivity(this.settings.speechVadSensitivity);
-
+    this.speechRecorder.setHotwordsFile(this.settings.speechHotwordsFile);
     await this.saveData(this.settings);
+    return;
 
-    // Propagate speech settings to SpeechRecorder
+    // Propagation handled above — this block is unreachable
     // D-10: Language change only propagated when NOT currently recording
     if (!this.speechRecorder.isActive) {
       this.speechRecorder.setSettingsLanguage(this.settings.speechLanguage);

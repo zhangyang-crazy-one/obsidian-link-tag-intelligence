@@ -366,12 +366,24 @@ export class SpeechRecorder {
     this.settingsVadSensitivity = clamped;
   }
 
-  /** Resolve path to optional hotwords file in plugin dir. */
+  private hotwordsPath: string | null = null;
+  setHotwordsFile(path: string): void {
+    this.hotwordsPath = path || null;
+  }
+
+  /** Resolve hotwords file path: user setting → default → null if none exists. */
   private getHotwordsPath(): string | null {
-    const adapter = this.appRef?.vault.adapter;
-    const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
-    if (!basePath) return null;
-    const path = basePath + "/.obsidian/plugins/link-tag-intelligence/models/hotwords.txt";
+    let path: string | null = null;
+    // User-configured path from settings
+    if (this.hotwordsPath) {
+      path = this.hotwordsPath;
+    } else {
+      // Default: plugin dir models/hotwords.txt
+      const adapter = this.appRef?.vault.adapter;
+      const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
+      if (basePath) path = basePath + "/.obsidian/plugins/link-tag-intelligence/models/hotwords.txt";
+    }
+    if (!path) return null;
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
       const fs = require("fs") as { existsSync: (p: string) => boolean };

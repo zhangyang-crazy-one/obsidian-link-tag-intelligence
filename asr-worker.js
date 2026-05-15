@@ -41,7 +41,10 @@ rl.on("line", (raw) => {
                 joiner: msg.modelDir + "joiner.int8.onnx"
               },
               tokens: msg.modelDir + "tokens.txt",
-              modelingUnit: msg.language === "zh" ? "cjkchar" : "bpe",
+              // Hotwords with byte-level BPE: tokens.txt IS the BPE vocab.
+              // Supported since sherpa-onnx v1.12.18 (PR #2802).
+              modelingUnit: "bpe",
+              bpeVocab: msg.modelDir + "tokens.txt",
               numThreads: 1,
               provider: "cpu",
               debug: 0

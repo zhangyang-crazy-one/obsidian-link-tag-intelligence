@@ -1096,7 +1096,7 @@ var TRANSLATIONS = {
     speechShortcutConflict: "Shortcut Ctrl+Shift+V is already in use. Please configure manually in Obsidian hotkey settings.",
     speechToggleCommand: "Toggle voice input",
     speechVadSensitivity: "VAD sensitivity",
-    speechVadSensitivityDescription: "0 = least sensitive (requires clearer speech), 3 = most sensitive (triggers more easily)",
+    speechVadSensitivityDescription: "0=Lecture (2.4s pause)  1=Slow (1.8s)  2=Normal (1.5s)  3=Fast (0.8s). Higher = shorter sentence breaks.",
     mentionsExplanation: "Notes that mention this note title or aliases without already linking to it.",
     selected: "Selected",
     notSelected: "Not selected",
@@ -1168,6 +1168,8 @@ var TRANSLATIONS = {
     speechAsrError: "Speech recognition error",
     speechAsrAutoStopCountdown: "Auto-stop in {seconds}s",
     speechAutoStopTimeoutReached: "Auto-stop: recording stopped after silence timeout.",
+    speechHotwordsFile: "Hotwords file",
+    speechHotwordsFileDescription: "Path to domain-specific vocabulary file (one term per line, optional :score). Improves recognition of specialized terminology. Default: models/hotwords.txt",
     speechModelDownloadStart: "Downloading {lang} speech model files...",
     speechModelDownloadProgress: "{filename} ({percent}%, {loadedMB}/{totalMB} MB) [{current}/{total}]",
     speechModelDownloadComplete: "{lang} speech model ready. You can now start recording.",
@@ -1459,7 +1461,7 @@ var TRANSLATIONS = {
     speechShortcutConflict: "\u5FEB\u6377\u952E Ctrl+Shift+V \u5DF2\u88AB\u5360\u7528\uFF0C\u8BF7\u5728 Obsidian \u5FEB\u6377\u952E\u8BBE\u7F6E\u4E2D\u624B\u52A8\u914D\u7F6E\u3002",
     speechToggleCommand: "\u5207\u6362\u8BED\u97F3\u8F93\u5165",
     speechVadSensitivity: "VAD \u7075\u654F\u5EA6",
-    speechVadSensitivityDescription: "0 = \u6700\u4E0D\u654F\u611F\uFF08\u9700\u8981\u66F4\u6E05\u6670\u7684\u58F0\u97F3\uFF09, 3 = \u6700\u654F\u611F\uFF08\u66F4\u5BB9\u6613\u89E6\u53D1\uFF09",
+    speechVadSensitivityDescription: "0=\u8BFE\u7A0B\u8BB2\u5EA7(2.4s\u505C\u987F)  1=\u6162\u901F(1.8s)  2=\u6B63\u5E38(1.5s)  3=\u5FEB\u901F(0.8s)\u3002\u8D8A\u9AD8\u65AD\u53E5\u8D8A\u9891\u7E41\u3002",
     mentionsExplanation: "\u5217\u51FA\u63D0\u53CA\u5F53\u524D\u7B14\u8BB0\u6807\u9898\u6216\u522B\u540D\u3001\u4F46\u5C1A\u672A\u5EFA\u7ACB\u94FE\u63A5\u7684\u7B14\u8BB0\u3002",
     selected: "\u5DF2\u9009",
     notSelected: "\u672A\u9009",
@@ -1531,6 +1533,8 @@ var TRANSLATIONS = {
     speechAsrError: "\u8BED\u97F3\u8BC6\u522B\u9519\u8BEF",
     speechAsrAutoStopCountdown: "{seconds}\u79D2\u540E\u81EA\u52A8\u505C\u6B62",
     speechAutoStopTimeoutReached: "\u81EA\u52A8\u505C\u6B62\uFF1A\u9759\u97F3\u8D85\u65F6\uFF0C\u5F55\u97F3\u5DF2\u505C\u6B62\u3002",
+    speechHotwordsFile: "\u70ED\u8BCD\u6587\u4EF6\u8DEF\u5F84",
+    speechHotwordsFileDescription: "\u9886\u57DF\u8BCD\u6C47\u6587\u4EF6\u8DEF\u5F84\uFF08\u6BCF\u884C\u4E00\u4E2A\u8BCD\uFF0C\u53EF\u9009 :\u5206\u6570 \u540E\u7F00\uFF09\u3002\u53EF\u63D0\u5347\u4E13\u4E1A\u672F\u8BED\u8BC6\u522B\u7387\u3002\u9ED8\u8BA4\u4F4D\u7F6E\uFF1Amodels/hotwords.txt",
     speechModelDownloadStart: "\u6B63\u5728\u4E0B\u8F7D{lang}\u8BED\u97F3\u6A21\u578B\u6587\u4EF6...",
     speechModelDownloadProgress: "{filename} ({percent}%, {loadedMB}/{totalMB} MB) [{current}/{total}]",
     speechModelDownloadComplete: "{lang}\u8BED\u97F3\u6A21\u578B\u5C31\u7EEA\u3002\u73B0\u5728\u53EF\u4EE5\u5F00\u59CB\u5F55\u97F3\u3002",
@@ -4759,6 +4763,7 @@ function buildDefaultSettings(configDir = "") {
     smartConnectionsResultsLimit: DEFAULT_SMART_RESULTS_LIMIT,
     speechModelPath: "",
     speechLanguage: "zh",
+    speechHotwordsFile: "",
     speechVadSensitivity: 2,
     speechAutoStopSec: 0
   };
@@ -4888,6 +4893,7 @@ function normalizeLoadedSettings(data, configDir = "") {
     defaults.smartConnectionsHeadingExclusions
   );
   normalized.smartConnectionsResultsLimit = Number.isFinite(normalized.smartConnectionsResultsLimit) && normalized.smartConnectionsResultsLimit > 0 ? normalized.smartConnectionsResultsLimit : defaults.smartConnectionsResultsLimit;
+  normalized.speechHotwordsFile = typeof normalized.speechHotwordsFile === "string" ? normalized.speechHotwordsFile.trim() : defaults.speechHotwordsFile;
   normalized.speechModelPath = typeof normalized.speechModelPath === "string" ? normalized.speechModelPath.trim() : defaults.speechModelPath;
   normalized.speechLanguage = normalized.speechLanguage === "en" ? "en" : "zh";
   normalized.speechVadSensitivity = Number.isFinite(normalized.speechVadSensitivity) && normalized.speechVadSensitivity >= 0 && normalized.speechVadSensitivity <= 3 ? Math.round(normalized.speechVadSensitivity) : defaults.speechVadSensitivity;
@@ -6037,6 +6043,15 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSetting
       });
       dirPicker.click();
     });
+    const hotwordsRow = section.createDiv({ cls: "lti-voice-field-row" });
+    const hotwordsField = this.createFieldShell(hotwordsRow, this.plugin.t("speechHotwordsFile"), this.plugin.t("speechHotwordsFileDescription"));
+    const hotwordsInput = hotwordsField.createEl("input", { cls: "lti-workbench-input", type: "text" });
+    hotwordsInput.value = this.plugin.settings.speechHotwordsFile;
+    hotwordsInput.placeholder = "models/hotwords.txt";
+    hotwordsInput.addEventListener("change", () => {
+      this.plugin.settings.speechHotwordsFile = hotwordsInput.value.trim();
+      void this.plugin.saveSettings();
+    });
     this.createSelectField(
       section,
       this.plugin.t("speechLanguage"),
@@ -7103,6 +7118,7 @@ var SpeechRecorder = class {
     this.settingsVadSensitivity = 2;
     /** Callback set by main.ts to receive ASR results. */
     this.onAsrResult = null;
+    this.hotwordsPath = null;
   }
   /** Snapshot for UI rendering (toolbar button state, VU meter). */
   getSnapshot() {
@@ -7382,12 +7398,20 @@ var SpeechRecorder = class {
     const clamped = Math.max(0, Math.min(3, Math.round(sensitivity)));
     this.settingsVadSensitivity = clamped;
   }
-  /** Resolve path to optional hotwords file in plugin dir. */
+  setHotwordsFile(path) {
+    this.hotwordsPath = path || null;
+  }
+  /** Resolve hotwords file path: user setting → default → null if none exists. */
   getHotwordsPath() {
-    const adapter = this.appRef?.vault.adapter;
-    const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
-    if (!basePath) return null;
-    const path = basePath + "/.obsidian/plugins/link-tag-intelligence/models/hotwords.txt";
+    let path = null;
+    if (this.hotwordsPath) {
+      path = this.hotwordsPath;
+    } else {
+      const adapter = this.appRef?.vault.adapter;
+      const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
+      if (basePath) path = basePath + "/.obsidian/plugins/link-tag-intelligence/models/hotwords.txt";
+    }
+    if (!path) return null;
     try {
       const fs = require("fs");
       return fs.existsSync(path) ? path : null;
@@ -7829,7 +7853,9 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     this.settings.recentLinkTargets = this.settings.recentLinkTargets.slice(0, memory);
     this.speechRecorder.setSettingsLanguage(this.settings.speechLanguage);
     this.speechRecorder.setSettingsVadSensitivity(this.settings.speechVadSensitivity);
+    this.speechRecorder.setHotwordsFile(this.settings.speechHotwordsFile);
     await this.saveData(this.settings);
+    return;
     if (!this.speechRecorder.isActive) {
       this.speechRecorder.setSettingsLanguage(this.settings.speechLanguage);
     }

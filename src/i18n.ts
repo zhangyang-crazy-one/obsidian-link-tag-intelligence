@@ -353,6 +353,8 @@ type TranslationKey =
   | "speechAsrError"
   | "speechAsrAutoStopCountdown"
   | "speechAutoStopTimeoutReached"
+  | "speechHotwordsFile"
+  | "speechHotwordsFileDescription"
   | "speechModelDownloadStart"
   | "speechModelDownloadProgress"
   | "speechModelDownloadComplete"
@@ -645,7 +647,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     speechShortcutConflict: "Shortcut Ctrl+Shift+V is already in use. Please configure manually in Obsidian hotkey settings.",
     speechToggleCommand: "Toggle voice input",
     speechVadSensitivity: "VAD sensitivity",
-    speechVadSensitivityDescription: "0 = least sensitive (requires clearer speech), 3 = most sensitive (triggers more easily)",
+    speechVadSensitivityDescription: "0=Lecture (2.4s pause)  1=Slow (1.8s)  2=Normal (1.5s)  3=Fast (0.8s). Higher = shorter sentence breaks.",
     mentionsExplanation: "Notes that mention this note title or aliases without already linking to it.",
     selected: "Selected",
     notSelected: "Not selected",
@@ -717,6 +719,8 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     speechAsrError: "Speech recognition error",
     speechAsrAutoStopCountdown: "Auto-stop in {seconds}s",
     speechAutoStopTimeoutReached: "Auto-stop: recording stopped after silence timeout.",
+    speechHotwordsFile: "Hotwords file",
+    speechHotwordsFileDescription: "Path to domain-specific vocabulary file (one term per line, optional :score). Improves recognition of specialized terminology. Default: models/hotwords.txt",
     speechModelDownloadStart: "Downloading {lang} speech model files...",
     speechModelDownloadProgress: "{filename} ({percent}%, {loadedMB}/{totalMB} MB) [{current}/{total}]",
     speechModelDownloadComplete: "{lang} speech model ready. You can now start recording.",
@@ -1008,7 +1012,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     speechShortcutConflict: "快捷键 Ctrl+Shift+V 已被占用，请在 Obsidian 快捷键设置中手动配置。",
     speechToggleCommand: "切换语音输入",
     speechVadSensitivity: "VAD 灵敏度",
-    speechVadSensitivityDescription: "0 = 最不敏感（需要更清晰的声音）, 3 = 最敏感（更容易触发）",
+    speechVadSensitivityDescription: "0=课程讲座(2.4s停顿)  1=慢速(1.8s)  2=正常(1.5s)  3=快速(0.8s)。越高断句越频繁。",
     mentionsExplanation: "列出提及当前笔记标题或别名、但尚未建立链接的笔记。",
     selected: "已选",
     notSelected: "未选",
@@ -1080,6 +1084,8 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     speechAsrError: "语音识别错误",
     speechAsrAutoStopCountdown: "{seconds}秒后自动停止",
     speechAutoStopTimeoutReached: "自动停止：静音超时，录音已停止。",
+    speechHotwordsFile: "热词文件路径",
+    speechHotwordsFileDescription: "领域词汇文件路径（每行一个词，可选 :分数 后缀）。可提升专业术语识别率。默认位置：models/hotwords.txt",
     speechModelDownloadStart: "正在下载{lang}语音模型文件...",
     speechModelDownloadProgress: "{filename} ({percent}%, {loadedMB}/{totalMB} MB) [{current}/{total}]",
     speechModelDownloadComplete: "{lang}语音模型就绪。现在可以开始录音。",

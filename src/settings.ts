@@ -138,6 +138,7 @@ export interface LinkTagIntelligenceSettings {
   smartConnectionsHeadingExclusions: string;
   smartConnectionsResultsLimit: number;
   speechModelPath: string;
+  speechHotwordsFile: string;
   speechLanguage: "zh" | "en";
   speechVadSensitivity: number;
   speechAutoStopSec: number;
@@ -178,6 +179,7 @@ export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSetting
     smartConnectionsResultsLimit: DEFAULT_SMART_RESULTS_LIMIT,
     speechModelPath: "",
     speechLanguage: "zh",
+    speechHotwordsFile: "",
     speechVadSensitivity: 2,
     speechAutoStopSec: 0
   };
@@ -347,6 +349,7 @@ export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagI
     ? normalized.smartConnectionsResultsLimit
     : defaults.smartConnectionsResultsLimit;
 
+  normalized.speechHotwordsFile = typeof normalized.speechHotwordsFile === "string" ? normalized.speechHotwordsFile.trim() : defaults.speechHotwordsFile;
   normalized.speechModelPath = typeof normalized.speechModelPath === "string" ? normalized.speechModelPath.trim() : defaults.speechModelPath;
   normalized.speechLanguage = normalized.speechLanguage === "en" ? "en" : "zh";
   normalized.speechVadSensitivity = Number.isFinite(normalized.speechVadSensitivity) && normalized.speechVadSensitivity >= 0 && normalized.speechVadSensitivity <= 3
@@ -1656,6 +1659,17 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
         document.body.removeChild(dirPicker);
       });
       dirPicker.click();
+    });
+
+    // Hotwords file path (domain-specific terminology boosting)
+    const hotwordsRow = section.createDiv({ cls: "lti-voice-field-row" });
+    const hotwordsField = this.createFieldShell(hotwordsRow, this.plugin.t("speechHotwordsFile"), this.plugin.t("speechHotwordsFileDescription"));
+    const hotwordsInput = hotwordsField.createEl("input", { cls: "lti-workbench-input", type: "text" });
+    hotwordsInput.value = this.plugin.settings.speechHotwordsFile;
+    hotwordsInput.placeholder = "models/hotwords.txt";
+    hotwordsInput.addEventListener("change", () => {
+      this.plugin.settings.speechHotwordsFile = hotwordsInput.value.trim();
+      void this.plugin.saveSettings();
     });
 
     // Language selector — dropdown with zh/en (D-16)
