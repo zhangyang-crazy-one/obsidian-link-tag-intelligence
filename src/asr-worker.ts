@@ -51,10 +51,9 @@ rl.on("line", (raw: string) => {
                 joiner: msg.modelDir + "joiner-epoch-99-avg-1.int8.onnx",
               },
               tokens: msg.modelDir + "tokens.txt",
-              // Byte-level BPE model — ALL CJK chars encodable via UTF-8 bytes.
-              // bpe.model enables full hotwords tokenization.
+              // SentencePiece BPE model — tokens.txt IS the BPE vocab (token id format).
               modelingUnit: "bpe",
-              bpeVocab: msg.modelDir + "bpe.model",
+              bpeVocab: msg.modelDir + "tokens.txt",
               numThreads: 1, provider: "cpu", debug: 0,
             },
             featConfig: { sampleRate: 16000, featureDim: 80 },
