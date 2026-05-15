@@ -30,6 +30,7 @@ function mapVadToRule2(s: number): number {
 
 let recognizer: Recognizer | null = null;
 let stream: Stream | null = null;
+let prevText = "";
 
 const rl = require("readline").createInterface({ input: process.stdin });
 rl.on("line", (raw: string) => {
@@ -61,11 +62,11 @@ rl.on("line", (raw: string) => {
             rule1MinTrailingSilence: mapVadToRule1(msg.vadSensitivity ?? 2),
             rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
             rule3MinUtteranceLength: 4.0,
-            // Hotwords disabled until bpeVocab/modelingUnit properly configured.
-            // hotwordsScore: 1.5,
-            // ...(hotwordsFile ? { hotwordsFile } : {}),
+            hotwordsScore: 3.0,
+            ...(hotwordsFile ? { hotwordsFile } : {}),
           });
           stream = recognizer ? recognizer.createStream() : null;
+          prevText = "";
           process.stdout.write(JSON.stringify({ type: "ready", ok: !!recognizer }) + "\n");
         } catch (e) {
           process.stdout.write(JSON.stringify({ type: "ready", ok: false, error: String(e) }) + "\n");
@@ -82,9 +83,16 @@ rl.on("line", (raw: string) => {
         if (decoded) {
           const r = recognizer.getResult(stream);
           const isEndpoint = recognizer.isEndpoint(stream);
-          if (isEndpoint) recognizer.reset(stream);
-          if (r.text) {
-            process.stdout.write(JSON.stringify({ type: "result", text: r.text, isEndpoint }) + "\n");
+          if (isEndpoint) {
+            recognizer.reset(stream);
+            prevText = "";
+          }
+          const fullText = r.text || "";
+          // getResult returns full accumulated text — only emit new portion
+          const newText = fullText.startsWith(prevText) ? fullText.slice(prevText.length) : fullText;
+          prevText = fullText;
+          if (newText) {
+            process.stdout.write(JSON.stringify({ type: "result", text: newText, isEndpoint }) + "\n");
           }
         }
         break;

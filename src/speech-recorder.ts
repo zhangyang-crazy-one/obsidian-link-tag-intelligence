@@ -112,33 +112,33 @@ export class SpeechRecorder {
       // Register device disconnect listener (D-03)
       this.registerDeviceChangeHandler(t);
 
-      // Fork ASR child process via shell exec (Electron sandbox blocks direct spawn).
-      // Matches existing pattern in ingestion.ts which uses child_process.exec().
       if (!this.asrProcess) {
         const adapter = this.appRef?.vault.adapter;
         const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
         const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence";
         const workerPath = pluginDir + "/asr-worker.js";
-        console.log("[lti-speech] Starting ASR via exec:", workerPath);
+        console.log("[lti-speech] Starting ASR:", workerPath);
         try {
           // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
           const cp = require("child_process") as {
-            exec: (cmd: string, opts: { cwd?: string; maxBuffer?: number }, cb: (err: Error | null, stdout: string, stderr: string) => void) => { kill: () => void };
+            spawn: (cmd: string, args: string[], opts?: { cwd?: string; stdio?: string[]; shell?: boolean }) => {
+              stdin: { write: (d: string) => void; end: () => void };
+              stdout: { on: (e: string, cb: (d: Buffer) => void) => void };
+              stderr: { on: (e: string, cb: (d: Buffer) => void) => void };
+              on: (e: string, cb: (code?: number) => void) => void;
+              kill: () => void;
+            }
           };
-          const cmd = `/usr/bin/node "${workerPath}"`;
-          const child = cp.exec(cmd, { cwd: pluginDir, maxBuffer: 10 * 1024 * 1024 }, (_err, _stdout, _stderr) => {
-            // stdout/stderr collected at process end — not suitable for streaming.
-            // We use the child process object for stdin/stdout pipes instead.
+          // shell: true avoids Electron sandbox blocking direct binary spawn
+          this.asrProcess = cp.spawn("/usr/bin/node", [workerPath], {
+            cwd: pluginDir, stdio: ["pipe", "pipe", "pipe"], shell: true,
           });
-          this.asrProcess = child;
-          this.asrStdin = { write: (d: string) => { child.stdin?.write(d); } };
-          console.log("[lti-speech] Spawned OK, pid:", child.pid ?? "unknown");
+          this.asrStdin = this.asrProcess.stdin;
+          console.log("[lti-speech] Spawned, pid:", this.asrProcess?.pid ?? "?");
 
           let stdoutBuf = "";
-          child.stdout?.on("data", (chunk: Buffer) => {
-            const raw = chunk.toString();
-            console.log("[lti-speech] stdout:", raw.trim());
-            stdoutBuf += raw;
+          this.asrProcess.stdout.on("data", (chunk: Buffer) => {
+            stdoutBuf += chunk.toString();
             const lines = stdoutBuf.split("\n");
             stdoutBuf = lines.pop() ?? "";
             for (const line of lines) {
@@ -149,12 +149,12 @@ export class SpeechRecorder {
               } catch { /* skip */ }
             }
           });
-          child.stderr?.on("data", () => { /* muted */ });
-          child.on("exit", (code: number | null) => {
+          this.asrProcess.stderr.on("data", () => {});
+          this.asrProcess.on("exit", (code: number | null) => {
             console.log("[lti-speech] ASR worker exited, code:", code);
           });
         } catch (e) {
-          console.error("[lti-speech] Exec failed:", String(e));
+          console.error("[lti-speech] Spawn failed:", String(e));
           throw new Error("ASR Worker init failed: " + String(e));
         }
       }

@@ -7190,22 +7190,19 @@ var SpeechRecorder = class {
         const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
         const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence";
         const workerPath = pluginDir + "/asr-worker.js";
-        console.log("[lti-speech] Starting ASR via exec:", workerPath);
+        console.log("[lti-speech] Starting ASR:", workerPath);
         try {
           const cp = require("child_process");
-          const cmd = `/usr/bin/node "${workerPath}"`;
-          const child = cp.exec(cmd, { cwd: pluginDir, maxBuffer: 10 * 1024 * 1024 }, (_err, _stdout, _stderr) => {
+          this.asrProcess = cp.spawn("/usr/bin/node", [workerPath], {
+            cwd: pluginDir,
+            stdio: ["pipe", "pipe", "pipe"],
+            shell: true
           });
-          this.asrProcess = child;
-          this.asrStdin = { write: (d) => {
-            child.stdin?.write(d);
-          } };
-          console.log("[lti-speech] Spawned OK, pid:", child.pid ?? "unknown");
+          this.asrStdin = this.asrProcess.stdin;
+          console.log("[lti-speech] Spawned, pid:", this.asrProcess?.pid ?? "?");
           let stdoutBuf = "";
-          child.stdout?.on("data", (chunk) => {
-            const raw = chunk.toString();
-            console.log("[lti-speech] stdout:", raw.trim());
-            stdoutBuf += raw;
+          this.asrProcess.stdout.on("data", (chunk) => {
+            stdoutBuf += chunk.toString();
             const lines = stdoutBuf.split("\n");
             stdoutBuf = lines.pop() ?? "";
             for (const line of lines) {
@@ -7217,13 +7214,13 @@ var SpeechRecorder = class {
               }
             }
           });
-          child.stderr?.on("data", () => {
+          this.asrProcess.stderr.on("data", () => {
           });
-          child.on("exit", (code) => {
+          this.asrProcess.on("exit", (code) => {
             console.log("[lti-speech] ASR worker exited, code:", code);
           });
         } catch (e) {
-          console.error("[lti-speech] Exec failed:", String(e));
+          console.error("[lti-speech] Spawn failed:", String(e));
           throw new Error("ASR Worker init failed: " + String(e));
         }
       }
