@@ -1185,8 +1185,25 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       const cp = require("child_process") as { execSync: (c: string, o?: { cwd?: string; maxBuffer?: number }) => Buffer };
       cp.execSync(`tar -xjf "${archiveName}" --strip-components=1`, { cwd: modelDir, maxBuffer: 1024 * 1024 });
 
-      // Clean up archive file
+      // Delete FP32 files (keep only INT8 — saves ~330MB)
       const fs2 = require("fs") as typeof import("fs");
+      const { join } = require("path") as { join: (...p: string[]) => string };
+      const keepInt8 = [
+        "encoder-epoch-99-avg-1.int8.onnx",
+        "decoder-epoch-99-avg-1.int8.onnx",
+        "joiner-epoch-99-avg-1.int8.onnx",
+        "tokens.txt",
+        "bpe.model",
+      ];
+      for (const f of fs2.readdirSync(modelDir)) {
+        const p = join(modelDir, f);
+        const st = fs2.statSync(p);
+        if (st.isFile() && !keepInt8.includes(f)) {
+          fs2.unlinkSync(p);
+        }
+      }
+
+      // Clean up archive file
       try { fs2.unlinkSync(archivePath); } catch { /* ok */ }
       notice.hide();
       new Notice("中文语音模型就绪 (~80 MB)。现在可以开始录音。");
