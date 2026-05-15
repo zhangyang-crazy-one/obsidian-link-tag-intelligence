@@ -39,7 +39,35 @@ if (production) {
     path.join(distDir, "node_modules", "sherpa-onnx"),
     { recursive: true }
   );
-  console.log("  dist/ ready: main.js + manifest.json + styles.css + node_modules/sherpa-onnx/");
+
+  // Download and bundle the Chinese ASR model (~80MB INT8) so users
+  // don't need to download separately. Skip if already present.
+  const modelDir = path.join(distDir, "models", "zh-2025");
+  const modelFiles = ["encoder.int8.onnx", "decoder.onnx", "joiner.int8.onnx", "tokens.txt"];
+  const modelComplete = modelFiles.every((f) => fs.existsSync(path.join(modelDir, f)));
+  if (!modelComplete) {
+    const { execSync } = await import("node:child_process");
+    const modelUrl = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2";
+    const archive = path.join(distDir, "model.tar.bz2");
+    console.log("  Downloading speech model (~132MB)...");
+    execSync(`curl -L -o "${archive}" "${modelUrl}"`, { stdio: "inherit" });
+    console.log("  Extracting...");
+    fs.mkdirSync(modelDir, { recursive: true });
+    execSync(`tar -xjf "${archive}" --strip-components=1 -C "${modelDir}"`, { stdio: "inherit" });
+    // Keep only INT8 files, delete FP32 (~330MB savings)
+    for (const f of fs.readdirSync(modelDir)) {
+      const p = path.join(modelDir, f);
+      if (fs.statSync(p).isFile() && !modelFiles.includes(f) && f !== "bpe.model") {
+        fs.unlinkSync(p);
+      }
+    }
+    // Remove test_wavs directory
+    fs.rmSync(path.join(modelDir, "test_wavs"), { recursive: true, force: true });
+    fs.unlinkSync(archive);
+    console.log("  Model ready (~80MB)");
+  }
+
+  console.log("  dist/ ready: main.js + asr-worker.js + model + sherpa-onnx");
 } else {
   await context.watch();
 }

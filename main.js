@@ -7190,7 +7190,6 @@ var SpeechRecorder = class {
         const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
         const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence";
         const workerPath = pluginDir + "/asr-worker.js";
-        console.log("[lti-speech] Starting ASR via exec:", workerPath);
         try {
           const cp = require("child_process");
           const cmd = `/usr/bin/node "${workerPath}"`;
@@ -7200,11 +7199,9 @@ var SpeechRecorder = class {
           this.asrStdin = { write: (d) => {
             child.stdin?.write(d);
           } };
-          console.log("[lti-speech] Spawned OK, pid:", child.pid ?? "unknown");
           let stdoutBuf = "";
           child.stdout?.on("data", (chunk) => {
             const raw = chunk.toString();
-            console.log("[lti-speech] stdout:", raw.trim());
             stdoutBuf += raw;
             const lines = stdoutBuf.split("\n");
             stdoutBuf = lines.pop() ?? "";
@@ -7220,7 +7217,6 @@ var SpeechRecorder = class {
           child.stderr?.on("data", () => {
           });
           child.on("exit", (code) => {
-            console.log("[lti-speech] ASR worker exited, code:", code);
           });
         } catch (e) {
           console.error("[lti-speech] Exec failed:", String(e));

@@ -119,7 +119,7 @@ export class SpeechRecorder {
         const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
         const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence";
         const workerPath = pluginDir + "/asr-worker.js";
-        console.log("[lti-speech] Starting ASR via exec:", workerPath);
+        // console.log("[lti-speech] Starting ASR via exec:", workerPath);
         try {
           // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
           const cp = require("child_process") as {
@@ -132,12 +132,12 @@ export class SpeechRecorder {
           });
           this.asrProcess = child;
           this.asrStdin = { write: (d: string) => { child.stdin?.write(d); } };
-          console.log("[lti-speech] Spawned OK, pid:", child.pid ?? "unknown");
+          // console.log("[lti-speech] Spawned OK, pid:", child.pid ?? "unknown");
 
           let stdoutBuf = "";
           child.stdout?.on("data", (chunk: Buffer) => {
             const raw = chunk.toString();
-            console.log("[lti-speech] stdout:", raw.trim());
+            // console.log("[lti-speech] stdout:", raw.trim());
             stdoutBuf += raw;
             const lines = stdoutBuf.split("\n");
             stdoutBuf = lines.pop() ?? "";
@@ -151,7 +151,7 @@ export class SpeechRecorder {
           });
           child.stderr?.on("data", () => { /* muted */ });
           child.on("exit", (code: number | null) => {
-            console.log("[lti-speech] ASR worker exited, code:", code);
+            // console.log("[lti-speech] ASR worker exited, code:", code);
           });
         } catch (e) {
           console.error("[lti-speech] Exec failed:", String(e));

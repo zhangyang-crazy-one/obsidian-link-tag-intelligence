@@ -34,6 +34,28 @@ Main actions:
 - `Manage vault tags`
 - `Suggest tags for current note`
 - `Semantic search via external command`
+- **`Voice`** — Chinese speech-to-text with local real-time transcription
+
+## Speech Recognition
+
+Real-time Chinese speech-to-text powered by [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) with the Zipformer streaming transducer model. All processing is local — audio never leaves your device.
+
+- **Shortcut:** `Ctrl+Shift+V` to start/stop recording
+- **Sidebar button:** Click the voice button in the plugin toolbar
+- **Real-time:** Text appears at cursor as you speak
+- **Offline:** No internet required for recognition
+- **Hotwords:** Domain-specific terminology boosting via `models/hotwords.txt`
+
+### Model Attribution
+
+This plugin bundles the following open-source model:
+
+> **sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30**  
+> Released by [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) under Apache 2.0  
+> Trained on [WenetSpeech](https://wenetspeech.github.io/) and multi-zh-hans datasets  
+> Converted from [icefall](https://github.com/k2-fsa/icefall) recipes
+
+We are grateful to the k2-fsa team for their outstanding work on open-source speech processing.
 
 Recommended research flow:
 
