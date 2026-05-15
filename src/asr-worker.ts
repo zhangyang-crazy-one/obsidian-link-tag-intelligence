@@ -46,14 +46,13 @@ rl.on("line", (raw: string) => {
           recognizer = sherpaOnnx.createOnlineRecognizer({
             modelConfig: {
               transducer: {
-                encoder: msg.modelDir + "encoder-epoch-99-avg-1.int8.onnx",
-                decoder: msg.modelDir + "decoder-epoch-99-avg-1.int8.onnx",
-                joiner: msg.modelDir + "joiner-epoch-99-avg-1.int8.onnx",
+                encoder: msg.modelDir + "encoder.int8.onnx",
+                decoder: msg.modelDir + "decoder.onnx",
+                joiner: msg.modelDir + "joiner.int8.onnx",
               },
               tokens: msg.modelDir + "tokens.txt",
-              // SentencePiece BPE model — bpe.vocab has token score format.
-              modelingUnit: "bpe",
-              bpeVocab: msg.modelDir + "bpe.vocab",
+              modelingUnit: "cjkchar",
+              numThreads: 1, provider: "cpu", debug: 0,
               numThreads: 1, provider: "cpu", debug: 0,
             },
             featConfig: { sampleRate: 16000, featureDim: 80 },
@@ -62,8 +61,9 @@ rl.on("line", (raw: string) => {
             rule1MinTrailingSilence: mapVadToRule1(msg.vadSensitivity ?? 2),
             rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
             rule3MinUtteranceLength: 4.0,
-            hotwordsScore: 1.5,
-            ...(hotwordsFile ? { hotwordsFile } : {}),
+            // Hotwords disabled until bpeVocab/modelingUnit properly configured.
+            // hotwordsScore: 1.5,
+            // ...(hotwordsFile ? { hotwordsFile } : {}),
           });
           stream = recognizer ? recognizer.createStream() : null;
           process.stdout.write(JSON.stringify({ type: "ready", ok: !!recognizer }) + "\n");

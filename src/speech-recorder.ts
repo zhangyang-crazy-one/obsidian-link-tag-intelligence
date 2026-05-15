@@ -315,7 +315,7 @@ export class SpeechRecorder {
     const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
     const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
     const lang = this.pendingLanguage ?? "zh";
-    return pluginDir + "models/" + (lang === "zh" ? "zh-bilingual" : "en") + "/";
+    return pluginDir + "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
   }
 
   /** Sync settings language to SpeechRecorder (called from main.ts saveSettings). */
@@ -396,6 +396,6 @@ export class SpeechRecorder {
     const adapter = this.appRef?.vault.adapter;
     const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
     const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
-    return pluginDir + "models/" + (lang === "zh" ? "zh-bilingual" : "en") + "/";
+    return pluginDir + "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
   }
 }
