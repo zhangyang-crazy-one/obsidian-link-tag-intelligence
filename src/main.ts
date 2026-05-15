@@ -1180,10 +1180,10 @@ export default class LinkTagIntelligencePlugin extends Plugin {
         { maxBuffer: 1024 * 1024 }
       );
 
-      // Extract with tar (strip top-level directory)
+      // Extract with tar
       notice.setMessage("Extracting model files...");
-      const cp = require("child_process") as { execSync: (c: string, o?: { cwd?: string; maxBuffer?: number }) => Buffer };
-      cp.execSync(`tar -xjf "${archiveName}" --strip-components=1`, { cwd: modelDir, maxBuffer: 1024 * 1024 });
+      const child_process2 = require("child_process") as { execSync: (c: string, o?: { cwd?: string; maxBuffer?: number }) => Buffer };
+      child_process2.execSync(`tar -xjf "${archiveName}" --strip-components=1`, { cwd: modelDir, maxBuffer: 1024 * 1024 });
 
       // Delete FP32 files (keep only INT8 — saves ~330MB)
       const fs2 = require("fs") as typeof import("fs");

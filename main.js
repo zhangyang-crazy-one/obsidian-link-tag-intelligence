@@ -7189,47 +7189,42 @@ var SpeechRecorder = class {
         const adapter = this.appRef?.vault.adapter;
         const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
         const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence";
-        console.log("[lti-speech] Spawning ASR worker from:", pluginDir);
+        const workerPath = pluginDir + "/asr-worker.js";
+        console.log("[lti-speech] Starting ASR via exec:", workerPath);
         try {
           const cp = require("child_process");
-          const workerPath = pluginDir + "/asr-worker.js";
-          console.log("[lti-speech] Worker path:", workerPath);
-          this.asrProcess = cp.spawn("node", [workerPath], {
-            shell: true,
-            cwd: pluginDir,
-            stdio: ["pipe", "pipe", "pipe"]
+          const cmd = `/usr/bin/node "${workerPath}"`;
+          const child = cp.exec(cmd, { cwd: pluginDir, maxBuffer: 10 * 1024 * 1024 }, (_err, _stdout, _stderr) => {
           });
-          this.asrStdin = this.asrProcess.stdin;
-          console.log("[lti-speech] Spawned OK, pid:", this.asrProcess?.pid ?? "unknown");
+          this.asrProcess = child;
+          this.asrStdin = { write: (d) => {
+            child.stdin?.write(d);
+          } };
+          console.log("[lti-speech] Spawned OK, pid:", child.pid ?? "unknown");
           let stdoutBuf = "";
-          this.asrProcess.stdout.on("data", (chunk) => {
-            stdoutBuf += chunk.toString();
+          child.stdout?.on("data", (chunk) => {
+            const raw = chunk.toString();
+            console.log("[lti-speech] stdout:", raw.trim());
+            stdoutBuf += raw;
             const lines = stdoutBuf.split("\n");
             stdoutBuf = lines.pop() ?? "";
             for (const line of lines) {
               try {
                 const msg = JSON.parse(line);
-                switch (msg.type) {
-                  case "ready":
-                    this.asrReady = !!msg.ok;
-                    break;
-                  case "result":
-                    this.onAsrResult?.(msg.text ?? "", msg.isEndpoint ?? false);
-                    break;
-                }
+                if (msg.type === "ready") this.asrReady = !!msg.ok;
+                else if (msg.type === "result") this.onAsrResult?.(msg.text ?? "", msg.isEndpoint ?? false);
               } catch {
               }
             }
           });
-          this.asrProcess.stderr.on("data", (chunk) => {
-            console.error("[lti-asr-worker]", chunk.toString());
+          child.stderr?.on("data", () => {
           });
-          this.asrProcess.on("exit", (code) => {
+          child.on("exit", (code) => {
             console.log("[lti-speech] ASR worker exited, code:", code);
           });
         } catch (e) {
-          console.error("[lti-speech] Spawn failed:", String(e));
-          throw new Error("ASR Worker init failed \u2014 cannot spawn child process: " + String(e));
+          console.error("[lti-speech] Exec failed:", String(e));
+          throw new Error("ASR Worker init failed: " + String(e));
         }
       }
       this.asrReady = false;
@@ -7355,7 +7350,7 @@ var SpeechRecorder = class {
     const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
     const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
     const lang = this.pendingLanguage ?? "zh";
-    return pluginDir + "models/" + (lang === "zh" ? "zh-bilingual" : "en") + "/";
+    return pluginDir + "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
   }
   /** Sync settings language to SpeechRecorder (called from main.ts saveSettings). */
   setSettingsLanguage(lang) {
@@ -7425,19 +7420,18 @@ var SpeechRecorder = class {
     const adapter = this.appRef?.vault.adapter;
     const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
     const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
-    return pluginDir + "models/" + (lang === "zh" ? "zh-bilingual" : "en") + "/";
+    return pluginDir + "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
   }
 };
 
 // src/speech-model.ts
-var ZH_MODEL_ARCHIVE = "sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2";
+var ZH_MODEL_ARCHIVE = "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2";
 var ZH_MODEL_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/" + ZH_MODEL_ARCHIVE;
 var ZH_MODEL_FILENAMES = [
-  "encoder-epoch-99-avg-1.int8.onnx",
-  "decoder-epoch-99-avg-1.int8.onnx",
-  "joiner-epoch-99-avg-1.int8.onnx",
-  "tokens.txt",
-  "bpe.model"
+  "encoder.int8.onnx",
+  "decoder.onnx",
+  "joiner.int8.onnx",
+  "tokens.txt"
 ];
 var EN_MODEL_REPO = "csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20";
 var EN_MODEL_FILES = [
@@ -8463,61 +8457,41 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
   }
   async downloadZhArchive(modelDir) {
     const url = getModelRepo("zh");
-    const archiveName = "sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2";
+    const archiveName = "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2";
     const archivePath = modelDir + archiveName;
     const notice = new import_obsidian12.Notice(this.t("speechModelDownloadStart", { lang: "\u4E2D\u6587" }), 0);
     try {
-      const https = require("https");
-      const fs2 = require("fs");
-      const buf = await new Promise((resolve, reject) => {
-        const req = https.get(url, { headers: { "User-Agent": "Obsidian-LTI" } }, (res) => {
-          if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-            const req2 = https.get(res.headers.location, (res2) => {
-              const chunks2 = [];
-              const total2 = Number(res2.headers["content-length"] || "0");
-              let loaded2 = 0;
-              res2.on("data", (chunk) => {
-                chunks2.push(chunk);
-                loaded2 += chunk.length;
-                const pct = total2 > 0 ? Math.round(loaded2 / total2 * 100) : 0;
-                notice.setMessage(`Downloading zh model: ${pct}% (${(loaded2 / (1024 * 1024)).toFixed(1)}/${(total2 / (1024 * 1024)).toFixed(1)} MB)`);
-              });
-              res2.on("end", () => resolve(Buffer.concat(chunks2)));
-              res2.on("error", reject);
-            });
-            req2.on("error", reject);
-            return;
-          }
-          const chunks = [];
-          const total = Number(res.headers["content-length"] || "0");
-          let loaded = 0;
-          res.on("data", (chunk) => {
-            chunks.push(chunk);
-            loaded += chunk.length;
-            const pct = total > 0 ? Math.round(loaded / total * 100) : 0;
-            notice.setMessage(`Downloading zh model: ${pct}% (${(loaded / (1024 * 1024)).toFixed(1)}/${(total / (1024 * 1024)).toFixed(1)} MB)`);
-          });
-          res.on("end", () => resolve(Buffer.concat(chunks)));
-          res.on("error", reject);
-        });
-        req.on("error", reject);
-      });
-      fs2.writeFileSync(archivePath, buf);
+      const cp = require("child_process");
+      notice.setMessage("Downloading bilingual zh-en model (~80MB)...");
+      cp.execSync(
+        `curl -L -o "${archivePath}" "${url}" --progress-bar 2>&1`,
+        { maxBuffer: 1024 * 1024 }
+      );
       notice.setMessage("Extracting model files...");
-      try {
-        const cp = require("child_process");
-        cp.execSync(`tar -xjf "${archiveName}" --strip-components=1`, { cwd: modelDir });
-      } catch {
-        notice.hide();
-        new import_obsidian12.Notice("Download complete. Please extract " + archivePath + " manually.", 1e4);
-        return false;
+      const child_process2 = require("child_process");
+      child_process2.execSync(`tar -xjf "${archiveName}" --strip-components=1`, { cwd: modelDir, maxBuffer: 1024 * 1024 });
+      const fs2 = require("fs");
+      const { join } = require("path");
+      const keepInt8 = [
+        "encoder-epoch-99-avg-1.int8.onnx",
+        "decoder-epoch-99-avg-1.int8.onnx",
+        "joiner-epoch-99-avg-1.int8.onnx",
+        "tokens.txt",
+        "bpe.model"
+      ];
+      for (const f of fs2.readdirSync(modelDir)) {
+        const p = join(modelDir, f);
+        const st = fs2.statSync(p);
+        if (st.isFile() && !keepInt8.includes(f)) {
+          fs2.unlinkSync(p);
+        }
       }
       try {
         fs2.unlinkSync(archivePath);
       } catch {
       }
       notice.hide();
-      new import_obsidian12.Notice("\u4E2D\u6587\u8BED\u97F3\u6A21\u578B\u5C31\u7EEA (~167 MB)\u3002\u73B0\u5728\u53EF\u4EE5\u5F00\u59CB\u5F55\u97F3\u3002");
+      new import_obsidian12.Notice("\u4E2D\u6587\u8BED\u97F3\u6A21\u578B\u5C31\u7EEA (~80 MB)\u3002\u73B0\u5728\u53EF\u4EE5\u5F00\u59CB\u5F55\u97F3\u3002");
       return true;
     } catch (e) {
       notice.hide();
