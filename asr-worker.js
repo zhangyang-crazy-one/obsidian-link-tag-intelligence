@@ -41,10 +41,9 @@ rl.on("line", (raw) => {
                 joiner: msg.modelDir + "joiner.int8.onnx"
               },
               tokens: msg.modelDir + "tokens.txt",
-              // Hotwords with byte-level BPE: tokens.txt IS the BPE vocab.
-              // Supported since sherpa-onnx v1.12.18 (PR #2802).
-              modelingUnit: "bpe",
-              bpeVocab: msg.modelDir + "tokens.txt",
+              // Model: icefall multi-zh-hans zipformer-large, char-based CJK.
+              // Hotwords need cjkchar tokenization; tokens.txt has 1740 chars + 256 byte fallbacks.
+              modelingUnit: "cjkchar",
               numThreads: 1,
               provider: "cpu",
               debug: 0
