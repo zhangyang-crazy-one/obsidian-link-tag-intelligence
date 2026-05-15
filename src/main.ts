@@ -1171,62 +1171,25 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     const notice = new Notice(this.t("speechModelDownloadStart", { lang: "中文" }), 0);
 
     try {
-      // Use Node.js https (not fetch) to avoid CORS from app://obsidian.md origin
-      const https = require("https") as typeof import("https");
-      const fs2 = require("fs") as typeof import("fs");
-      const buf = await new Promise<Buffer>((resolve, reject) => {
-        const req = https.get(url, { headers: { "User-Agent": "Obsidian-LTI" } }, (res) => {
-          if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-            // Follow redirect (GitHub CDN)
-            const req2 = https.get(res.headers.location, (res2) => {
-              const chunks2: Buffer[] = [];
-              const total2 = Number(res2.headers["content-length"] || "0");
-              let loaded2 = 0;
-              res2.on("data", (chunk: Buffer) => {
-                chunks2.push(chunk);
-                loaded2 += chunk.length;
-                const pct = total2 > 0 ? Math.round((loaded2 / total2) * 100) : 0;
-                notice.setMessage(`Downloading zh model: ${pct}% (${(loaded2/(1024*1024)).toFixed(1)}/${(total2/(1024*1024)).toFixed(1)} MB)`);
-              });
-              res2.on("end", () => resolve(Buffer.concat(chunks2)));
-              res2.on("error", reject);
-            });
-            req2.on("error", reject);
-            return;
-          }
-          const chunks: Buffer[] = [];
-          const total = Number(res.headers["content-length"] || "0");
-          let loaded = 0;
-          res.on("data", (chunk: Buffer) => {
-            chunks.push(chunk);
-            loaded += chunk.length;
-            const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
-            notice.setMessage(`Downloading zh model: ${pct}% (${(loaded/(1024*1024)).toFixed(1)}/${(total/(1024*1024)).toFixed(1)} MB)`);
-          });
-          res.on("end", () => resolve(Buffer.concat(chunks)));
-          res.on("error", reject);
-        });
-        req.on("error", reject);
-      });
-      fs2.writeFileSync(archivePath, buf);
+      // Use curl via child_process to respect system proxy settings.
+      // Node.js https.get() bypasses socks/http proxy; curl handles it natively.
+      const cp = require("child_process") as { execSync: (c: string, o?: { maxBuffer?: number }) => Buffer };
+      notice.setMessage("Downloading bilingual zh-en model (~80MB)...");
+      cp.execSync(
+        `curl -L -o "${archivePath}" "${url}" --progress-bar 2>&1`,
+        { maxBuffer: 1024 * 1024 }
+      );
 
       // Extract with tar (strip top-level directory)
       notice.setMessage("Extracting model files...");
-      try {
-        const cp = require("child_process") as { execSync: (c: string, o?: { cwd?: string }) => Buffer };
-        cp.execSync(`tar -xjf "${archiveName}" --strip-components=1`, { cwd: modelDir });
-      } catch {
-        // tar might not be available on Windows; try Node.js extraction
-        // For now, just leave the archive for manual extraction
-        notice.hide();
-        new Notice("Download complete. Please extract " + archivePath + " manually.", 10000);
-        return false;
-      }
+      const cp = require("child_process") as { execSync: (c: string, o?: { cwd?: string; maxBuffer?: number }) => Buffer };
+      cp.execSync(`tar -xjf "${archiveName}" --strip-components=1`, { cwd: modelDir, maxBuffer: 1024 * 1024 });
 
       // Clean up archive file
+      const fs2 = require("fs") as typeof import("fs");
       try { fs2.unlinkSync(archivePath); } catch { /* ok */ }
       notice.hide();
-      new Notice("中文语音模型就绪 (~167 MB)。现在可以开始录音。");
+      new Notice("中文语音模型就绪 (~80 MB)。现在可以开始录音。");
       return true;
     } catch (e) {
       notice.hide();
