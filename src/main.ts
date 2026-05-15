@@ -1559,15 +1559,16 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
     // Set ASR result handler
     recorder.onAsrResult = (text, isEndpoint) => {
+      if (!text) return;
       if (isEndpoint) {
-        // D-06: Sentence boundary — finalize and insert at cursor (D-07)
+        // Sentence boundary — finalize accumulated text, insert at cursor
         const finalSentence = this._sentenceManager!.finalizeSentence(text);
-        if (finalSentence) {
-          this.insertSpeechText(finalSentence);
-        }
+        this._speechPreviewLen = 0;
+        if (finalSentence) this.insertSpeechText(finalSentence);
       } else {
-        // Partial result — accumulate only (no insertion per deferred decision)
+        // Partial: show live transcription at cursor by replacing previous partial
         this._sentenceManager!.addPartialText(text);
+        this.updateSpeechPreview(this._sentenceManager!.getPartialText());
       }
     };
 
@@ -1585,6 +1586,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     if (errorKey) {
       new Notice(this.t(errorKey as Parameters<typeof this.t>[0]));
       this._sentenceManager?.reset();
+      this._speechPreviewLen = 0;
       this.refreshAllViews();
       return;
     }
@@ -1602,10 +1604,28 @@ export default class LinkTagIntelligencePlugin extends Plugin {
         if (final) this.insertSpeechText(final);
       }
       this._sentenceManager.reset();
+      this._speechPreviewLen = 0;
       this.cancelAutoStopTimer();
     }
 
     this.refreshAllViews();
+  }
+
+  private _speechPreviewLen = 0;
+
+  private updateSpeechPreview(text: string): void {
+    const editorView = this.getContextEditorView();
+    if (!editorView?.editor) return;
+    const editor = editorView.editor;
+    const cursor = editor.getCursor();
+    // Remove previous partial text
+    if (this._speechPreviewLen > 0) {
+      const start = { line: cursor.line, ch: Math.max(0, cursor.ch - this._speechPreviewLen) };
+      editor.replaceRange("", start, cursor);
+    }
+    // Insert new partial text
+    editor.replaceSelection(text);
+    this._speechPreviewLen = text.length;
   }
 
   private insertSpeechText(text: string): void {

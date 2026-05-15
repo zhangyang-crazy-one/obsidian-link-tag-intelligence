@@ -31,6 +31,7 @@ function mapVadToRule2(s: number): number {
 let recognizer: Recognizer | null = null;
 let stream: Stream | null = null;
 let prevText = "";
+let prevWasEndpoint = false;
 
 const rl = require("readline").createInterface({ input: process.stdin });
 rl.on("line", (raw: string) => {
@@ -62,11 +63,13 @@ rl.on("line", (raw: string) => {
             rule1MinTrailingSilence: mapVadToRule1(msg.vadSensitivity ?? 2),
             rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
             rule3MinUtteranceLength: 4.0,
-            hotwordsScore: 3.0,
-            ...(hotwordsFile ? { hotwordsFile } : {}),
+            // Hotwords disabled until bpeVocab/modelingUnit properly configured.
+            // hotwordsScore: 1.5,
+            // ...(hotwordsFile ? { hotwordsFile } : {}),
           });
           stream = recognizer ? recognizer.createStream() : null;
           prevText = "";
+          prevWasEndpoint = false;
           process.stdout.write(JSON.stringify({ type: "ready", ok: !!recognizer }) + "\n");
         } catch (e) {
           process.stdout.write(JSON.stringify({ type: "ready", ok: false, error: String(e) }) + "\n");
@@ -83,16 +86,19 @@ rl.on("line", (raw: string) => {
         if (decoded) {
           const r = recognizer.getResult(stream);
           const isEndpoint = recognizer.isEndpoint(stream);
-          if (isEndpoint) {
-            recognizer.reset(stream);
-            prevText = "";
-          }
-          const fullText = r.text || "";
-          // getResult returns full accumulated text — only emit new portion
-          const newText = fullText.startsWith(prevText) ? fullText.slice(prevText.length) : fullText;
-          prevText = fullText;
-          if (newText) {
-            process.stdout.write(JSON.stringify({ type: "result", text: newText, isEndpoint }) + "\n");
+          // Emit endpoint only on first occurrence. Don't reset decoder
+          // state — speaker may resume after pause and needs full context.
+          // Endpoint stays true until reset, so debounce to avoid fragments.
+          const endpointNow = isEndpoint && !prevWasEndpoint;
+          prevWasEndpoint = isEndpoint;
+          if (isEndpoint) { recognizer.reset(stream); prevWasEndpoint = false; }
+          const full = r.text || "";
+          const delta = full.startsWith(prevText) ? full.slice(prevText.length) : full;
+          prevText = full;
+          if (delta) {
+            // Only emit endpoint=true on first occurrence to avoid fragment spam
+            const emitEndpoint = endpointNow;
+            process.stdout.write(JSON.stringify({ type: "result", text: delta, isEndpoint: emitEndpoint }) + "\n");
           }
         }
         break;

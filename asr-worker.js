@@ -13,6 +13,7 @@ function mapVadToRule2(s) {
 var recognizer = null;
 var stream = null;
 var prevText = "";
+var prevWasEndpoint = false;
 var rl = require("readline").createInterface({ input: process.stdin });
 rl.on("line", (raw) => {
   let msg;
@@ -54,12 +55,14 @@ rl.on("line", (raw) => {
             enableEndpoint: 1,
             rule1MinTrailingSilence: mapVadToRule1(msg.vadSensitivity ?? 2),
             rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
-            rule3MinUtteranceLength: 4,
-            hotwordsScore: 3,
-            ...hotwordsFile ? { hotwordsFile } : {}
+            rule3MinUtteranceLength: 4
+            // Hotwords disabled until bpeVocab/modelingUnit properly configured.
+            // hotwordsScore: 1.5,
+            // ...(hotwordsFile ? { hotwordsFile } : {}),
           });
           stream = recognizer ? recognizer.createStream() : null;
           prevText = "";
+          prevWasEndpoint = false;
           process.stdout.write(JSON.stringify({ type: "ready", ok: !!recognizer }) + "\n");
         } catch (e) {
           process.stdout.write(JSON.stringify({ type: "ready", ok: false, error: String(e) }) + "\n");
@@ -79,15 +82,18 @@ rl.on("line", (raw) => {
         if (decoded) {
           const r = recognizer.getResult(stream);
           const isEndpoint = recognizer.isEndpoint(stream);
+          const endpointNow = isEndpoint && !prevWasEndpoint;
+          prevWasEndpoint = isEndpoint;
           if (isEndpoint) {
             recognizer.reset(stream);
-            prevText = "";
+            prevWasEndpoint = false;
           }
-          const fullText = r.text || "";
-          const newText = fullText.startsWith(prevText) ? fullText.slice(prevText.length) : fullText;
-          prevText = fullText;
-          if (newText) {
-            process.stdout.write(JSON.stringify({ type: "result", text: newText, isEndpoint }) + "\n");
+          const full = r.text || "";
+          const delta = full.startsWith(prevText) ? full.slice(prevText.length) : full;
+          prevText = full;
+          if (delta) {
+            const emitEndpoint = endpointNow;
+            process.stdout.write(JSON.stringify({ type: "result", text: delta, isEndpoint: emitEndpoint }) + "\n");
           }
         }
         break;

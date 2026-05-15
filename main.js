@@ -7099,102 +7099,6 @@ function rmsToDecibels(rms) {
   return 20 * Math.log10(rms);
 }
 
-// src/speech-worker.ts
-function mapRule1(s) {
-  const m = { 0: 2.4, 1: 1.8, 2: 1.5, 3: 0.8 };
-  return m[s] ?? 1.5;
-}
-function mapRule2(s) {
-  const m = { 0: 1.2, 1: 0.8, 2: 0.6, 3: 0.4 };
-  return m[s] ?? 0.6;
-}
-function createAsrEngine(pluginDir) {
-  const { join } = require("path");
-  const pkgPath = join(pluginDir, "node_modules", "sherpa-onnx");
-  const sherpaOnnx = require(pkgPath);
-  if (!sherpaOnnx?.createOnlineRecognizer) {
-    console.error("[lti-speech] sherpa-onnx not available at", pkgPath);
-    return { init: () => false, processAudio: () => ({ text: "", isEndpoint: false }), reset() {
-    }, destroy() {
-    } };
-  }
-  let recognizer = null;
-  let stream = null;
-  let prevText = "";
-  return {
-    init(modelDir, language, vadSensitivity) {
-      if (modelDir.split("/").some((p) => p === "..")) return false;
-      try {
-        recognizer = sherpaOnnx.createOnlineRecognizer(sherpaOnnx.wasmModule, {
-          modelConfig: {
-            transducer: {
-              encoder: modelDir + "encoder.int8.onnx",
-              decoder: modelDir + "decoder.onnx",
-              joiner: modelDir + "joiner.int8.onnx"
-            },
-            tokens: modelDir + "tokens.txt",
-            modelingUnit: "cjkchar",
-            bpeVocab: modelDir + "bpe.vocab",
-            numThreads: 1,
-            provider: "cpu",
-            debug: 0
-          },
-          featConfig: { sampleRate: 16e3, featureDim: 80 },
-          decodingMethod: "modified_beam_search",
-          maxActivePaths: 8,
-          enableEndpoint: 1,
-          rule1MinTrailingSilence: mapRule1(vadSensitivity),
-          rule2MinTrailingSilence: mapRule2(vadSensitivity),
-          rule3MinUtteranceLength: 4,
-          hotwordsScore: 3
-        });
-        if (!recognizer) return false;
-        stream = recognizer.createStream();
-        prevText = "";
-        return true;
-      } catch (e) {
-        console.error("[lti-speech] init failed:", String(e));
-        return false;
-      }
-    },
-    processAudio(buffer) {
-      if (!recognizer || !stream) return { text: "", isEndpoint: false };
-      const samples = new Float32Array(buffer);
-      stream.acceptWaveform(16e3, samples);
-      let decoded = false;
-      while (recognizer.isReady(stream)) {
-        recognizer.decode(stream);
-        decoded = true;
-      }
-      if (!decoded) return { text: "", isEndpoint: false };
-      const r = recognizer.getResult(stream);
-      const isEndpoint = recognizer.isEndpoint(stream);
-      if (isEndpoint) {
-        recognizer.reset(stream);
-        prevText = "";
-      }
-      const full = r.text || "";
-      const delta = full.startsWith(prevText) ? full.slice(prevText.length) : full;
-      prevText = full;
-      return { text: delta, isEndpoint };
-    },
-    reset() {
-      if (recognizer && stream) recognizer.reset(stream);
-      prevText = "";
-    },
-    destroy() {
-      if (stream) {
-        stream.free();
-        stream = null;
-      }
-      if (recognizer) {
-        recognizer.free();
-        recognizer = null;
-      }
-    }
-  };
-}
-
 // src/speech-recorder.ts
 var SpeechRecorder = class {
   constructor() {
@@ -7204,7 +7108,9 @@ var SpeechRecorder = class {
     this.errorKey = null;
     this.deviceChangeHandler = null;
     this.throttleTimer = null;
-    this.engine = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    this.asrProcess = null;
+    this.asrStdin = null;
     this.asrReady = false;
     this.pendingLanguage = null;
     this.appRef = null;
@@ -7221,7 +7127,7 @@ var SpeechRecorder = class {
       audioLevel: this.audioLevel,
       dbValue: this.phase === "recording" ? Math.max(rmsToDecibels(this.audioLevel), -60) : -Infinity,
       errorKey: this.phase === "error" ? this.errorKey ?? void 0 : void 0,
-      asrReady: this.engine !== null && this.asrReady
+      asrReady: this.asrReady
     };
   }
   /** Whether a toggle is allowed (only from idle or recording). */
@@ -7273,30 +7179,85 @@ var SpeechRecorder = class {
           }, 60);
         }
         if (rms < 1e-3) return;
-        if (this.engine && this.asrReady) {
-          const result = this.engine.processAudio(chunk.buffer);
-          if (result.text) this.onAsrResult?.(result.text, result.isEndpoint);
+        if (this.asrProcess && this.asrReady) {
+          const b64 = Buffer.from(new Uint8Array(chunk.buffer)).toString("base64");
+          this.asrStdin?.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");
         }
       });
       this.registerDeviceChangeHandler(t);
-      if (!this.engine) {
+      if (!this.asrProcess) {
         const adapter = this.appRef?.vault.adapter;
         const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
         const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence";
-        this.engine = createAsrEngine(pluginDir);
+        const workerPath = pluginDir + "/asr-worker.js";
+        console.log("[lti-speech] Starting ASR via exec:", workerPath);
+        try {
+          const cp = require("child_process");
+          const cmd = `/usr/bin/node "${workerPath}"`;
+          const child = cp.exec(cmd, { cwd: pluginDir, maxBuffer: 10 * 1024 * 1024 }, (_err, _stdout, _stderr) => {
+          });
+          this.asrProcess = child;
+          this.asrStdin = { write: (d) => {
+            child.stdin?.write(d);
+          } };
+          console.log("[lti-speech] Spawned OK, pid:", child.pid ?? "unknown");
+          let stdoutBuf = "";
+          child.stdout?.on("data", (chunk) => {
+            const raw = chunk.toString();
+            console.log("[lti-speech] stdout:", raw.trim());
+            stdoutBuf += raw;
+            const lines = stdoutBuf.split("\n");
+            stdoutBuf = lines.pop() ?? "";
+            for (const line of lines) {
+              try {
+                const msg = JSON.parse(line);
+                if (msg.type === "ready") this.asrReady = !!msg.ok;
+                else if (msg.type === "result") this.onAsrResult?.(msg.text ?? "", msg.isEndpoint ?? false);
+              } catch {
+              }
+            }
+          });
+          child.stderr?.on("data", () => {
+          });
+          child.on("exit", (code) => {
+            console.log("[lti-speech] ASR worker exited, code:", code);
+          });
+        } catch (e) {
+          console.error("[lti-speech] Exec failed:", String(e));
+          throw new Error("ASR Worker init failed: " + String(e));
+        }
       }
       this.asrReady = false;
-      const initOk = this.engine.init(this.getModelDir(), this.settingsLanguage, this.settingsVadSensitivity);
-      if (!initOk) throw new Error("ASR init failed");
-      this.asrReady = true;
+      this.pendingLanguage = this.settingsLanguage;
+      const hotwordsFile = this.getHotwordsPath();
+      const initMsg = JSON.stringify({
+        type: "init",
+        modelDir: this.getModelDir(),
+        language: this.settingsLanguage,
+        vadSensitivity: this.settingsVadSensitivity,
+        ...hotwordsFile ? { hotwordsFile } : {}
+      }) + "\n";
+      this.asrStdin?.write(initMsg);
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error("ASR Worker init timed out")), 15e3);
+        const check = setInterval(() => {
+          if (this.asrReady) {
+            clearTimeout(timeout);
+            clearInterval(check);
+            resolve();
+          }
+        }, 100);
+      });
       this.phase = "recording";
       return null;
     } catch (error) {
       this.phase = "error";
       this.cleanupCapture();
-      if (this.engine) {
-        this.engine.destroy();
-        this.engine = null;
+      if (this.asrProcess) {
+        this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
+        this.asrProcess.kill();
+        this.asrProcess = null;
+        this.asrStdin = null;
       }
       this.asrReady = false;
       if (error instanceof Error && error.message.includes("ASR Worker")) {
@@ -7323,7 +7284,9 @@ var SpeechRecorder = class {
   async stop() {
     this.phase = "processing";
     this.removeDeviceChangeHandler();
-    if (this.engine && this.asrReady) this.engine.reset();
+    if (this.asrProcess && this.asrReady) {
+      this.asrStdin?.write(JSON.stringify({ type: "reset" }) + "\n");
+    }
     this.cleanupCapture();
     this.phase = "idle";
     return null;
@@ -7403,10 +7366,10 @@ var SpeechRecorder = class {
   /** Full cleanup for plugin onunload(). */
   destroy() {
     if (this.asrProcess) {
-      if (this.engine) {
-        this.engine.destroy();
-        this.engine = null;
-      }
+      this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
+      this.asrProcess.kill();
+      this.asrProcess = null;
+      this.asrStdin = null;
       this.asrReady = false;
     }
     this.removeDeviceChangeHandler();
@@ -7419,10 +7382,10 @@ var SpeechRecorder = class {
     if (lang === this.settingsLanguage) return;
     this.settingsLanguage = lang;
     if (!this.isActive && this.asrProcess) {
-      if (this.engine) {
-        this.engine.destroy();
-        this.engine = null;
-      }
+      this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
+      this.asrProcess.kill();
+      this.asrProcess = null;
+      this.asrStdin = null;
       this.asrReady = false;
     }
   }
@@ -7621,6 +7584,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     this._sentenceManager = null;
     this.autoStopTimer = null;
     this.autoStopSecondsRemaining = 0;
+    this._speechPreviewLen = 0;
   }
   async onload() {
     await this.loadSettings();
@@ -8819,13 +8783,14 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       this._sentenceManager = new SentenceManager(this);
     }
     recorder.onAsrResult = (text, isEndpoint) => {
+      if (!text) return;
       if (isEndpoint) {
         const finalSentence = this._sentenceManager.finalizeSentence(text);
-        if (finalSentence) {
-          this.insertSpeechText(finalSentence);
-        }
+        this._speechPreviewLen = 0;
+        if (finalSentence) this.insertSpeechText(finalSentence);
       } else {
         this._sentenceManager.addPartialText(text);
+        this.updateSpeechPreview(this._sentenceManager.getPartialText());
       }
     };
     if (recorder.getSnapshot().phase === "idle") {
@@ -8838,6 +8803,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     if (errorKey) {
       new import_obsidian12.Notice(this.t(errorKey));
       this._sentenceManager?.reset();
+      this._speechPreviewLen = 0;
       this.refreshAllViews();
       return;
     }
@@ -8851,9 +8817,22 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
         if (final) this.insertSpeechText(final);
       }
       this._sentenceManager.reset();
+      this._speechPreviewLen = 0;
       this.cancelAutoStopTimer();
     }
     this.refreshAllViews();
+  }
+  updateSpeechPreview(text) {
+    const editorView = this.getContextEditorView();
+    if (!editorView?.editor) return;
+    const editor = editorView.editor;
+    const cursor = editor.getCursor();
+    if (this._speechPreviewLen > 0) {
+      const start = { line: cursor.line, ch: Math.max(0, cursor.ch - this._speechPreviewLen) };
+      editor.replaceRange("", start, cursor);
+    }
+    editor.replaceSelection(text);
+    this._speechPreviewLen = text.length;
   }
   insertSpeechText(text) {
     if (!text) return;
