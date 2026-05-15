@@ -51,9 +51,9 @@ rl.on("line", (raw: string) => {
                 joiner: msg.modelDir + "joiner-epoch-99-avg-1.int8.onnx",
               },
               tokens: msg.modelDir + "tokens.txt",
-              // SentencePiece BPE model — tokens.txt IS the BPE vocab (token id format).
+              // SentencePiece BPE model — bpe.vocab has token score format.
               modelingUnit: "bpe",
-              bpeVocab: msg.modelDir + "tokens.txt",
+              bpeVocab: msg.modelDir + "bpe.vocab",
               numThreads: 1, provider: "cpu", debug: 0,
             },
             featConfig: { sampleRate: 16000, featureDim: 80 },
