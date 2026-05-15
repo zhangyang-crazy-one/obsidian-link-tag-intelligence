@@ -7218,11 +7218,13 @@ var SpeechRecorder = class {
       }
       this.asrReady = false;
       this.pendingLanguage = this.settingsLanguage;
+      const hotwordsFile = this.getHotwordsPath();
       const initMsg = JSON.stringify({
         type: "init",
         modelDir: this.getModelDir(),
         language: this.settingsLanguage,
-        vadSensitivity: this.settingsVadSensitivity
+        vadSensitivity: this.settingsVadSensitivity,
+        ...hotwordsFile ? { hotwordsFile } : {}
       }) + "\n";
       this.asrStdin?.write(initMsg);
       await new Promise((resolve, reject) => {
@@ -7379,6 +7381,19 @@ var SpeechRecorder = class {
   setSettingsVadSensitivity(sensitivity) {
     const clamped = Math.max(0, Math.min(3, Math.round(sensitivity)));
     this.settingsVadSensitivity = clamped;
+  }
+  /** Resolve path to optional hotwords file in plugin dir. */
+  getHotwordsPath() {
+    const adapter = this.appRef?.vault.adapter;
+    const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
+    if (!basePath) return null;
+    const path = basePath + "/.obsidian/plugins/link-tag-intelligence/models/hotwords.txt";
+    try {
+      const fs = require("fs");
+      return fs.existsSync(path) ? path : null;
+    } catch {
+      return null;
+    }
   }
   /** Expose model directory path for file checks by main.ts. */
   getModelDirInternal(language) {

@@ -27,6 +27,7 @@ rl.on("line", (raw) => {
           process.stdout.write(JSON.stringify({ type: "ready", ok: false }) + "\n");
           break;
         }
+        const hotwordsFile = msg.hotwordsFile;
         if (msg.modelDir.split("/").some((p) => p === "..")) {
           process.stdout.write(JSON.stringify({ type: "ready", ok: false }) + "\n");
           break;
@@ -52,7 +53,8 @@ rl.on("line", (raw) => {
             rule1MinTrailingSilence: mapVadToRule1(msg.vadSensitivity ?? 2),
             rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
             rule3MinUtteranceLength: 4,
-            hotwordsScore: 1.5
+            hotwordsScore: 1.5,
+            ...hotwordsFile ? { hotwordsFile } : {}
           });
           stream = recognizer ? recognizer.createStream() : null;
           process.stdout.write(JSON.stringify({ type: "ready", ok: !!recognizer }) + "\n");

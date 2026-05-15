@@ -40,6 +40,7 @@ rl.on("line", (raw: string) => {
     switch (msg.type) {
       case "init": {
         if (!msg.modelDir || !msg.language) { process.stdout.write(JSON.stringify({ type: "ready", ok: false }) + "\n"); break; }
+        const hotwordsFile = msg.hotwordsFile as string | undefined;
         if (msg.modelDir.split("/").some((p) => p === "..")) { process.stdout.write(JSON.stringify({ type: "ready", ok: false }) + "\n"); break; }
         try {
           recognizer = sherpaOnnx.createOnlineRecognizer({
@@ -60,6 +61,7 @@ rl.on("line", (raw: string) => {
             rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
             rule3MinUtteranceLength: 4.0,
             hotwordsScore: 1.5,
+            ...(hotwordsFile ? { hotwordsFile } : {}),
           });
           stream = recognizer ? recognizer.createStream() : null;
           process.stdout.write(JSON.stringify({ type: "ready", ok: !!recognizer }) + "\n");
