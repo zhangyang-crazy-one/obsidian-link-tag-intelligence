@@ -5045,7 +5045,7 @@ button[lvl="primary"]:hover {
   padding: 0.3rem 0;
   height: 1.8rem;
 }
-.lti-vu-meter[hidden] { display: none !important; }
+.lti-vu-meter[hidden] { display: none; }
 
 .lti-vu-bar {
   width: 8px;
@@ -5054,9 +5054,9 @@ button[lvl="primary"]:hover {
   background: color-mix(in srgb, var(--text-faint) 18%, transparent);
   transition: background-color 80ms ease;
 }
-.lti-vu-bar.is-active-green  { background: #4caf50 !important; }
-.lti-vu-bar.is-active-yellow { background: #ff9800 !important; }
-.lti-vu-bar.is-active-red    { background: #f44336 !important; }
+.lti-vu-meter .lti-vu-bar.is-active-green  { background: #4caf50; }
+.lti-vu-meter .lti-vu-bar.is-active-yellow { background: #ff9800; }
+.lti-vu-meter .lti-vu-bar.is-active-red    { background: #f44336; }
 
 .lti-vu-db-label {
   margin-left: 6px;
