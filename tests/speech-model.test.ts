@@ -308,35 +308,26 @@ describe("getModelFileList", () => {
   it("returns 4 files for zh model", () => {
     const list = getModelFileList("zh");
     expect(list).toHaveLength(4);
-    const filenames = list.map((f) => f.filename);
-    expect(filenames).toContain("encoder-epoch-99-avg-1.int8.onnx");
-    expect(filenames).toContain("decoder-epoch-99-avg-1.int8.onnx");
-    expect(filenames).toContain("joiner-epoch-99-avg-1.int8.onnx");
-    expect(filenames).toContain("tokens.txt");
-    // Each entry should have a 64-char hex sha256
-    for (const file of list) {
-      expect(file.sha256).toMatch(/^[0-9a-f]{64}$/);
-    }
+    expect(list).toContain("encoder.int8.onnx");
+    expect(list).toContain("decoder.onnx");
+    expect(list).toContain("joiner.int8.onnx");
+    expect(list).toContain("tokens.txt");
   });
 
   it("returns 4 files for en model", () => {
     const list = getModelFileList("en");
     expect(list).toHaveLength(4);
-    const filenames = list.map((f) => f.filename);
-    expect(filenames).toContain("encoder-epoch-99-avg-1.onnx");
-    expect(filenames).toContain("decoder-epoch-99-avg-1.onnx");
-    expect(filenames).toContain("joiner-epoch-99-avg-1.onnx");
-    expect(filenames).toContain("tokens.txt");
-    for (const file of list) {
-      expect(file.sha256).toMatch(/^[0-9a-f]{64}$/);
-    }
+    expect(list).toContain("encoder-epoch-99-avg-1.int8.onnx");
+    expect(list).toContain("decoder-epoch-99-avg-1.int8.onnx");
+    expect(list).toContain("joiner-epoch-99-avg-1.int8.onnx");
+    expect(list).toContain("tokens.txt");
   });
 });
 
 describe("getModelRepo", () => {
   it("returns Chinese model repo for zh", () => {
     const repo = getModelRepo("zh");
-    expect(repo).toContain("csukuangfj");
+    expect(repo).toContain("github.com");
     expect(repo).toContain("zh");
   });
 

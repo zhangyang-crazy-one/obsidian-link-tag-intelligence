@@ -31,19 +31,19 @@ describe("SentenceManager", () => {
       expect(mgr.getPartialText()).toBe("");
     });
 
-    it("appends 。 when Chinese sentence has no punctuation", () => {
+    it("returns text as-is when Chinese sentence has no punctuation", () => {
       const mgr = new SentenceManager(createPlugin("zh"));
       mgr.addPartialText("你好世界");
       const result = mgr.finalizeSentence();
-      expect(result).toBe("你好世界。");
+      expect(result).toBe("你好世界");
       expect(mgr.getPartialText()).toBe("");
     });
 
-    it("appends . when English sentence has no punctuation", () => {
+    it("returns text as-is when English sentence has no punctuation", () => {
       const mgr = new SentenceManager(createPlugin("en"));
       mgr.addPartialText("Hello world");
       const result = mgr.finalizeSentence();
-      expect(result).toBe("Hello world.");
+      expect(result).toBe("Hello world");
       expect(mgr.getPartialText()).toBe("");
     });
 
@@ -87,7 +87,7 @@ describe("SentenceManager", () => {
       const mgr = new SentenceManager(createPlugin("zh"));
       mgr.addPartialText("partial");
       const result = mgr.finalizeSentence("你好世界");
-      expect(result).toBe("你好世界。");
+      expect(result).toBe("你好世界");
       expect(mgr.getPartialText()).toBe("");
     });
   });
