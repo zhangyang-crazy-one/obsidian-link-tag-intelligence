@@ -7031,19 +7031,22 @@ async function startCapture(onAudioChunk) {
   if (audioContext.state === "suspended") {
     await audioContext.resume();
   }
-  const mediaStream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      channelCount: 1,
-      sampleRate: 16e3,
-      echoCancellation: true,
-      // removes speaker/headphone echo
-      noiseSuppression: true,
-      // browser built-in denoising (WebRTC)
-      autoGainControl: true
-      // normalizes input volume
-    },
-    video: false
-  });
+  let mediaStream;
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        sampleRate: 16e3,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      },
+      video: false
+    });
+  } catch (error) {
+    void audioContext.close();
+    throw error;
+  }
   let processorNode = null;
   let sourceNode = null;
   let blobUrl = null;
@@ -7192,17 +7195,16 @@ var SpeechRecorder = class {
         const workerPath = pluginDir + "/asr-worker.js";
         try {
           const cp = require("child_process");
-          const cmd = `/usr/bin/node "${workerPath}"`;
-          const child = cp.exec(cmd, { cwd: pluginDir, maxBuffer: 10 * 1024 * 1024 }, (_err, _stdout, _stderr) => {
+          this.asrProcess = cp.spawn(process.execPath, [workerPath], {
+            cwd: pluginDir,
+            stdio: ["pipe", "pipe", "pipe"]
           });
-          this.asrProcess = child;
           this.asrStdin = { write: (d) => {
-            child.stdin?.write(d);
+            this.asrProcess?.stdin?.write(d);
           } };
           let stdoutBuf = "";
-          child.stdout?.on("data", (chunk) => {
-            const raw = chunk.toString();
-            stdoutBuf += raw;
+          this.asrProcess.stdout.on("data", (chunk) => {
+            stdoutBuf += chunk.toString();
             const lines = stdoutBuf.split("\n");
             stdoutBuf = lines.pop() ?? "";
             for (const line of lines) {
@@ -7214,12 +7216,11 @@ var SpeechRecorder = class {
               }
             }
           });
-          child.stderr?.on("data", () => {
+          this.asrProcess.stderr.on("data", () => {
           });
-          child.on("exit", (code) => {
+          this.asrProcess.on("exit", (_code, _signal) => {
           });
         } catch (e) {
-          console.error("[lti-speech] Exec failed:", String(e));
           throw new Error("ASR Worker init failed: " + String(e));
         }
       }
@@ -7235,7 +7236,10 @@ var SpeechRecorder = class {
       }) + "\n";
       this.asrStdin?.write(initMsg);
       await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error("ASR Worker init timed out")), 15e3);
+        const timeout = setTimeout(() => {
+          clearInterval(check);
+          reject(new Error("ASR Worker init timed out"));
+        }, 15e3);
         const check = setInterval(() => {
           if (this.asrReady) {
             clearTimeout(timeout);
@@ -7251,7 +7255,7 @@ var SpeechRecorder = class {
       this.cleanupCapture();
       if (this.asrProcess) {
         this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
-        this.asrProcess.kill();
+        this.asrProcess?.kill("SIGTERM");
         this.asrProcess = null;
         this.asrStdin = null;
       }
@@ -7363,7 +7367,7 @@ var SpeechRecorder = class {
   destroy() {
     if (this.asrProcess) {
       this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
-      this.asrProcess.kill();
+      this.asrProcess?.kill("SIGTERM");
       this.asrProcess = null;
       this.asrStdin = null;
       this.asrReady = false;
@@ -7379,7 +7383,7 @@ var SpeechRecorder = class {
     this.settingsLanguage = lang;
     if (!this.isActive && this.asrProcess) {
       this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
-      this.asrProcess.kill();
+      this.asrProcess?.kill("SIGTERM");
       this.asrProcess = null;
       this.asrStdin = null;
       this.asrReady = false;

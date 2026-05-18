@@ -68,12 +68,13 @@ export async function startCapture(
 ): Promise<CaptureState> {
   const audioContext = new AudioContext({ sampleRate: 16000 });
 
-  try {
-    if (audioContext.state === "suspended") {
-      await audioContext.resume();
-    }
+  if (audioContext.state === "suspended") {
+    await audioContext.resume();
+  }
 
-    const mediaStream = await navigator.mediaDevices.getUserMedia({
+  let mediaStream: MediaStream;
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         channelCount: 1,
         sampleRate: 16000,
@@ -83,10 +84,16 @@ export async function startCapture(
       },
       video: false
     });
+  } catch (error) {
+    void audioContext.close();  // CR-03: close context on permission/device failure
+    throw error;
+  }
 
-    let processorNode: AudioWorkletNode | ScriptProcessorNode | null = null;
-    let sourceNode: MediaStreamAudioSourceNode | null = null;
-    let blobUrl: string | null = null;
+  let processorNode: AudioWorkletNode | ScriptProcessorNode | null = null;
+  let sourceNode: MediaStreamAudioSourceNode | null = null;
+  let blobUrl: string | null = null;
+
+  try {
     // Primary path: AudioWorklet (off-main-thread, clean audio)
     const result = await tryAudioWorklet(audioContext, mediaStream, onAudioChunk);
     processorNode = result.node;
@@ -115,11 +122,6 @@ export async function startCapture(
   };
 
   return { audioContext, mediaStream, processorNode, sourceNode, blobUrl, cleanup };
-  } catch (error) {
-    // Close AudioContext on any failure to prevent resource leak (CR-03)
-    void audioContext.close();
-    throw error;
-  }
 }
 
 export function stopCapture(state: CaptureState): void {
