@@ -7195,9 +7195,10 @@ var SpeechRecorder = class {
         const workerPath = pluginDir + "/asr-worker.js";
         try {
           const cp = require("child_process");
-          this.asrProcess = cp.spawn(process.execPath, [workerPath], {
+          this.asrProcess = cp.spawn("node", [workerPath], {
             cwd: pluginDir,
-            stdio: ["pipe", "pipe", "pipe"]
+            stdio: ["pipe", "pipe", "pipe"],
+            shell: true
           });
           this.asrStdin = { write: (d) => {
             this.asrProcess?.stdin?.write(d);
@@ -7255,7 +7256,7 @@ var SpeechRecorder = class {
       this.cleanupCapture();
       if (this.asrProcess) {
         this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
-        this.asrProcess?.kill("SIGTERM");
+        this.killAsrProcess();
         this.asrProcess = null;
         this.asrStdin = null;
       }
@@ -7363,11 +7364,25 @@ var SpeechRecorder = class {
   setSettingsVadSensitivity(sensitivity) {
     this.settingsVadSensitivity = Math.max(0, Math.min(3, Math.round(sensitivity)));
   }
+  /** Kill the ASR child process and its entire process group.
+   *  With shell:true, spawn creates /bin/sh which spawns node.
+   *  process.kill(-pid) sends the signal to the entire process group. */
+  killAsrProcess() {
+    if (!this.asrProcess) return;
+    try {
+      this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
+      process.kill(-this.asrProcess.pid, "SIGTERM");
+    } catch {
+      try {
+        this.asrProcess.kill("SIGKILL");
+      } catch {
+      }
+    }
+  }
   /** Full cleanup for plugin onunload(). */
   destroy() {
     if (this.asrProcess) {
-      this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
-      this.asrProcess?.kill("SIGTERM");
+      this.killAsrProcess();
       this.asrProcess = null;
       this.asrStdin = null;
       this.asrReady = false;
@@ -7382,8 +7397,7 @@ var SpeechRecorder = class {
     if (lang === this.settingsLanguage) return;
     this.settingsLanguage = lang;
     if (!this.isActive && this.asrProcess) {
-      this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
-      this.asrProcess?.kill("SIGTERM");
+      this.killAsrProcess();
       this.asrProcess = null;
       this.asrStdin = null;
       this.asrReady = false;

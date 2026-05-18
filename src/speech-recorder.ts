@@ -132,9 +132,12 @@ export class SpeechRecorder {
               pid?: number;
             };
           };
-          this.asrProcess = cp.spawn(process.execPath, [workerPath], {
+          // Use 'node' binary (not process.execPath which is the Electron/Obsidian app binary).
+          // shell: true ensures PATH resolution for 'node' in Electron renderer.
+          this.asrProcess = cp.spawn("node", [workerPath], {
             cwd: pluginDir,
             stdio: ["pipe", "pipe", "pipe"],
+            shell: true,
           });
           this.asrStdin = { write: (d: string) => { this.asrProcess?.stdin?.write(d); } };
 
@@ -188,7 +191,7 @@ export class SpeechRecorder {
       this.cleanupCapture();
       if (this.asrProcess) {
         this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
-        this.asrProcess?.kill("SIGTERM");
+        this.killAsrProcess()
         this.asrProcess = null;
         this.asrStdin = null;
       }
@@ -320,11 +323,26 @@ export class SpeechRecorder {
     this.settingsVadSensitivity = Math.max(0, Math.min(3, Math.round(sensitivity)));
   }
 
+  /** Kill the ASR child process and its entire process group.
+   *  With shell:true, spawn creates /bin/sh which spawns node.
+   *  process.kill(-pid) sends the signal to the entire process group. */
+  private killAsrProcess(): void {
+    if (!this.asrProcess) return;
+    try {
+      // Send "destroy" first so worker can free WASM gracefully
+      this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
+      // Kill entire process group (shell + node child)
+      process.kill(-this.asrProcess.pid, "SIGTERM");
+    } catch {
+      // Fallback: direct kill on the shell process
+      try { this.asrProcess.kill("SIGKILL"); } catch { /* already dead */ }
+    }
+  }
+
   /** Full cleanup for plugin onunload(). */
   destroy(): void {
     if (this.asrProcess) {
-      this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
-      this.asrProcess?.kill("SIGTERM");
+      this.killAsrProcess()
       this.asrProcess = null;
       this.asrStdin = null;
       this.asrReady = false;
@@ -341,8 +359,7 @@ export class SpeechRecorder {
     this.settingsLanguage = lang;
     // If not currently recording, destroy child process so next spawn uses new language
     if (!this.isActive && this.asrProcess) {
-      this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
-      this.asrProcess?.kill("SIGTERM");
+      this.killAsrProcess()
       this.asrProcess = null;
       this.asrStdin = null;
       this.asrReady = false;
