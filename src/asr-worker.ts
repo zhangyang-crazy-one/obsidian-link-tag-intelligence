@@ -64,7 +64,7 @@ rl.on("line", (raw: string) => {
             rule3MinUtteranceLength: 20.0,
             hotwordsScore: 5.0,
             blankPenalty: 1.5,
-            ...(msg.hotwordsFile ? { hotwordsFile: msg.hotwordsFile } : {}),
+            ...(hotwordsFile ? { hotwordsFile } : {}),
           });
           stream = recognizer ? recognizer.createStream() : null;
           prevText = "";
