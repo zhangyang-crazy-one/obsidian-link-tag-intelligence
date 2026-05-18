@@ -1557,24 +1557,21 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       this._sentenceManager = new SentenceManager(this);
     }
 
-    // Track last inserted text to prevent duplicate insertion on stop
-    let lastInsertedText = "";
+    // Track total inserted chars this session to prevent duplicate insertion.
+    let sessionCharsInserted = 0;
 
     // Set ASR result handler
     recorder.onAsrResult = (text, isEndpoint) => {
       if (!text) return;
       if (isEndpoint) {
-        // Sentence boundary — finalize accumulated text, insert at cursor
         const finalSentence = this._sentenceManager!.finalizeSentence(text);
         this._speechPreviewLen = 0;
-        if (finalSentence && finalSentence !== lastInsertedText) {
+        if (finalSentence) {
           this.insertSpeechText(finalSentence);
-          lastInsertedText = finalSentence;
+          sessionCharsInserted += finalSentence.length;
         }
       } else {
-        // Partial: show live transcription at cursor by replacing previous partial
         this._sentenceManager!.addPartialText(text);
-        this.updateSpeechPreview(this._sentenceManager!.getPartialText());
       }
     };
 
@@ -1603,16 +1600,16 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       this.startAutoStopTimer();
     }
 
-    // On stop: flush any remaining partial text (only if we were actually recording)
+    // On stop: flush only truly NEW text beyond what was already inserted
     if (wasRecording && !recorder.isActive && this._sentenceManager) {
-      // Clear handler first so any late-arriving worker results are dropped
       recorder.onAsrResult = null;
       const remaining = this._sentenceManager.getPartialText();
-      if (remaining.trim()) {
-        const final = this._sentenceManager.finalizeSentence();
-        if (final) this.insertSpeechText(final);
-      }
       this._sentenceManager.reset();
+      // Only insert characters that exceed the already-inserted count
+      if (remaining.length > sessionCharsInserted) {
+        const extra = remaining.slice(sessionCharsInserted);
+        if (extra.trim()) this.insertSpeechText(extra);
+      }
       this._speechPreviewLen = 0;
       this.cancelAutoStopTimer();
     }

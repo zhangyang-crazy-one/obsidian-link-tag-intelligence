@@ -8795,19 +8795,18 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     if (!this._sentenceManager) {
       this._sentenceManager = new SentenceManager(this);
     }
-    let lastInsertedText = "";
+    let sessionCharsInserted = 0;
     recorder.onAsrResult = (text, isEndpoint) => {
       if (!text) return;
       if (isEndpoint) {
         const finalSentence = this._sentenceManager.finalizeSentence(text);
         this._speechPreviewLen = 0;
-        if (finalSentence && finalSentence !== lastInsertedText) {
+        if (finalSentence) {
           this.insertSpeechText(finalSentence);
-          lastInsertedText = finalSentence;
+          sessionCharsInserted += finalSentence.length;
         }
       } else {
         this._sentenceManager.addPartialText(text);
-        this.updateSpeechPreview(this._sentenceManager.getPartialText());
       }
     };
     if (recorder.getSnapshot().phase === "idle") {
@@ -8831,11 +8830,11 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     if (wasRecording && !recorder.isActive && this._sentenceManager) {
       recorder.onAsrResult = null;
       const remaining = this._sentenceManager.getPartialText();
-      if (remaining.trim()) {
-        const final = this._sentenceManager.finalizeSentence();
-        if (final) this.insertSpeechText(final);
-      }
       this._sentenceManager.reset();
+      if (remaining.length > sessionCharsInserted) {
+        const extra = remaining.slice(sessionCharsInserted);
+        if (extra.trim()) this.insertSpeechText(extra);
+      }
       this._speechPreviewLen = 0;
       this.cancelAutoStopTimer();
     }
