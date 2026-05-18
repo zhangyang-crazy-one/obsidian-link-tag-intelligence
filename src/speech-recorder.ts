@@ -90,9 +90,7 @@ export class SpeechRecorder {
     this.phase = "initializing";
 
     try {
-      console.log("[lti-speech] Starting audio capture...");
       this.capture = await startCapture((chunk) => {
-        console.log("[lti-speech] Audio chunk received, samples:", chunk.length);
         // Throttled RMS update: ~60ms (16fps) for visual stability
         const rms = calculateRMS(chunk);
         if (!this.throttleTimer) {
@@ -159,13 +157,8 @@ export class SpeechRecorder {
           this.asrProcess.stderr.on("data", (chunk: Buffer) => {
             console.error("[lti-asr-worker]", chunk.toString().trim());
           });
-          this.asrProcess.stdout.on("data", (chunk: Buffer) => {
-            // Debug: log raw worker output
-            const raw = chunk.toString().trim();
-            if (raw) console.log("[lti-asr-out]", raw);
-          });
-          this.asrProcess.on("exit", (code: number | null, signal: string | null) => {
-            console.log("[lti-speech] ASR worker exited, code:", code, "signal:", signal);
+          this.asrProcess.on("exit", (_code: number | null, _signal: string | null) => {
+            // Worker exited — cleanup handled by destroy()
           });
         } catch (e) {
           throw new Error("ASR Worker init failed: " + String(e));
@@ -197,7 +190,6 @@ export class SpeechRecorder {
       this.phase = "recording";
       return null;
     } catch (error) {
-      console.error("[lti-speech] start() failed:", String(error));
       // D-05: ASR init failure transitions to error state
       this.phase = "error";
       this.cleanupCapture();
