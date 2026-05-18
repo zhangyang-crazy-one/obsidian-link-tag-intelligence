@@ -44,21 +44,18 @@ rl.on("line", (raw) => {
               },
               tokens: msg.modelDir + "tokens.txt",
               modelingUnit: "cjkchar",
-              bpeVocab: msg.modelDir + "bpe.vocab",
               numThreads: 1,
               provider: "cpu",
               debug: 0
             },
             featConfig: { sampleRate: 16e3, featureDim: 80 },
             decodingMethod: "modified_beam_search",
-            maxActivePaths: 8,
+            maxActivePaths: 10,
             enableEndpoint: 1,
             rule1MinTrailingSilence: mapVadToRule1(msg.vadSensitivity ?? 2),
             rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
-            rule3MinUtteranceLength: 4
-            // Hotwords disabled until bpeVocab/modelingUnit properly configured.
-            // hotwordsScore: 1.5,
-            // ...(hotwordsFile ? { hotwordsFile } : {}),
+            rule3MinUtteranceLength: 20,
+            hotwordsScore: 2
           });
           stream = recognizer ? recognizer.createStream() : null;
           prevText = "";
