@@ -8795,18 +8795,13 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     if (!this._sentenceManager) {
       this._sentenceManager = new SentenceManager(this);
     }
-    let sessionCharsInserted = 0;
     recorder.onAsrResult = (text, isEndpoint) => {
       if (!text) return;
+      this._sentenceManager.addPartialText(text);
       if (isEndpoint) {
-        const finalSentence = this._sentenceManager.finalizeSentence(text);
+        const finalSentence = this._sentenceManager.finalizeSentence();
         this._speechPreviewLen = 0;
-        if (finalSentence) {
-          this.insertSpeechText(finalSentence);
-          sessionCharsInserted += finalSentence.length;
-        }
-      } else {
-        this._sentenceManager.addPartialText(text);
+        if (finalSentence) this.insertSpeechText(finalSentence);
       }
     };
     if (recorder.getSnapshot().phase === "idle") {
@@ -8816,6 +8811,9 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       }
     }
     const wasRecording = recorder.getSnapshot().phase === "recording";
+    if (wasRecording) {
+      recorder.onAsrResult = null;
+    }
     const errorKey = await recorder.toggle((key, vars) => this.t(key, vars));
     if (errorKey) {
       new import_obsidian12.Notice(this.t(errorKey));
@@ -8828,13 +8826,12 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       this.startAutoStopTimer();
     }
     if (wasRecording && !recorder.isActive && this._sentenceManager) {
-      recorder.onAsrResult = null;
       const remaining = this._sentenceManager.getPartialText();
-      this._sentenceManager.reset();
-      if (remaining.length > sessionCharsInserted) {
-        const extra = remaining.slice(sessionCharsInserted);
-        if (extra.trim()) this.insertSpeechText(extra);
+      if (remaining.trim()) {
+        const final = this._sentenceManager.finalizeSentence();
+        if (final) this.insertSpeechText(final);
       }
+      this._sentenceManager.reset();
       this._speechPreviewLen = 0;
       this.cancelAutoStopTimer();
     }

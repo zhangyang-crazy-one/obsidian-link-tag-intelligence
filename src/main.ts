@@ -1557,21 +1557,16 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       this._sentenceManager = new SentenceManager(this);
     }
 
-    // Track total inserted chars this session to prevent duplicate insertion.
-    let sessionCharsInserted = 0;
-
     // Set ASR result handler
     recorder.onAsrResult = (text, isEndpoint) => {
       if (!text) return;
+      // Always accumulate into buffer first
+      this._sentenceManager!.addPartialText(text);
       if (isEndpoint) {
-        const finalSentence = this._sentenceManager!.finalizeSentence(text);
+        // Finalize from accumulated buffer (CR-01: use buffer, not delta arg)
+        const finalSentence = this._sentenceManager!.finalizeSentence();
         this._speechPreviewLen = 0;
-        if (finalSentence) {
-          this.insertSpeechText(finalSentence);
-          sessionCharsInserted += finalSentence.length;
-        }
-      } else {
-        this._sentenceManager!.addPartialText(text);
+        if (finalSentence) this.insertSpeechText(finalSentence);
       }
     };
 
@@ -1579,12 +1574,16 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     if (recorder.getSnapshot().phase === "idle") {
       const modelReady = await this.ensureSpeechModel();
       if (!modelReady) {
-        // Model files missing — abort toggle (ensureSpeechModel shows Notice)
         return;
       }
     }
 
+    // CR-03: Null handler BEFORE toggle to prevent race with pending results
     const wasRecording = recorder.getSnapshot().phase === "recording";
+    if (wasRecording) {
+      recorder.onAsrResult = null;
+    }
+
     const errorKey = await recorder.toggle((key, vars) => this.t(key as Parameters<typeof this.t>[0], vars));
 
     if (errorKey) {
@@ -1600,16 +1599,15 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       this.startAutoStopTimer();
     }
 
-    // On stop: flush only truly NEW text beyond what was already inserted
+    // On stop: flush remaining partial buffer (buffer was cleared by endpoint,
+    // so only truly un-finalized text remains)
     if (wasRecording && !recorder.isActive && this._sentenceManager) {
-      recorder.onAsrResult = null;
       const remaining = this._sentenceManager.getPartialText();
-      this._sentenceManager.reset();
-      // Only insert characters that exceed the already-inserted count
-      if (remaining.length > sessionCharsInserted) {
-        const extra = remaining.slice(sessionCharsInserted);
-        if (extra.trim()) this.insertSpeechText(extra);
+      if (remaining.trim()) {
+        const final = this._sentenceManager.finalizeSentence();
+        if (final) this.insertSpeechText(final);
       }
+      this._sentenceManager.reset();
       this._speechPreviewLen = 0;
       this.cancelAutoStopTimer();
     }
