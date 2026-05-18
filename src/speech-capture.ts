@@ -68,26 +68,25 @@ export async function startCapture(
 ): Promise<CaptureState> {
   const audioContext = new AudioContext({ sampleRate: 16000 });
 
-  if (audioContext.state === "suspended") {
-    await audioContext.resume();
-  }
-
-  const mediaStream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      channelCount: 1,
-      sampleRate: 16000,
-      echoCancellation: true,    // removes speaker/headphone echo
-      noiseSuppression: true,    // browser built-in denoising (WebRTC)
-      autoGainControl: true      // normalizes input volume
-    },
-    video: false
-  });
-
-  let processorNode: AudioWorkletNode | ScriptProcessorNode | null = null;
-  let sourceNode: MediaStreamAudioSourceNode | null = null;
-  let blobUrl: string | null = null;
-
   try {
+    if (audioContext.state === "suspended") {
+      await audioContext.resume();
+    }
+
+    const mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        sampleRate: 16000,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      },
+      video: false
+    });
+
+    let processorNode: AudioWorkletNode | ScriptProcessorNode | null = null;
+    let sourceNode: MediaStreamAudioSourceNode | null = null;
+    let blobUrl: string | null = null;
     // Primary path: AudioWorklet (off-main-thread, clean audio)
     const result = await tryAudioWorklet(audioContext, mediaStream, onAudioChunk);
     processorNode = result.node;
@@ -116,6 +115,11 @@ export async function startCapture(
   };
 
   return { audioContext, mediaStream, processorNode, sourceNode, blobUrl, cleanup };
+  } catch (error) {
+    // Close AudioContext on any failure to prevent resource leak (CR-03)
+    void audioContext.close();
+    throw error;
+  }
 }
 
 export function stopCapture(state: CaptureState): void {

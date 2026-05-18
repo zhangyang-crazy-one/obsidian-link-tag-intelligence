@@ -112,33 +112,35 @@ export class SpeechRecorder {
       // Register device disconnect listener (D-03)
       this.registerDeviceChangeHandler(t);
 
-      // Fork ASR child process via shell exec (Electron sandbox blocks direct spawn).
-      // Matches existing pattern in ingestion.ts which uses child_process.exec().
+      // Spawn ASR child process directly (no shell) — avoid exec() buffer accumulation
+      // and orphaned processes. Shell-based exec() leaves the Node.js worker running
+      // (80-167MB WASM) when the shell is killed.
       if (!this.asrProcess) {
         const adapter = this.appRef?.vault.adapter;
         const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
         const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence";
         const workerPath = pluginDir + "/asr-worker.js";
-        // console.log("[lti-speech] Starting ASR via exec:", workerPath);
         try {
           // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
           const cp = require("child_process") as {
-            exec: (cmd: string, opts: { cwd?: string; maxBuffer?: number }, cb: (err: Error | null, stdout: string, stderr: string) => void) => { kill: () => void };
+            spawn: (cmd: string, args: string[], opts?: { cwd?: string; stdio?: string[] }) => {
+              stdin: { write: (d: string) => boolean; end: () => void };
+              stdout: { on: (e: string, cb: (d: Buffer) => void) => void };
+              stderr: { on: (e: string, cb: (d: Buffer) => void) => void };
+              on: (e: string, cb: (code: number | null, signal: string | null) => void) => void;
+              kill: (signal?: string) => boolean;
+              pid?: number;
+            };
           };
-          const cmd = `/usr/bin/node "${workerPath}"`;
-          const child = cp.exec(cmd, { cwd: pluginDir, maxBuffer: 10 * 1024 * 1024 }, (_err, _stdout, _stderr) => {
-            // stdout/stderr collected at process end — not suitable for streaming.
-            // We use the child process object for stdin/stdout pipes instead.
+          this.asrProcess = cp.spawn(process.execPath, [workerPath], {
+            cwd: pluginDir,
+            stdio: ["pipe", "pipe", "pipe"],
           });
-          this.asrProcess = child;
-          this.asrStdin = { write: (d: string) => { child.stdin?.write(d); } };
-          // console.log("[lti-speech] Spawned OK, pid:", child.pid ?? "unknown");
+          this.asrStdin = { write: (d: string) => { this.asrProcess?.stdin?.write(d); } };
 
           let stdoutBuf = "";
-          child.stdout?.on("data", (chunk: Buffer) => {
-            const raw = chunk.toString();
-            // console.log("[lti-speech] stdout:", raw.trim());
-            stdoutBuf += raw;
+          this.asrProcess.stdout.on("data", (chunk: Buffer) => {
+            stdoutBuf += chunk.toString();
             const lines = stdoutBuf.split("\n");
             stdoutBuf = lines.pop() ?? "";
             for (const line of lines) {
@@ -149,12 +151,9 @@ export class SpeechRecorder {
               } catch { /* skip */ }
             }
           });
-          child.stderr?.on("data", () => { /* muted */ });
-          child.on("exit", (code: number | null) => {
-            // console.log("[lti-speech] ASR worker exited, code:", code);
-          });
+          this.asrProcess.stderr.on("data", () => { /* muted */ });
+          this.asrProcess.on("exit", (_code, _signal) => { /* cleanup handled by destroy() */ });
         } catch (e) {
-          console.error("[lti-speech] Exec failed:", String(e));
           throw new Error("ASR Worker init failed: " + String(e));
         }
       }
@@ -175,7 +174,7 @@ export class SpeechRecorder {
 
       // Wait for ready signal
       await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error("ASR Worker init timed out")), 15000);
+        const timeout = setTimeout(() => { clearInterval(check); reject(new Error("ASR Worker init timed out")); }, 15000);
         const check = setInterval(() => {
           if (this.asrReady) { clearTimeout(timeout); clearInterval(check); resolve(); }
         }, 100);
@@ -189,7 +188,7 @@ export class SpeechRecorder {
       this.cleanupCapture();
       if (this.asrProcess) {
         this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
-        this.asrProcess.kill();
+        this.asrProcess?.kill("SIGTERM");
         this.asrProcess = null;
         this.asrStdin = null;
       }
@@ -325,7 +324,7 @@ export class SpeechRecorder {
   destroy(): void {
     if (this.asrProcess) {
       this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
-      this.asrProcess.kill();
+      this.asrProcess?.kill("SIGTERM");
       this.asrProcess = null;
       this.asrStdin = null;
       this.asrReady = false;
@@ -343,7 +342,7 @@ export class SpeechRecorder {
     // If not currently recording, destroy child process so next spawn uses new language
     if (!this.isActive && this.asrProcess) {
       this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
-      this.asrProcess.kill();
+      this.asrProcess?.kill("SIGTERM");
       this.asrProcess = null;
       this.asrStdin = null;
       this.asrReady = false;
