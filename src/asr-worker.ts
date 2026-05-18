@@ -57,12 +57,11 @@ rl.on("line", (raw: string) => {
               numThreads: 1, provider: "cpu", debug: 0,
             },
             featConfig: { sampleRate: 16000, featureDim: 80 },
-            decodingMethod: "modified_beam_search" as const, maxActivePaths: 10,
+            decodingMethod: "greedy_search" as const,
             enableEndpoint: 1,
             rule1MinTrailingSilence: mapVadToRule1(msg.vadSensitivity ?? 2),
             rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
             rule3MinUtteranceLength: 20.0,
-            hotwordsScore: 2.0,
           });
           stream = recognizer ? recognizer.createStream() : null;
           prevText = "";

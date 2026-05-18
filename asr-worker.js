@@ -49,13 +49,11 @@ rl.on("line", (raw) => {
               debug: 0
             },
             featConfig: { sampleRate: 16e3, featureDim: 80 },
-            decodingMethod: "modified_beam_search",
-            maxActivePaths: 10,
+            decodingMethod: "greedy_search",
             enableEndpoint: 1,
             rule1MinTrailingSilence: mapVadToRule1(msg.vadSensitivity ?? 2),
             rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
-            rule3MinUtteranceLength: 20,
-            hotwordsScore: 2
+            rule3MinUtteranceLength: 20
           });
           stream = recognizer ? recognizer.createStream() : null;
           prevText = "";
