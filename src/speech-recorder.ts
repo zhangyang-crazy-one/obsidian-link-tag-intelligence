@@ -154,8 +154,17 @@ export class SpeechRecorder {
               } catch { /* skip */ }
             }
           });
-          this.asrProcess.stderr.on("data", () => { /* muted */ });
-          this.asrProcess.on("exit", (_code, _signal) => { /* cleanup handled by destroy() */ });
+          this.asrProcess.stderr.on("data", (chunk: Buffer) => {
+            console.error("[lti-asr-worker]", chunk.toString().trim());
+          });
+          this.asrProcess.stdout.on("data", (chunk: Buffer) => {
+            // Debug: log raw worker output
+            const raw = chunk.toString().trim();
+            if (raw) console.log("[lti-asr-out]", raw);
+          });
+          this.asrProcess.on("exit", (code: number | null, signal: string | null) => {
+            console.log("[lti-speech] ASR worker exited, code:", code, "signal:", signal);
+          });
         } catch (e) {
           throw new Error("ASR Worker init failed: " + String(e));
         }
