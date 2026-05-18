@@ -43,6 +43,7 @@ rl.on("line", (raw) => {
               },
               tokens: msg.modelDir + "tokens.txt",
               modelingUnit: "bpe",
+              bpeVocab: msg.modelDir + "bpe.vocab",
               numThreads: 1,
               provider: "cpu",
               debug: 0

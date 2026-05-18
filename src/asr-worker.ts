@@ -55,6 +55,7 @@ rl.on("line", (raw: string) => {
               },
               tokens: msg.modelDir + "tokens.txt",
               modelingUnit: "bpe",
+              bpeVocab: msg.modelDir + "bpe.vocab",
               numThreads: 1, provider: "cpu", debug: 0,
             },
             featConfig: { sampleRate: 16000, featureDim: 80 },
