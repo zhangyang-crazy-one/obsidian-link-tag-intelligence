@@ -90,7 +90,9 @@ export class SpeechRecorder {
     this.phase = "initializing";
 
     try {
+      console.log("[lti-speech] Starting audio capture...");
       this.capture = await startCapture((chunk) => {
+        console.log("[lti-speech] Audio chunk received, samples:", chunk.length);
         // Throttled RMS update: ~60ms (16fps) for visual stability
         const rms = calculateRMS(chunk);
         if (!this.throttleTimer) {
@@ -195,6 +197,7 @@ export class SpeechRecorder {
       this.phase = "recording";
       return null;
     } catch (error) {
+      console.error("[lti-speech] start() failed:", String(error));
       // D-05: ASR init failure transitions to error state
       this.phase = "error";
       this.cleanupCapture();

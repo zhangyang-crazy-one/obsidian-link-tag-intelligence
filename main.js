@@ -7173,7 +7173,9 @@ var SpeechRecorder = class {
   async start(t) {
     this.phase = "initializing";
     try {
+      console.log("[lti-speech] Starting audio capture...");
       this.capture = await startCapture((chunk) => {
+        console.log("[lti-speech] Audio chunk received, samples:", chunk.length);
         const rms = calculateRMS(chunk);
         if (!this.throttleTimer) {
           this.throttleTimer = setTimeout(() => {
@@ -7257,6 +7259,7 @@ var SpeechRecorder = class {
       this.phase = "recording";
       return null;
     } catch (error) {
+      console.error("[lti-speech] start() failed:", String(error));
       this.phase = "error";
       this.cleanupCapture();
       if (this.asrProcess) {

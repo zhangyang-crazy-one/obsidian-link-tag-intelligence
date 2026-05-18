@@ -44,6 +44,7 @@ rl.on("line", (raw: string) => {
       case "init": {
         if (!msg.modelDir || !msg.language) { process.stdout.write(JSON.stringify({ type: "ready", ok: false }) + "\n"); break; }
         const hotwordsFile = msg.hotwordsFile as string | undefined;
+        if (hotwordsFile) process.stderr.write("[asr-worker] hotwords enabled: " + hotwordsFile + "\n");
         if (msg.modelDir.split("/").some((p) => p === "..")) { process.stdout.write(JSON.stringify({ type: "ready", ok: false }) + "\n"); break; }
         try {
           recognizer = sherpaOnnx.createOnlineRecognizer({

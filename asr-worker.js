@@ -29,6 +29,7 @@ rl.on("line", (raw) => {
           break;
         }
         const hotwordsFile = msg.hotwordsFile;
+        if (hotwordsFile) process.stderr.write("[asr-worker] hotwords enabled: " + hotwordsFile + "\n");
         if (msg.modelDir.split("/").some((p) => p === "..")) {
           process.stdout.write(JSON.stringify({ type: "ready", ok: false }) + "\n");
           break;
