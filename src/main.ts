@@ -1557,16 +1557,17 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       this._sentenceManager = new SentenceManager(this);
     }
 
-    // Set ASR result handler
+    // Set ASR result handler — inserts text in real-time on endpoint
     recorder.onAsrResult = (text, isEndpoint) => {
       if (!text) return;
-      // Always accumulate into buffer first
-      this._sentenceManager!.addPartialText(text);
       if (isEndpoint) {
-        // Finalize from accumulated buffer (CR-01: use buffer, not delta arg)
-        const finalSentence = this._sentenceManager!.finalizeSentence();
+        // Endpoint delta text is new content since last endpoint → insert immediately
+        const finalSentence = this._sentenceManager!.finalizeSentence(text);
         this._speechPreviewLen = 0;
         if (finalSentence) this.insertSpeechText(finalSentence);
+      } else {
+        // Partial: accumulate for live preview only (don't insert)
+        this._sentenceManager!.addPartialText(text);
       }
     };
 
@@ -1578,12 +1579,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       }
     }
 
-    // CR-03: Null handler BEFORE toggle to prevent race with pending results
     const wasRecording = recorder.getSnapshot().phase === "recording";
-    if (wasRecording) {
-      recorder.onAsrResult = null;
-    }
-
     const errorKey = await recorder.toggle((key, vars) => this.t(key as Parameters<typeof this.t>[0], vars));
 
     if (errorKey) {
@@ -1594,20 +1590,19 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       return;
     }
 
-    // D-12: Start auto-stop timer when recording with autoStopSec configured
+    // Start auto-stop timer when recording begins
     if (recorder.getSnapshot().phase === "recording" && this.settings.speechAutoStopSec > 0) {
       this.startAutoStopTimer();
     }
 
-    // On stop: flush remaining partial buffer (buffer was cleared by endpoint,
-    // so only truly un-finalized text remains)
+    // On stop: endpoint already inserted all finalized text and cleared the buffer.
+    // Only flush if the buffer was NOT cleared (no endpoint fired before stop).
     if (wasRecording && !recorder.isActive && this._sentenceManager) {
-      const remaining = this._sentenceManager.getPartialText();
-      if (remaining.trim()) {
+      const before = this._sentenceManager.getPartialText();
+      if (before.trim()) {
         const final = this._sentenceManager.finalizeSentence();
         if (final) this.insertSpeechText(final);
       }
-      this._sentenceManager.reset();
       this._speechPreviewLen = 0;
       this.cancelAutoStopTimer();
     }
