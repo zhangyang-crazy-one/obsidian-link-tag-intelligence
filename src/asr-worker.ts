@@ -20,12 +20,14 @@ type Stream = {
 };
 
 function mapVadToRule1(s: number): number {
-  const m: Record<number, number> = { 0: 2.4, 1: 1.8, 2: 1.5, 3: 0.8 };
-  return m[s] ?? 1.5;
+  // Rule 1: long silence — triggers endpoint even without prior speech
+  const m: Record<number, number> = { 0: 2.0, 1: 1.2, 2: 0.8, 3: 0.5 };
+  return m[s] ?? 0.8;
 }
 function mapVadToRule2(s: number): number {
-  const m: Record<number, number> = { 0: 1.2, 1: 0.8, 2: 0.6, 3: 0.4 };
-  return m[s] ?? 0.6;
+  // Rule 2: short silence — triggers endpoint if utterance was detected
+  const m: Record<number, number> = { 0: 0.8, 1: 0.5, 2: 0.3, 3: 0.2 };
+  return m[s] ?? 0.3;
 }
 
 let recognizer: Recognizer | null = null;

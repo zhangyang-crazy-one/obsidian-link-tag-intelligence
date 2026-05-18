@@ -3,12 +3,12 @@
 // src/asr-worker.ts
 var sherpaOnnx = require("sherpa-onnx");
 function mapVadToRule1(s) {
-  const m = { 0: 2.4, 1: 1.8, 2: 1.5, 3: 0.8 };
-  return m[s] ?? 1.5;
+  const m = { 0: 2, 1: 1.2, 2: 0.8, 3: 0.5 };
+  return m[s] ?? 0.8;
 }
 function mapVadToRule2(s) {
-  const m = { 0: 1.2, 1: 0.8, 2: 0.6, 3: 0.4 };
-  return m[s] ?? 0.6;
+  const m = { 0: 0.8, 1: 0.5, 2: 0.3, 3: 0.2 };
+  return m[s] ?? 0.3;
 }
 var recognizer = null;
 var stream = null;
