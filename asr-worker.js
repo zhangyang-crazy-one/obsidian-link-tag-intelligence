@@ -88,7 +88,10 @@ rl.on("line", (raw) => {
             prevWasEndpoint = false;
           }
           const full = r.text || "";
-          const delta = full.startsWith(prevText) ? full.slice(prevText.length) : full;
+          let commonLen = 0;
+          const maxLen = Math.min(full.length, prevText.length);
+          while (commonLen < maxLen && full[commonLen] === prevText[commonLen]) commonLen++;
+          const delta = full.slice(commonLen);
           prevText = full;
           if (delta) {
             const emitEndpoint = endpointNow;

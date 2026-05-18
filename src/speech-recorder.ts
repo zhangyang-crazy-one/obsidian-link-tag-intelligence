@@ -99,10 +99,10 @@ export class SpeechRecorder {
             this.audioLevel = rms;
           }, 60);
         }
-        // Send audio to ASR child process (skip near-silence)
-        // AGC + noiseSuppression + echoCancellation are enabled at getUserMedia
-        // level, so raw PCM is already clean enough for the ASR model.
-        if (rms < 0.001) return;
+        // Send ALL audio chunks to ASR (including silence) so sherpa-onnx's
+        // internal VAD can reliably detect endpoint boundaries. The worker
+        // only emits results when actual decoding occurred, so silent chunks
+        // don't produce duplicate text.
         if (this.asrProcess && this.asrReady) {
           const b64 = Buffer.from(new Uint8Array(chunk.buffer)).toString("base64");
           this.asrStdin?.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");

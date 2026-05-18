@@ -92,7 +92,13 @@ rl.on("line", (raw: string) => {
           prevWasEndpoint = isEndpoint;
           if (isEndpoint) { recognizer.reset(stream); prevWasEndpoint = false; }
           const full = r.text || "";
-          const delta = full.startsWith(prevText) ? full.slice(prevText.length) : full;
+          // Compute delta: only emit new characters, not the full cumulative text.
+          // Use longest common prefix to handle hypothesis revision (model may
+          // produce shorter/different text than previous getResult() output).
+          let commonLen = 0;
+          const maxLen = Math.min(full.length, prevText.length);
+          while (commonLen < maxLen && full[commonLen] === prevText[commonLen]) commonLen++;
+          const delta = full.slice(commonLen);
           prevText = full;
           if (delta) {
             // Only emit endpoint=true on first occurrence to avoid fragment spam

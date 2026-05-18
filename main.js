@@ -7181,7 +7181,6 @@ var SpeechRecorder = class {
             this.audioLevel = rms;
           }, 60);
         }
-        if (rms < 1e-3) return;
         if (this.asrProcess && this.asrReady) {
           const b64 = Buffer.from(new Uint8Array(chunk.buffer)).toString("base64");
           this.asrStdin?.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");
