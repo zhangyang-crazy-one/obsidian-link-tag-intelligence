@@ -12,7 +12,6 @@ function mapVadToRule2(s) {
 }
 var recognizer = null;
 var stream = null;
-var prevText = "";
 var prevWasEndpoint = false;
 var rl = require("readline").createInterface({ input: process.stdin });
 rl.on("line", (raw) => {
@@ -43,7 +42,7 @@ rl.on("line", (raw) => {
                 joiner: msg.modelDir + "joiner.int8.onnx"
               },
               tokens: msg.modelDir + "tokens.txt",
-              modelingUnit: "cjkchar",
+              modelingUnit: "bpe",
               numThreads: 1,
               provider: "cpu",
               debug: 0
@@ -60,7 +59,6 @@ rl.on("line", (raw) => {
             ...hotwordsFile ? { hotwordsFile } : {}
           });
           stream = recognizer ? recognizer.createStream() : null;
-          prevText = "";
           prevWasEndpoint = false;
           process.stdout.write(JSON.stringify({ type: "ready", ok: !!recognizer }) + "\n");
         } catch (e) {
@@ -87,15 +85,10 @@ rl.on("line", (raw) => {
             recognizer.reset(stream);
             prevWasEndpoint = false;
           }
-          const full = r.text || "";
-          let commonLen = 0;
-          const maxLen = Math.min(full.length, prevText.length);
-          while (commonLen < maxLen && full[commonLen] === prevText[commonLen]) commonLen++;
-          const delta = full.slice(commonLen);
-          prevText = full;
-          if (delta) {
+          const text = r.text || "";
+          if (text) {
             const emitEndpoint = endpointNow;
-            process.stdout.write(JSON.stringify({ type: "result", text: delta, isEndpoint: emitEndpoint }) + "\n");
+            process.stdout.write(JSON.stringify({ type: "result", text, isEndpoint: endpointNow }) + "\n");
           }
         }
         break;

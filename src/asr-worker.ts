@@ -32,7 +32,6 @@ function mapVadToRule2(s: number): number {
 
 let recognizer: Recognizer | null = null;
 let stream: Stream | null = null;
-let prevText = "";
 let prevWasEndpoint = false;
 
 const rl = require("readline").createInterface({ input: process.stdin });
@@ -55,7 +54,7 @@ rl.on("line", (raw: string) => {
                 joiner: msg.modelDir + "joiner.int8.onnx",
               },
               tokens: msg.modelDir + "tokens.txt",
-              modelingUnit: "cjkchar",
+              modelingUnit: "bpe",
               numThreads: 1, provider: "cpu", debug: 0,
             },
             featConfig: { sampleRate: 16000, featureDim: 80 },
@@ -69,7 +68,6 @@ rl.on("line", (raw: string) => {
             ...(hotwordsFile ? { hotwordsFile } : {}),
           });
           stream = recognizer ? recognizer.createStream() : null;
-          prevText = "";
           prevWasEndpoint = false;
           process.stdout.write(JSON.stringify({ type: "ready", ok: !!recognizer }) + "\n");
         } catch (e) {
@@ -93,19 +91,13 @@ rl.on("line", (raw: string) => {
           const endpointNow = isEndpoint && !prevWasEndpoint;
           prevWasEndpoint = isEndpoint;
           if (isEndpoint) { recognizer.reset(stream); prevWasEndpoint = false; }
-          const full = r.text || "";
-          // Compute delta: only emit new characters, not the full cumulative text.
-          // Use longest common prefix to handle hypothesis revision (model may
-          // produce shorter/different text than previous getResult() output).
-          let commonLen = 0;
-          const maxLen = Math.min(full.length, prevText.length);
-          while (commonLen < maxLen && full[commonLen] === prevText[commonLen]) commonLen++;
-          const delta = full.slice(commonLen);
-          prevText = full;
-          if (delta) {
+          const text = r.text || "";
+          // getResult() returns incremental text (since last call), not cumulative.
+          // No need for delta computation — just emit directly.
+          if (text) {
             // Only emit endpoint=true on first occurrence to avoid fragment spam
             const emitEndpoint = endpointNow;
-            process.stdout.write(JSON.stringify({ type: "result", text: delta, isEndpoint: emitEndpoint }) + "\n");
+            process.stdout.write(JSON.stringify({ type: "result", text, isEndpoint: endpointNow }) + "\n");
           }
         }
         break;
