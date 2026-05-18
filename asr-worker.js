@@ -49,11 +49,15 @@ rl.on("line", (raw) => {
               debug: 0
             },
             featConfig: { sampleRate: 16e3, featureDim: 80 },
-            decodingMethod: "greedy_search",
+            decodingMethod: "modified_beam_search",
+            maxActivePaths: 4,
             enableEndpoint: 1,
             rule1MinTrailingSilence: mapVadToRule1(msg.vadSensitivity ?? 2),
             rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
-            rule3MinUtteranceLength: 20
+            rule3MinUtteranceLength: 20,
+            hotwordsScore: 5,
+            blankPenalty: 1.5,
+            ...msg.hotwordsFile ? { hotwordsFile: msg.hotwordsFile } : {}
           });
           stream = recognizer ? recognizer.createStream() : null;
           prevText = "";

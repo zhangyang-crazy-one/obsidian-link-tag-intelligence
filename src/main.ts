@@ -1557,6 +1557,9 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       this._sentenceManager = new SentenceManager(this);
     }
 
+    // Track last inserted text to prevent duplicate insertion on stop
+    let lastInsertedText = "";
+
     // Set ASR result handler
     recorder.onAsrResult = (text, isEndpoint) => {
       if (!text) return;
@@ -1564,7 +1567,10 @@ export default class LinkTagIntelligencePlugin extends Plugin {
         // Sentence boundary — finalize accumulated text, insert at cursor
         const finalSentence = this._sentenceManager!.finalizeSentence(text);
         this._speechPreviewLen = 0;
-        if (finalSentence) this.insertSpeechText(finalSentence);
+        if (finalSentence && finalSentence !== lastInsertedText) {
+          this.insertSpeechText(finalSentence);
+          lastInsertedText = finalSentence;
+        }
       } else {
         // Partial: show live transcription at cursor by replacing previous partial
         this._sentenceManager!.addPartialText(text);

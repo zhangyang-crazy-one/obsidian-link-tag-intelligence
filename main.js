@@ -8796,12 +8796,16 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     if (!this._sentenceManager) {
       this._sentenceManager = new SentenceManager(this);
     }
+    let lastInsertedText = "";
     recorder.onAsrResult = (text, isEndpoint) => {
       if (!text) return;
       if (isEndpoint) {
         const finalSentence = this._sentenceManager.finalizeSentence(text);
         this._speechPreviewLen = 0;
-        if (finalSentence) this.insertSpeechText(finalSentence);
+        if (finalSentence && finalSentence !== lastInsertedText) {
+          this.insertSpeechText(finalSentence);
+          lastInsertedText = finalSentence;
+        }
       } else {
         this._sentenceManager.addPartialText(text);
         this.updateSpeechPreview(this._sentenceManager.getPartialText());
