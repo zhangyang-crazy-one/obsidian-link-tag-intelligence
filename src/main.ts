@@ -1581,6 +1581,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       }
     }
 
+    const wasRecording = recorder.getSnapshot().phase === "recording";
     const errorKey = await recorder.toggle((key, vars) => this.t(key as Parameters<typeof this.t>[0], vars));
 
     if (errorKey) {
@@ -1596,8 +1597,10 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       this.startAutoStopTimer();
     }
 
-    // On stop: flush any remaining partial text
-    if (!recorder.isActive && this._sentenceManager) {
+    // On stop: flush any remaining partial text (only if we were actually recording)
+    if (wasRecording && !recorder.isActive && this._sentenceManager) {
+      // Clear handler first so any late-arriving worker results are dropped
+      recorder.onAsrResult = null;
       const remaining = this._sentenceManager.getPartialText();
       if (remaining.trim()) {
         const final = this._sentenceManager.finalizeSentence();

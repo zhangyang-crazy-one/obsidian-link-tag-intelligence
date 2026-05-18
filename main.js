@@ -8795,6 +8795,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
         return;
       }
     }
+    const wasRecording = recorder.getSnapshot().phase === "recording";
     const errorKey = await recorder.toggle((key, vars) => this.t(key, vars));
     if (errorKey) {
       new import_obsidian12.Notice(this.t(errorKey));
@@ -8806,7 +8807,8 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     if (recorder.getSnapshot().phase === "recording" && this.settings.speechAutoStopSec > 0) {
       this.startAutoStopTimer();
     }
-    if (!recorder.isActive && this._sentenceManager) {
+    if (wasRecording && !recorder.isActive && this._sentenceManager) {
+      recorder.onAsrResult = null;
       const remaining = this._sentenceManager.getPartialText();
       if (remaining.trim()) {
         const final = this._sentenceManager.finalizeSentence();
