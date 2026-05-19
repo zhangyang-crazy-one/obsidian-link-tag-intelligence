@@ -45,7 +45,7 @@ export function createAsrEngine(pluginDir: string): AsrEngine {
   let prevText = "";
 
   return {
-    init(modelDir: string, language: string, vadSensitivity: number): boolean {
+    init(modelDir: string, _language: string, vadSensitivity: number): boolean {
       if (modelDir.split("/").some((p) => p === "..")) return false;
       try {
         recognizer = sherpaOnnx.createOnlineRecognizer(sherpaOnnx.wasmModule, {

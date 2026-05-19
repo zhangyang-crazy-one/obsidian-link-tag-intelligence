@@ -186,7 +186,7 @@ describe("Speech Text Insertion — Memory Safety", () => {
   it("onAsrResult callback does not retain stale references", () => {
     let callback: ((text: string, isEndpoint: boolean) => void) | null = null;
 
-    callback = (text, isEndpoint) => {
+    callback = (_text, isEndpoint) => {
       if (isEndpoint) { /* insert */ }
     };
 
