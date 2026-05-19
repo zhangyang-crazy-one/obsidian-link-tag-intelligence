@@ -18,6 +18,7 @@ release/
 .claude/
 .codex/
 .planning/
+planning/
 
 # OS
 *.icloud
