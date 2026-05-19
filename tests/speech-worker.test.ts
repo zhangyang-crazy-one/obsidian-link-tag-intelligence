@@ -14,9 +14,14 @@ let stream: MockOnlineStream | null = null;
 type InitConfig = {
   modelConfig: {
     modelingUnit: string;
+    bpeVocab?: string;
     [key: string]: unknown;
   };
   enableEndpoint: number;
+  decodingMethod: string;
+  blankPenalty?: number;
+  featConfig: { sampleRate: number; featureDim: number; dither?: number };
+  hr?: { lexicon: string; ruleFsts: string; dictDir: string };
   [key: string]: unknown;
 };
 
@@ -35,7 +40,7 @@ function mapVadSensitivityToRule2(sensitivity: number): number {
 // ── Inline Worker handler (mirrors speech-worker.ts contract) ──
 
 function workerOnMessageHandler(e: MessageEvent): void {
-  const msg = e.data as { type: string; modelDir?: string; language?: string; vadSensitivity?: number; buffer?: ArrayBuffer };
+  const msg = e.data as { type: string; modelDir?: string; language?: string; vadSensitivity?: number; buffer?: ArrayBuffer; lexicon?: string; ruleFsts?: string };
 
   switch (msg.type) {
     case 'init': {
@@ -51,26 +56,31 @@ function workerOnMessageHandler(e: MessageEvent): void {
         }
       }
 
+      const hrConfig = (msg.lexicon && msg.ruleFsts) ? {
+        hr: { lexicon: msg.lexicon, ruleFsts: msg.ruleFsts, dictDir: '' },
+      } : {};
       const cfg = {
         modelConfig: {
           transducer: {
-            encoder: msg.modelDir + 'encoder-epoch-99-avg-1.int8.onnx',
-            decoder: msg.modelDir + 'decoder-epoch-99-avg-1.onnx',
-            joiner: msg.modelDir + 'joiner-epoch-99-avg-1.int8.onnx',
+            encoder: msg.modelDir + 'encoder.int8.onnx',
+            decoder: msg.modelDir + 'decoder.onnx',
+            joiner: msg.modelDir + 'joiner.int8.onnx',
           },
           tokens: msg.modelDir + 'tokens.txt',
-          modelingUnit: msg.language === 'zh' ? 'cjkchar' : 'bpe',
+          modelingUnit: 'bpe',
+          bpeVocab: msg.modelDir + 'bpe.vocab',
           numThreads: 1,
           provider: 'cpu',
           debug: 0,
         },
-        featConfig: { sampleRate: 16000, featureDim: 80 },
+        featConfig: { sampleRate: 16000, featureDim: 80, dither: 0.00003 },
         decodingMethod: 'greedy_search',
-        maxActivePaths: 4,
+        blankPenalty: 1.5,
         enableEndpoint: 1,
         rule1MinTrailingSilence: mapVadSensitivityToRule1(msg.vadSensitivity ?? 2),
         rule2MinTrailingSilence: mapVadSensitivityToRule2(msg.vadSensitivity ?? 2),
-        rule3MinUtteranceLength: 2.0,
+        rule3MinUtteranceLength: 20.0,
+        ...hrConfig,
       };
 
       lastInitConfig = cfg as unknown as InitConfig;
@@ -171,14 +181,15 @@ describe('Worker message protocol', () => {
       : null;
   }
 
-  it('init sends ready message with correct modelingUnit for zh', () => {
+  it('init uses BPE modelingUnit for zh (zh-2025 model uses sentencepiece BPE)', () => {
     sendMessage({ type: 'init', modelDir: '/fake/models/', language: 'zh', vadSensitivity: 2 });
     expect(postedMessages).toHaveLength(1);
     expect(getLastPosted()!.type).toBe('ready');
-    expect(lastInitConfig!.modelConfig.modelingUnit).toBe('cjkchar');
+    expect(lastInitConfig!.modelConfig.modelingUnit).toBe('bpe');
+    expect(lastInitConfig!.modelConfig.bpeVocab).toBe('/fake/models/bpe.vocab');
   });
 
-  it('init sends ready message with correct modelingUnit for en', () => {
+  it('init uses BPE modelingUnit for en', () => {
     sendMessage({ type: 'init', modelDir: '/fake/models/', language: 'en', vadSensitivity: 2 });
     expect(postedMessages).toHaveLength(1);
     expect(getLastPosted()!.type).toBe('ready');
@@ -247,6 +258,50 @@ describe('Worker message protocol', () => {
   it('init sends ready with enableEndpoint=1', () => {
     sendMessage({ type: 'init', modelDir: '/fake/models/', language: 'zh', vadSensitivity: 2 });
     expect(lastInitConfig!.enableEndpoint).toBe(1);
+  });
+
+  it('init adds blankPenalty=1.5 for greedy_search', () => {
+    sendMessage({ type: 'init', modelDir: '/fake/models/', language: 'zh', vadSensitivity: 2 });
+    expect(lastInitConfig!.blankPenalty).toBe(1.5);
+    expect(lastInitConfig!.decodingMethod).toBe('greedy_search');
+  });
+
+  it('init includes featConfig with dither', () => {
+    sendMessage({ type: 'init', modelDir: '/fake/models/', language: 'zh', vadSensitivity: 2 });
+    expect(lastInitConfig!.featConfig.dither).toBe(0.00003);
+  });
+
+  // ── HomophoneReplacer (HR) tests ──
+
+  it('init includes hr config when lexicon and ruleFsts are provided', () => {
+    sendMessage({
+      type: 'init', modelDir: '/fake/models/', language: 'zh', vadSensitivity: 2,
+      lexicon: '/fake/models/lexicon.txt', ruleFsts: '/fake/models/replace.fst',
+    });
+    expect(lastInitConfig!.hr).toBeDefined();
+    expect(lastInitConfig!.hr!.lexicon).toBe('/fake/models/lexicon.txt');
+    expect(lastInitConfig!.hr!.ruleFsts).toBe('/fake/models/replace.fst');
+  });
+
+  it('init does NOT include hr config when only lexicon is provided', () => {
+    sendMessage({
+      type: 'init', modelDir: '/fake/models/', language: 'zh', vadSensitivity: 2,
+      lexicon: '/fake/models/lexicon.txt',
+    });
+    expect(lastInitConfig!.hr).toBeUndefined();
+  });
+
+  it('init does NOT include hr config when only ruleFsts is provided', () => {
+    sendMessage({
+      type: 'init', modelDir: '/fake/models/', language: 'zh', vadSensitivity: 2,
+      ruleFsts: '/fake/models/replace.fst',
+    });
+    expect(lastInitConfig!.hr).toBeUndefined();
+  });
+
+  it('init does NOT include hr config when neither lexicon nor ruleFsts provided', () => {
+    sendMessage({ type: 'init', modelDir: '/fake/models/', language: 'zh', vadSensitivity: 2 });
+    expect(lastInitConfig!.hr).toBeUndefined();
   });
 
   it('init rejects modelDir with .. path traversal', () => {
