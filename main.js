@@ -7254,8 +7254,8 @@ var SpeechRecorder = class {
     } catch (error) {
       this.phase = "error";
       this.cleanupCapture();
+      this.removeDeviceChangeHandler();
       if (this.asrProcess) {
-        this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
         this.killAsrProcess();
         this.asrProcess = null;
         this.asrStdin = null;
@@ -7353,17 +7353,6 @@ var SpeechRecorder = class {
     const lang = this.pendingLanguage ?? "zh";
     return pluginDir + "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
   }
-  /** Sync settings language to SpeechRecorder (called from main.ts saveSettings). */
-  setSettingsLanguage(lang) {
-    if (this.settingsLanguage !== lang) {
-      this.settingsLanguage = lang;
-      this.setLanguage(lang);
-    }
-  }
-  /** Sync VAD sensitivity setting (0-3). */
-  setSettingsVadSensitivity(sensitivity) {
-    this.settingsVadSensitivity = Math.max(0, Math.min(3, Math.round(sensitivity)));
-  }
   /** Kill the ASR child process and its entire process group.
    *  With shell:true, spawn creates /bin/sh which spawns node.
    *  process.kill(-pid) sends the signal to the entire process group. */
@@ -7381,6 +7370,7 @@ var SpeechRecorder = class {
   }
   /** Full cleanup for plugin onunload(). */
   destroy() {
+    this.onAsrResult = null;
     if (this.asrProcess) {
       this.killAsrProcess();
       this.asrProcess = null;
@@ -7598,7 +7588,6 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     this._sentenceManager = null;
     this.autoStopTimer = null;
     this.autoStopSecondsRemaining = 0;
-    this._speechPreviewLen = 0;
   }
   async onload() {
     await this.loadSettings();
@@ -7855,10 +7844,10 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     this.registerEditorExtension(buildReferenceEditorExtension(this));
   }
   onunload() {
+    this.cancelAutoStopTimer();
+    this._sentenceManager = null;
     this.speechRecorder.destroy();
     this.referencePreview.destroy();
-    this.cancelAutoStopTimer();
-    this.speechRecorder.destroy();
   }
   async loadSettings() {
     this.settings = normalizeLoadedSettings(await this.loadData(), this.app.vault.configDir);
@@ -8800,7 +8789,6 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       if (!text) return;
       if (isEndpoint) {
         const finalSentence = this._sentenceManager.finalizeSentence(text);
-        this._speechPreviewLen = 0;
         if (finalSentence) this.insertSpeechText(finalSentence);
       } else {
         this._sentenceManager.addPartialText(text);
@@ -8817,7 +8805,6 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     if (errorKey) {
       new import_obsidian12.Notice(this.t(errorKey));
       this._sentenceManager?.reset();
-      this._speechPreviewLen = 0;
       this.refreshAllViews();
       return;
     }
@@ -8830,22 +8817,9 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
         const final = this._sentenceManager.finalizeSentence();
         if (final) this.insertSpeechText(final);
       }
-      this._speechPreviewLen = 0;
       this.cancelAutoStopTimer();
     }
     this.refreshAllViews();
-  }
-  updateSpeechPreview(text) {
-    const editorView = this.getContextEditorView();
-    if (!editorView?.editor) return;
-    const editor = editorView.editor;
-    const cursor = editor.getCursor();
-    if (this._speechPreviewLen > 0) {
-      const start = { line: cursor.line, ch: Math.max(0, cursor.ch - this._speechPreviewLen) };
-      editor.replaceRange("", start, cursor);
-    }
-    editor.replaceSelection(text);
-    this._speechPreviewLen = text.length;
   }
   insertSpeechText(text) {
     if (!text) return;

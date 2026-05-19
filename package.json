@@ -13,7 +13,7 @@
     "esbuild": "^0.25.0",
     "eslint": "^10.0.3",
     "obsidian": "latest",
-    "sherpa-onnx": "^1.13.1",
+    "sherpa-onnx": "^1.13.2",
     "typescript": "^5.8.2",
     "typescript-eslint": "^8.57.1",
     "vitest": "^2.1.8"

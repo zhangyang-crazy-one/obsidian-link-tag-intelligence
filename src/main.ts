@@ -374,10 +374,10 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   }
 
   onunload(): void {
+    this.cancelAutoStopTimer();
+    this._sentenceManager = null;
     this.speechRecorder.destroy();
     this.referencePreview.destroy();
-    this.cancelAutoStopTimer();
-    this.speechRecorder.destroy();
   }
 
   async loadSettings(): Promise<void> {
@@ -1561,9 +1561,10 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     recorder.onAsrResult = (text, isEndpoint) => {
       if (!text) return;
       if (isEndpoint) {
-        // Endpoint delta text is new content since last endpoint → insert immediately
+        // getResult() returns cumulative text (full utterance so far).
+        // Pass it directly to finalizeSentence(text) — the text parameter
+        // REPLACES the buffer, avoiding quadratic accumulation.
         const finalSentence = this._sentenceManager!.finalizeSentence(text);
-        this._speechPreviewLen = 0;
         if (finalSentence) this.insertSpeechText(finalSentence);
       } else {
         // Partial: accumulate for live preview only (don't insert)
@@ -1585,7 +1586,6 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     if (errorKey) {
       new Notice(this.t(errorKey as Parameters<typeof this.t>[0]));
       this._sentenceManager?.reset();
-      this._speechPreviewLen = 0;
       this.refreshAllViews();
       return;
     }
@@ -1603,28 +1603,10 @@ export default class LinkTagIntelligencePlugin extends Plugin {
         const final = this._sentenceManager.finalizeSentence();
         if (final) this.insertSpeechText(final);
       }
-      this._speechPreviewLen = 0;
       this.cancelAutoStopTimer();
     }
 
     this.refreshAllViews();
-  }
-
-  private _speechPreviewLen = 0;
-
-  private updateSpeechPreview(text: string): void {
-    const editorView = this.getContextEditorView();
-    if (!editorView?.editor) return;
-    const editor = editorView.editor;
-    const cursor = editor.getCursor();
-    // Remove previous partial text
-    if (this._speechPreviewLen > 0) {
-      const start = { line: cursor.line, ch: Math.max(0, cursor.ch - this._speechPreviewLen) };
-      editor.replaceRange("", start, cursor);
-    }
-    // Insert new partial text
-    editor.replaceSelection(text);
-    this._speechPreviewLen = text.length;
   }
 
   private insertSpeechText(text: string): void {

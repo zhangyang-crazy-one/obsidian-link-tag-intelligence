@@ -2,6 +2,7 @@
 
 // src/asr-worker.ts
 var sherpaOnnx = require("sherpa-onnx");
+var fs = require("fs");
 function mapVadToRule1(s) {
   const m = { 0: 2, 1: 1.2, 2: 0.8, 3: 0.5 };
   return m[s] ?? 0.8;
@@ -9,6 +10,20 @@ function mapVadToRule1(s) {
 function mapVadToRule2(s) {
   const m = { 0: 0.8, 1: 0.5, 2: 0.3, 3: 0.2 };
   return m[s] ?? 0.3;
+}
+var CONFUSION_MAP = {
+  "\u5728\u663E\u4EF7\u503C": "\u5728\u9669\u4EF7\u503C",
+  "\u98CE\u9669\u7A57": "\u98CE\u9669\u77E9\u9635",
+  "\u5BCC\u529B\u4E1A\u53D8\u6362": "\u5085\u91CC\u53F6\u53D8\u6362",
+  "\u5BCC\u529B\u4E1A": "\u5085\u91CC\u53F6",
+  "\u5728\u663E": "\u5728\u9669"
+};
+function applyEndpointCorrections(text) {
+  let result = text;
+  for (const [wrong, correct] of Object.entries(CONFUSION_MAP)) {
+    if (result.includes(wrong)) result = result.replace(new RegExp(wrong, "g"), correct);
+  }
+  return result;
 }
 var recognizer = null;
 var stream = null;
@@ -28,8 +43,6 @@ rl.on("line", (raw) => {
           process.stdout.write(JSON.stringify({ type: "ready", ok: false }) + "\n");
           break;
         }
-        const hotwordsFile = msg.hotwordsFile;
-        if (hotwordsFile) process.stderr.write("[asr-worker] hotwords enabled: " + hotwordsFile + "\n");
         if (msg.modelDir.split("/").some((p) => p === "..")) {
           process.stdout.write(JSON.stringify({ type: "ready", ok: false }) + "\n");
           break;
@@ -49,16 +62,13 @@ rl.on("line", (raw) => {
               provider: "cpu",
               debug: 0
             },
-            featConfig: { sampleRate: 16e3, featureDim: 80 },
-            decodingMethod: "modified_beam_search",
-            maxActivePaths: 4,
+            featConfig: { sampleRate: 16e3, featureDim: 80, dither: 3e-5 },
+            decodingMethod: "greedy_search",
+            blankPenalty: 1.5,
             enableEndpoint: 1,
             rule1MinTrailingSilence: mapVadToRule1(msg.vadSensitivity ?? 2),
             rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
-            rule3MinUtteranceLength: 20,
-            hotwordsScore: 5,
-            blankPenalty: 1.5,
-            ...hotwordsFile ? { hotwordsFile } : {}
+            rule3MinUtteranceLength: 20
           });
           stream = recognizer ? recognizer.createStream() : null;
           prevWasEndpoint = false;
@@ -87,9 +97,9 @@ rl.on("line", (raw) => {
             recognizer.reset(stream);
             prevWasEndpoint = false;
           }
-          const text = r.text || "";
+          let text = r.text || "";
           if (text) {
-            const emitEndpoint = endpointNow;
+            if (endpointNow) text = applyEndpointCorrections(text);
             process.stdout.write(JSON.stringify({ type: "result", text, isEndpoint: endpointNow }) + "\n");
           }
         }

@@ -1,9 +1,13 @@
 // Standalone ASR worker process — pure Node.js, spawned by Electron renderer.
-// Communicates via stdin/stdout JSON lines (child_process ipc not available
-// in Electron renderer, so we use pipe-based protocol).
+// Communicates via stdin/stdout JSON lines.
+//
+// Uses greedy_search (stable, no hallucination) + dither=0.00003 + BPE tokens.
+// getResult() returns CUMULATIVE text (full utterance so far).
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
 const sherpaOnnx = require("sherpa-onnx");
+// eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+const fs = require("fs");
 
 type Recognizer = {
   createStream(): Stream;
@@ -20,15 +24,32 @@ type Stream = {
 };
 
 function mapVadToRule1(s: number): number {
-  // Rule 1: long silence — triggers endpoint even without prior speech
   const m: Record<number, number> = { 0: 2.0, 1: 1.2, 2: 0.8, 3: 0.5 };
   return m[s] ?? 0.8;
 }
 function mapVadToRule2(s: number): number {
-  // Rule 2: short silence — triggers endpoint if utterance was detected
   const m: Record<number, number> = { 0: 0.8, 1: 0.5, 2: 0.3, 3: 0.2 };
   return m[s] ?? 0.3;
 }
+
+// ---- Endpoint confusion set ----
+const CONFUSION_MAP: Record<string, string> = {
+  "在显价值": "在险价值",
+  "风险穗": "风险矩阵",
+  "富力业变换": "傅里叶变换",
+  "富力业": "傅里叶",
+  "在显": "在险",
+};
+
+function applyEndpointCorrections(text: string): string {
+  let result = text;
+  for (const [wrong, correct] of Object.entries(CONFUSION_MAP)) {
+    if (result.includes(wrong)) result = result.replace(new RegExp(wrong, "g"), correct);
+  }
+  return result;
+}
+
+// ---- ASR engine ----
 
 let recognizer: Recognizer | null = null;
 let stream: Stream | null = null;
@@ -43,8 +64,6 @@ rl.on("line", (raw: string) => {
     switch (msg.type) {
       case "init": {
         if (!msg.modelDir || !msg.language) { process.stdout.write(JSON.stringify({ type: "ready", ok: false }) + "\n"); break; }
-        const hotwordsFile = msg.hotwordsFile as string | undefined;
-        if (hotwordsFile) process.stderr.write("[asr-worker] hotwords enabled: " + hotwordsFile + "\n");
         if (msg.modelDir.split("/").some((p) => p === "..")) { process.stdout.write(JSON.stringify({ type: "ready", ok: false }) + "\n"); break; }
         try {
           recognizer = sherpaOnnx.createOnlineRecognizer({
@@ -59,15 +78,13 @@ rl.on("line", (raw: string) => {
               bpeVocab: msg.modelDir + "bpe.vocab",
               numThreads: 1, provider: "cpu", debug: 0,
             },
-            featConfig: { sampleRate: 16000, featureDim: 80 },
-            decodingMethod: "modified_beam_search" as const, maxActivePaths: 4,
+            featConfig: { sampleRate: 16000, featureDim: 80, dither: 0.00003 },
+            decodingMethod: "greedy_search",
+            blankPenalty: 1.5,
             enableEndpoint: 1,
             rule1MinTrailingSilence: mapVadToRule1(msg.vadSensitivity ?? 2),
             rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
             rule3MinUtteranceLength: 20.0,
-            hotwordsScore: 5.0,
-            blankPenalty: 1.5,
-            ...(hotwordsFile ? { hotwordsFile } : {}),
           });
           stream = recognizer ? recognizer.createStream() : null;
           prevWasEndpoint = false;
@@ -87,18 +104,13 @@ rl.on("line", (raw: string) => {
         if (decoded) {
           const r = recognizer.getResult(stream);
           const isEndpoint = recognizer.isEndpoint(stream);
-          // Emit endpoint only on first occurrence. Don't reset decoder
-          // state — speaker may resume after pause and needs full context.
-          // Endpoint stays true until reset, so debounce to avoid fragments.
           const endpointNow = isEndpoint && !prevWasEndpoint;
           prevWasEndpoint = isEndpoint;
           if (isEndpoint) { recognizer.reset(stream); prevWasEndpoint = false; }
-          const text = r.text || "";
-          // getResult() returns incremental text (since last call), not cumulative.
-          // No need for delta computation — just emit directly.
+          // getResult() returns incremental text — emit directly.
+          let text = r.text || "";
           if (text) {
-            // Only emit endpoint=true on first occurrence to avoid fragment spam
-            const emitEndpoint = endpointNow;
+            if (endpointNow) text = applyEndpointCorrections(text);
             process.stdout.write(JSON.stringify({ type: "result", text, isEndpoint: endpointNow }) + "\n");
           }
         }

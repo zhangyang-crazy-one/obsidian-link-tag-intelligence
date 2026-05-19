@@ -99,10 +99,6 @@ export class SpeechRecorder {
             this.audioLevel = rms;
           }, 60);
         }
-        // Send ALL audio chunks to ASR (including silence) so sherpa-onnx's
-        // internal VAD can reliably detect endpoint boundaries. The worker
-        // only emits results when actual decoding occurred, so silent chunks
-        // don't produce duplicate text.
         if (this.asrProcess && this.asrReady) {
           const b64 = Buffer.from(new Uint8Array(chunk.buffer)).toString("base64");
           this.asrStdin?.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");
@@ -112,7 +108,7 @@ export class SpeechRecorder {
       // Register device disconnect listener (D-03)
       this.registerDeviceChangeHandler(t);
 
-      // Spawn ASR child process directly (no shell) — avoid exec() buffer accumulation
+      // Spawn ASR child process with shell:true for PATH resolution of 'node' — avoid exec() buffer accumulation
       // and orphaned processes. Shell-based exec() leaves the Node.js worker running
       // (80-167MB WASM) when the shell is killed.
       if (!this.asrProcess) {
@@ -193,9 +189,9 @@ export class SpeechRecorder {
       // D-05: ASR init failure transitions to error state
       this.phase = "error";
       this.cleanupCapture();
+      this.removeDeviceChangeHandler();
       if (this.asrProcess) {
-        this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
-        this.killAsrProcess()
+        this.killAsrProcess();
         this.asrProcess = null;
         this.asrStdin = null;
       }
@@ -314,19 +310,6 @@ export class SpeechRecorder {
     return pluginDir + "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
   }
 
-  /** Sync settings language to SpeechRecorder (called from main.ts saveSettings). */
-  setSettingsLanguage(lang: "zh" | "en"): void {
-    if (this.settingsLanguage !== lang) {
-      this.settingsLanguage = lang;
-      this.setLanguage(lang);
-    }
-  }
-
-  /** Sync VAD sensitivity setting (0-3). */
-  setSettingsVadSensitivity(sensitivity: number): void {
-    this.settingsVadSensitivity = Math.max(0, Math.min(3, Math.round(sensitivity)));
-  }
-
   /** Kill the ASR child process and its entire process group.
    *  With shell:true, spawn creates /bin/sh which spawns node.
    *  process.kill(-pid) sends the signal to the entire process group. */
@@ -345,8 +328,9 @@ export class SpeechRecorder {
 
   /** Full cleanup for plugin onunload(). */
   destroy(): void {
+    this.onAsrResult = null;
     if (this.asrProcess) {
-      this.killAsrProcess()
+      this.killAsrProcess();
       this.asrProcess = null;
       this.asrStdin = null;
       this.asrReady = false;

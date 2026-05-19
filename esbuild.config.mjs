@@ -40,8 +40,8 @@ if (production) {
     { recursive: true }
   );
 
-  // Download and bundle the Chinese ASR model (~80MB INT8) so users
-  // don't need to download separately. Skip if already present.
+  // Download and bundle the Chinese transducer ASR model (~132MB INT8).
+  // Uses greedy_search with dither=0.00003 — no modified_beam_search hallucination.
   const modelDir = path.join(distDir, "models", "zh-2025");
   const modelFiles = ["encoder.int8.onnx", "decoder.onnx", "joiner.int8.onnx", "tokens.txt"];
   const modelComplete = modelFiles.every((f) => fs.existsSync(path.join(modelDir, f)));
@@ -54,17 +54,16 @@ if (production) {
     console.log("  Extracting...");
     fs.mkdirSync(modelDir, { recursive: true });
     execSync(`tar -xjf "${archive}" --strip-components=1 -C "${modelDir}"`, { stdio: "inherit" });
-    // Keep only INT8 files, delete FP32 (~330MB savings)
+    // Keep only needed files
     for (const f of fs.readdirSync(modelDir)) {
       const p = path.join(modelDir, f);
-      if (fs.statSync(p).isFile() && !modelFiles.includes(f) && f !== "bpe.model") {
+      if (fs.statSync(p).isFile() && !modelFiles.includes(f)) {
         fs.unlinkSync(p);
       }
     }
-    // Remove test_wavs directory
     fs.rmSync(path.join(modelDir, "test_wavs"), { recursive: true, force: true });
     fs.unlinkSync(archive);
-    console.log("  Model ready (~80MB)");
+    console.log("  Model ready");
   }
 
   console.log("  dist/ ready: main.js + asr-worker.js + model + sherpa-onnx");
