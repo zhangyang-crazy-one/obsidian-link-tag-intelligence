@@ -57,7 +57,7 @@ let prevWasEndpoint = false;
 
 const rl = require("readline").createInterface({ input: process.stdin });
 rl.on("line", (raw: string) => {
-  let msg: { type: string; modelDir?: string; language?: string; vadSensitivity?: number; bufferB64?: string };
+  let msg: { type: string; modelDir?: string; language?: string; vadSensitivity?: number; bufferB64?: string; lexicon?: string; ruleFsts?: string };
   try { msg = JSON.parse(raw); } catch { return; }
 
   try {
@@ -66,6 +66,9 @@ rl.on("line", (raw: string) => {
         if (!msg.modelDir || !msg.language) { process.stdout.write(JSON.stringify({ type: "ready", ok: false }) + "\n"); break; }
         if (msg.modelDir.split("/").some((p) => p === "..")) { process.stdout.write(JSON.stringify({ type: "ready", ok: false }) + "\n"); break; }
         try {
+          const hrConfig = (msg.lexicon && msg.ruleFsts) ? {
+            hr: { lexicon: msg.lexicon, ruleFsts: msg.ruleFsts, dictDir: "" },
+          } : {};
           recognizer = sherpaOnnx.createOnlineRecognizer({
             modelConfig: {
               transducer: {
@@ -85,6 +88,7 @@ rl.on("line", (raw: string) => {
             rule1MinTrailingSilence: mapVadToRule1(msg.vadSensitivity ?? 2),
             rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
             rule3MinUtteranceLength: 20.0,
+            ...hrConfig,
           });
           stream = recognizer ? recognizer.createStream() : null;
           prevWasEndpoint = false;

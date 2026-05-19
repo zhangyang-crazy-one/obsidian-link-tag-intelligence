@@ -166,12 +166,15 @@ export class SpeechRecorder {
       this.pendingLanguage = this.settingsLanguage;
       // Hotwords file: optional domain-specific terms list in plugin dir
       const hotwordsFile = this.getHotwordsPath();
+      // HomophoneReplacer: lexicon + replace.fst for pinyin-based homophone correction
+      const hrPaths = this.getHomophoneReplacerPaths();
       const initMsg = JSON.stringify({
         type: "init",
         modelDir: this.getModelDir(),
         language: this.settingsLanguage,
         vadSensitivity: this.settingsVadSensitivity,
         ...(hotwordsFile ? { hotwordsFile } : {}),
+        ...(hrPaths ? hrPaths : {}),
       }) + "\n";
       this.asrStdin?.write(initMsg);
 
@@ -382,6 +385,24 @@ export class SpeechRecorder {
       const fs = require("fs") as { existsSync: (p: string) => boolean };
       return fs.existsSync(path) ? path : null;
     } catch { return null; }
+  }
+
+  /** Resolve HomophoneReplacer paths (lexicon.txt + replace.fst) for pinyin-based correction. */
+  private getHomophoneReplacerPaths(): { lexicon: string; ruleFsts: string } | null {
+    const adapter = this.appRef?.vault.adapter;
+    const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
+    if (!basePath) return null;
+    const modelsDir = basePath + "/.obsidian/plugins/link-tag-intelligence/models/";
+    const lexicon = modelsDir + "lexicon.txt";
+    const ruleFsts = modelsDir + "replace.fst";
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+      const fs = require("fs") as { existsSync: (p: string) => boolean };
+      if (fs.existsSync(lexicon) && fs.existsSync(ruleFsts)) {
+        return { lexicon, ruleFsts };
+      }
+    } catch { /* ignore */ }
+    return null;
   }
 
   /** Expose model directory path for file checks by main.ts. */
