@@ -7228,12 +7228,14 @@ var SpeechRecorder = class {
       this.asrReady = false;
       this.pendingLanguage = this.settingsLanguage;
       const hotwordsFile = this.getHotwordsPath();
+      const hrPaths = this.getHomophoneReplacerPaths();
       const initMsg = JSON.stringify({
         type: "init",
         modelDir: this.getModelDir(),
         language: this.settingsLanguage,
         vadSensitivity: this.settingsVadSensitivity,
-        ...hotwordsFile ? { hotwordsFile } : {}
+        ...hotwordsFile ? { hotwordsFile } : {},
+        ...hrPaths ? hrPaths : {}
       }) + "\n";
       this.asrStdin?.write(initMsg);
       await new Promise((resolve, reject) => {
@@ -7417,6 +7419,23 @@ var SpeechRecorder = class {
     } catch {
       return null;
     }
+  }
+  /** Resolve HomophoneReplacer paths (lexicon.txt + replace.fst) for pinyin-based correction. */
+  getHomophoneReplacerPaths() {
+    const adapter = this.appRef?.vault.adapter;
+    const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
+    if (!basePath) return null;
+    const modelsDir = basePath + "/.obsidian/plugins/link-tag-intelligence/models/";
+    const lexicon = modelsDir + "lexicon.txt";
+    const ruleFsts = modelsDir + "replace.fst";
+    try {
+      const fs = require("fs");
+      if (fs.existsSync(lexicon) && fs.existsSync(ruleFsts)) {
+        return { lexicon, ruleFsts };
+      }
+    } catch {
+    }
+    return null;
   }
   /** Expose model directory path for file checks by main.ts. */
   getModelDirInternal(language) {

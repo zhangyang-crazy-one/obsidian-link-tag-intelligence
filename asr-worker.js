@@ -48,6 +48,9 @@ rl.on("line", (raw) => {
           break;
         }
         try {
+          const hrConfig = msg.lexicon && msg.ruleFsts ? {
+            hr: { lexicon: msg.lexicon, ruleFsts: msg.ruleFsts, dictDir: "" }
+          } : {};
           recognizer = sherpaOnnx.createOnlineRecognizer({
             modelConfig: {
               transducer: {
@@ -68,7 +71,8 @@ rl.on("line", (raw) => {
             enableEndpoint: 1,
             rule1MinTrailingSilence: mapVadToRule1(msg.vadSensitivity ?? 2),
             rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
-            rule3MinUtteranceLength: 20
+            rule3MinUtteranceLength: 20,
+            ...hrConfig
           });
           stream = recognizer ? recognizer.createStream() : null;
           prevWasEndpoint = false;
