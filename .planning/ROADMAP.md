@@ -58,3 +58,13 @@ Phases execute in numeric order: 1 → 2
 |-------|----------------|--------|-----------|
 | 1. Audio Capture & UI Foundation | 0/0 | Not started | - |
 | 2. ASR Model & Transcription | 0/0 | Not started | - |
+
+### Phase 3: ASR recognition optimization with NotebookLM research
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 2
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 3 to break down)

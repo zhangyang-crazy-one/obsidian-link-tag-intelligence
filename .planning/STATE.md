@@ -69,6 +69,10 @@ Recent decisions affecting current work:
 
 None yet.
 
+### Roadmap Evolution
+
+- Phase 3 added: ASR recognition optimization with NotebookLM research
+
 ### Blockers/Concerns
 
 None yet.
