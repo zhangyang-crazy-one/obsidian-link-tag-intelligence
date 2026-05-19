@@ -1,5 +1,7 @@
 # Link & Tag Intelligence
 
+[中文文档](README_ZH.md)
+
 Native-first bilingual linking, tagging, and research-note workflows for an Obsidian vault.
 
 The plugin is now designed around a CLI-first ingestion model:
