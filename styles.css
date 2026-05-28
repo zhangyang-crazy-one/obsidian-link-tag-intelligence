@@ -65,6 +65,7 @@
   word-break: break-word;
 }
 
+.lti-speech-panel,
 .lti-toolbar,
 .lti-section,
 .lti-result-card,
@@ -77,6 +78,60 @@
     linear-gradient(180deg, color-mix(in srgb, var(--background-secondary) 48%, transparent), transparent 32%),
     var(--lti-surface);
   box-shadow: var(--lti-shadow-panel);
+}
+
+.lti-speech-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.52rem;
+  padding: 0.65rem 0.68rem 0.6rem;
+  margin-bottom: 0.65rem;
+}
+
+.lti-speech-record-btn {
+  width: 100% !important;
+  min-height: 2.3rem !important;
+  font-size: 0.8rem !important;
+  font-weight: 750 !important;
+  border-radius: 10px !important;
+  background: linear-gradient(135deg, var(--interactive-accent) 0%, color-mix(in srgb, var(--interactive-accent) 80%, black) 100%) !important;
+  color: #ffffff !important;
+  border: none !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 4px 12px color-mix(in srgb, var(--interactive-accent) 30%, transparent) !important;
+  cursor: pointer;
+  transition: transform 0.1s ease, filter 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+.lti-speech-record-btn:hover {
+  filter: brightness(1.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 6px 16px color-mix(in srgb, var(--interactive-accent) 45%, transparent) !important;
+}
+
+.lti-speech-record-btn:active {
+  transform: scale(0.97) !important;
+}
+
+.lti-speech-record-btn.is-idle {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #ffffff 4%, transparent), transparent 100%),
+    var(--lti-surface-raised) !important;
+  color: var(--text-normal) !important;
+  border: 1px solid var(--lti-border) !important;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #ffffff 6%, transparent),
+    0 1px 3px rgba(0, 0, 0, 0.05) !important;
+}
+
+.lti-speech-record-btn.is-idle:hover {
+  background: var(--interactive-hover) !important;
+  border-color: var(--lti-border-hover) !important;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #ffffff 10%, transparent),
+    0 2px 6px rgba(0, 0, 0, 0.08) !important;
 }
 
 .lti-toolbar {
@@ -106,6 +161,7 @@
   text-align: left;
 }
 
+.lti-speech-panel::before,
 .lti-toolbar::before,
 .lti-section::before,
 .lti-result-card::before {
@@ -208,7 +264,8 @@
 .lti-action-button:active,
 .lti-inline-button:active,
 .lti-note-link:active {
-  transform: translateY(0);
+  transform: scale(0.96);
+  transition: transform 0.05s ease;
 }
 
 .lti-toolbar button:focus-visible,
@@ -2113,7 +2170,20 @@
 .lti-workbench-companion-description,
 .lti-workbench-inline-note,
 .lti-workbench-hint {
-  line-height: 1.64;
+  line-height: 1.45;
+  font-size: 0.72rem !important;
+  color: var(--text-muted) !important;
+  opacity: 0.62;
+  transition: opacity 0.22s ease, color 0.22s ease;
+}
+
+/* Fade in description text subtly on hover */
+.lti-workbench-section-card:hover .lti-workbench-section-description,
+.lti-workbench-companion-card:hover .lti-workbench-companion-description,
+.lti-workbench-field:hover .lti-workbench-field-description,
+.lti-workbench-action-tile:hover .lti-workbench-action-description {
+  opacity: 0.9;
+  color: var(--text-normal) !important;
 }
 
 .lti-workbench-action-grid {
@@ -2140,10 +2210,12 @@
 
 .lti-workbench-action-description {
   color: var(--text-muted);
-  font-size: 0.73rem;
-  line-height: 1.55;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  opacity: 0.62;
   overflow-wrap: anywhere;
   word-break: break-word;
+  transition: opacity 0.22s ease, color 0.22s ease;
 }
 
 .lti-workbench-companion-grid {
@@ -2410,39 +2482,108 @@
 .lti-workbench-page-nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.46rem;
+  gap: 6px;
+  padding: 5px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--background-secondary) 84%, var(--background-primary-alt));
+  border: 1px solid var(--lti-settings-border);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
 .lti-workbench-page-tab {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 2.2rem;
-  padding: 0.48rem 0.86rem;
-  border: 1px solid var(--lti-settings-border);
-  border-radius: 999px;
-  background: var(--lti-settings-surface-raised);
+  min-height: 2rem;
+  padding: 0.4rem 1.05rem;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
   color: var(--text-muted);
   font-size: 0.77rem;
-  font-weight: 730;
-  line-height: 1.2;
+  font-weight: 650;
+  cursor: pointer;
   transition:
-    border-color var(--lti-transition),
-    background-color var(--lti-transition),
-    color var(--lti-transition);
+    background-color 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.1s ease;
 }
 
 .lti-workbench-page-tab:hover {
-  border-color: color-mix(in srgb, var(--interactive-accent) 26%, var(--background-modifier-border));
   color: var(--text-normal);
+  background-color: color-mix(in srgb, var(--background-primary) 34%, transparent);
+}
+
+.lti-workbench-page-tab:active {
+  transform: scale(0.97);
 }
 
 .lti-workbench-page-tab.is-active {
-  border-color: color-mix(in srgb, var(--interactive-accent) 28%, var(--background-modifier-border));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--interactive-accent) 7%, transparent), transparent 100%),
-    var(--lti-settings-surface-raised);
+  background: var(--background-primary);
   color: var(--text-accent);
+  font-weight: 750;
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.15),
+    0 1px 2px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 10%, transparent);
+}
+
+/* ── Collapsible Guide Styling ── */
+details.lti-workbench-guide-details {
+  display: block;
+  border: 1px solid var(--lti-settings-border);
+  border-radius: var(--lti-settings-radius);
+  background: var(--lti-settings-surface);
+  box-shadow: var(--lti-settings-shadow);
+  overflow: hidden;
+  transition: border-color var(--lti-transition);
+  margin-bottom: 0.5rem;
+}
+details.lti-workbench-guide-details:hover {
+  border-color: var(--lti-settings-border-strong);
+}
+summary.lti-workbench-guide-summary {
+  display: block;
+  padding: 0.95rem 1.05rem;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+summary.lti-workbench-guide-summary::-webkit-details-marker {
+  display: none; /* Hide default chevron */
+}
+.lti-workbench-guide-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  position: relative;
+  padding-right: 2rem;
+}
+/* Add a beautiful custom chevron in the header */
+.lti-workbench-guide-header::after {
+  content: "↓";
+  position: absolute;
+  right: 0.2rem;
+  top: 50%;
+  transform: translateY(-50%) rotate(-90deg);
+  font-size: 1rem;
+  color: var(--text-muted);
+  font-weight: bold;
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), color 0.28s ease;
+}
+details.lti-workbench-guide-details[open] summary.lti-workbench-guide-summary .lti-workbench-guide-header::after {
+  transform: translateY(-50%) rotate(0deg);
+  color: var(--text-accent);
+}
+.lti-workbench-guide-inner {
+  border: none !important;
+  border-top: 1px solid var(--lti-settings-border) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: color-mix(in srgb, var(--lti-settings-surface) 96%, black) !important;
+  padding: 1.1rem 1.25rem !important;
+  margin: 0 !important;
 }
 
 .lti-workbench-page {
@@ -3348,24 +3489,53 @@
 
 .lti-settings-root .lti-workbench-page-nav {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.46rem;
-  padding: 0.34rem;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.35rem;
+  padding: 0.35rem;
   border: 1px solid var(--lti-settings-border);
-  border-radius: 18px;
-  background: color-mix(in srgb, var(--background-primary) 84%, var(--background-secondary));
-  box-shadow: var(--lti-settings-shadow);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--background-secondary) 84%, var(--background-primary-alt));
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
 .lti-settings-root .lti-workbench-page-tab {
   width: 100%;
   min-width: 0;
-  min-height: 2.45rem;
-  padding: 0.52rem 0.76rem;
-  border-radius: 14px;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  min-height: 2.2rem;
+  padding: 0.4rem 0.65rem;
+  border-radius: 9px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: transparent;
+  border: none;
+  font-weight: 650;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background-color 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.1s ease;
+}
+
+.lti-settings-root .lti-workbench-page-tab:hover {
+  color: var(--text-normal);
+  background-color: color-mix(in srgb, var(--background-primary) 34%, transparent);
+}
+
+.lti-settings-root .lti-workbench-page-tab:active {
+  transform: scale(0.97);
+}
+
+.lti-settings-root .lti-workbench-page-tab.is-active {
+  background: var(--background-primary);
+  color: var(--text-accent);
+  font-weight: 750;
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.15),
+    0 1px 2px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 10%, transparent);
 }
 
 .lti-settings-root .lti-workbench-page {
@@ -4985,9 +5155,10 @@ button[lvl="primary"]:hover {
   color: var(--text-muted);
 }
 
-/* Initializing: pulse animation on button */
+/* Initializing: breathing micro-pulse glow on button (fixes abnormal spin) */
 .lti-toolbar button[data-action="speechRecord"].is-initializing {
-  animation: lti-speech-spin 1s linear infinite;
+  animation: lti-speech-initializing-pulse 1.6s ease-in-out infinite;
+  border-color: var(--interactive-accent) !important;
 }
 
 /* Recording: pulsing accent border glow */
@@ -4999,17 +5170,18 @@ button[lvl="primary"]:hover {
   opacity: 1;
 }
 
-/* Processing: fade pulse */
+/* Processing: elegant fade pulse */
 .lti-toolbar button[data-action="speechRecord"].is-processing {
   animation: lti-speech-fade-pulse 1s ease-in-out infinite;
+  border-color: var(--text-accent) !important;
 }
 
 /* Error: red border + red accent line */
 .lti-toolbar button[data-action="speechRecord"].is-error {
-  border-color: #e93147 !important;
+  border-color: #ef4444 !important;
 }
 .lti-toolbar button[data-action="speechRecord"].is-error::before {
-  background: #e93147 !important;
+  background: #ef4444 !important;
   opacity: 1;
 }
 
@@ -5020,51 +5192,114 @@ button[lvl="primary"]:hover {
 
 /* ── Keyframe Animations ── */
 @keyframes lti-speech-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--interactive-accent) 40%, transparent); }
-  50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--interactive-accent) 0%, transparent); }
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--interactive-accent) 45%, transparent);
+    background-color: var(--lti-surface-raised);
+  }
+  50% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--interactive-accent) 0%, transparent);
+    background-color: color-mix(in srgb, var(--interactive-accent) 8%, var(--lti-surface-raised));
+  }
 }
-@keyframes lti-speech-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+@keyframes lti-speech-initializing-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--interactive-accent) 24%, transparent);
+    background-color: var(--lti-surface-raised);
+  }
+  50% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--interactive-accent) 0%, transparent);
+    background-color: color-mix(in srgb, var(--interactive-accent) 6%, var(--lti-surface-raised));
+  }
 }
 @keyframes lti-speech-fade-pulse {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 0.9; }
+  0%, 100% {
+    opacity: 0.4;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--text-accent) 20%, transparent);
+  }
+  50% {
+    opacity: 0.95;
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--text-accent) 0%, transparent);
+  }
 }
 @keyframes lti-countdown-flash {
-  0% { opacity: 1; }
-  100% { opacity: 0.3; }
+  0% {
+    background-color: #ef4444 !important;
+    color: #ffffff !important;
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.6);
+  }
+  100% {
+    background-color: var(--lti-surface-raised);
+    color: var(--text-normal);
+    box-shadow: 0 0 0px transparent;
+  }
 }
 
 /* ── VU Meter ── */
 .lti-vu-meter {
+  grid-column: span 3; /* Spans full width of the 3-column toolbar grid */
   display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  margin-top: 0.4rem;
-  padding: 0.3rem 0;
-  height: 1.8rem;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 0.55rem;
+  padding: 0.5rem 0.9rem;
+  height: 2.6rem;
+  background: color-mix(in srgb, var(--background-secondary-alt) 75%, var(--background-primary));
+  border: 1px solid var(--lti-border);
+  border-radius: 12px;
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.2),
+    0 4px 12px -8px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(8px);
 }
 .lti-vu-meter[hidden] { display: none; }
 
-.lti-vu-bar {
-  width: 8px;
-  height: 100%;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--text-faint) 18%, transparent);
-  transition: background-color 80ms ease;
+/* Live Indicator Dot */
+.lti-vu-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ef4444;
+  margin-right: 6px;
+  box-shadow: 0 0 8px #ef4444;
+  animation: lti-live-dot-pulse 1s ease-in-out infinite;
 }
-.lti-vu-meter .lti-vu-bar.is-active-green  { background: #4caf50; }
-.lti-vu-meter .lti-vu-bar.is-active-yellow { background: #ff9800; }
-.lti-vu-meter .lti-vu-bar.is-active-red    { background: #f44336; }
+@keyframes lti-live-dot-pulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+
+.lti-vu-bar {
+  width: 10px;
+  height: 100%;
+  max-height: 1.3rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-faint) 15%, transparent);
+  transition: background-color 80ms ease, box-shadow 80ms ease;
+}
+.lti-vu-meter .lti-vu-bar.is-active-green  {
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
+}
+.lti-vu-meter .lti-vu-bar.is-active-yellow {
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
+}
+.lti-vu-meter .lti-vu-bar.is-active-red    {
+  background: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+}
 
 .lti-vu-db-label {
-  margin-left: 6px;
-  font-size: 0.65rem;
+  margin-left: 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
   line-height: 1;
-  color: var(--text-muted);
+  color: var(--text-accent);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--text-accent) 24%, transparent);
   font-family: var(--font-monospace);
-  min-width: 38px;
+  min-width: 46px;
+  text-align: right;
   white-space: nowrap;
   align-self: center;
 }

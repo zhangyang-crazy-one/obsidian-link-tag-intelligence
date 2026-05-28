@@ -142,6 +142,7 @@ export interface LinkTagIntelligenceSettings {
   speechLanguage: "zh" | "en";
   speechVadSensitivity: number;
   speechAutoStopSec: number;
+  speechAutoPunctuate: boolean;
 }
 
 export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSettings {
@@ -181,7 +182,8 @@ export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSetting
     speechLanguage: "zh",
     speechHotwordsFile: "",
     speechVadSensitivity: 2,
-    speechAutoStopSec: 0
+    speechAutoStopSec: 0,
+    speechAutoPunctuate: true
   };
 }
 
@@ -358,11 +360,12 @@ export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagI
   normalized.speechAutoStopSec = Number.isFinite(normalized.speechAutoStopSec)
     ? (normalized.speechAutoStopSec === 0 ? 0 : Math.max(10, Math.min(300, Math.round(normalized.speechAutoStopSec))))
     : defaults.speechAutoStopSec;
+  normalized.speechAutoPunctuate = typeof normalized.speechAutoPunctuate === "boolean" ? normalized.speechAutoPunctuate : defaults.speechAutoPunctuate;
 
   return normalized;
 }
 
-type WorkbenchPage = "overview" | "workflow" | "plugins" | "taxonomy";
+type WorkbenchPage = "overview" | "workflow" | "plugins" | "taxonomy" | "speech";
 
 export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
   plugin: LinkTagIntelligencePlugin;
@@ -379,8 +382,6 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.addClass("lti-settings-root");
-
-    this.renderVoiceSection(containerEl);
 
     const shell = containerEl.createDiv({ cls: "lti-workbench" });
     shell.createDiv({
@@ -404,6 +405,7 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     this.createPageTab(nav, "workflow", this.plugin.t("settingsWorkbenchPageWorkflow"));
     this.createPageTab(nav, "plugins", this.plugin.t("settingsWorkbenchPagePlugins"));
     this.createPageTab(nav, "taxonomy", this.plugin.t("settingsWorkbenchPageTaxonomy"));
+    this.createPageTab(nav, "speech", this.plugin.t("settingsWorkbenchPageSpeech"));
 
     const page = containerEl.createDiv({ cls: "lti-workbench-page" });
     switch (this.activePage) {
@@ -418,6 +420,9 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
         break;
       case "taxonomy":
         this.renderTaxonomyPage(page);
+        break;
+      case "speech":
+        this.renderVoiceSection(page);
         break;
     }
   }
@@ -581,25 +586,48 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     return WORKBENCH_GUIDE[this.plugin.currentLanguage()];
   }
 
+  private createCollapsibleCard(parent: HTMLElement, title: string, description?: string): HTMLDivElement {
+    const details = parent.createEl("details", { cls: "lti-workbench-guide-details" });
+    const summary = details.createEl("summary", { cls: "lti-workbench-guide-summary" });
+    const header = summary.createDiv({ cls: "lti-workbench-guide-header" });
+    header.createEl("h3", { text: title, cls: "lti-workbench-section-title" });
+    if (description) {
+      header.createDiv({
+        text: description,
+        cls: "setting-item-description lti-workbench-section-description"
+      });
+    }
+    const inner = details.createDiv({ cls: "lti-workbench-guide-inner" });
+    return inner;
+  }
+
   private renderOverviewGuideSection(containerEl: HTMLElement): void {
     const guide = this.currentWorkbenchGuide();
-    const section = this.createSectionCard(containerEl, guide.overviewTitle, guide.overviewDescription);
-    const grid = section.createDiv({ cls: "lti-workbench-intro-grid" });
-    this.renderGuideLocaleCard(grid, "zh");
-    this.renderGuideLocaleCard(grid, "en");
+    const activeLang = this.plugin.currentLanguage();
+    const hintText = activeLang === "zh" 
+      ? "💡 点击展开研究栈说明与核心指南" 
+      : "💡 Click to expand research stack & core guides";
+      
+    const inner = this.createCollapsibleCard(containerEl, guide.overviewTitle, hintText);
+    this.renderGuideLocaleCard(inner, activeLang);
   }
 
   private renderWorkflowGuideSection(containerEl: HTMLElement): void {
     const guide = this.currentWorkbenchGuide();
-    const section = this.createSectionCard(containerEl, guide.workflowTitle, guide.workflowDescription);
-    section.createDiv({
+    const activeLang = this.plugin.currentLanguage();
+    const hintText = activeLang === "zh"
+      ? "💡 点击展开完整工作流执行细节与排错建议"
+      : "💡 Click to expand full workflow execution details & troubleshooting";
+
+    const inner = this.createCollapsibleCard(containerEl, guide.workflowTitle, hintText);
+    inner.createDiv({
       text: guide.lead,
       cls: "setting-item-description lti-workbench-intro-lead"
     });
-    this.renderGuideNoteBlock(section, guide.bridgeLabel, guide.bridgeValue);
-    this.renderGuideListBlock(section, guide.stackTitle, guide.stackItems);
-    this.renderGuideListBlock(section, guide.flowTitle, guide.flowItems, true);
-    this.renderGuideNoteBlock(section, guide.troubleshootTitle, guide.troubleshootBody);
+    this.renderGuideNoteBlock(inner, guide.bridgeLabel, guide.bridgeValue);
+    this.renderGuideListBlock(inner, guide.stackTitle, guide.stackItems);
+    this.renderGuideListBlock(inner, guide.flowTitle, guide.flowItems, true);
+    this.renderGuideNoteBlock(inner, guide.troubleshootTitle, guide.troubleshootBody);
   }
 
   private renderGuideLocaleCard(containerEl: HTMLElement, language: UILanguage): void {
@@ -1721,5 +1749,17 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
         void this.plugin.saveSettings();
       }
     });
+
+    // Punctuation Prediction — toggle, default true (D-19)
+    this.createToggleField(
+      section,
+      this.plugin.t("speechAutoPunctuate"),
+      this.plugin.t("speechAutoPunctuateDescription"),
+      this.plugin.settings.speechAutoPunctuate,
+      async (value) => {
+        this.plugin.settings.speechAutoPunctuate = value;
+        await this.plugin.saveSettings();
+      }
+    );
   }
 }

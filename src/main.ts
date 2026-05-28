@@ -1,4 +1,4 @@
-import { App, FileView, MarkdownView, Notice, Plugin, resolveSubpath, TFile, type HoverParent, WorkspaceLeaf } from "obsidian";
+import { App, FileSystemAdapter, FileView, MarkdownView, Notice, Plugin, resolveSubpath, TFile, type HoverParent, WorkspaceLeaf } from "obsidian";
 
 // Internal Obsidian app interface for accessing plugins (not part of public API)
 type InternalApp = App & { plugins?: { plugins?: Record<string, { ea?: unknown }> } };
@@ -93,12 +93,18 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   private referencePreviewToken = 0;
   speechRecorder: SpeechRecorder = new SpeechRecorder();
   private _sentenceManager: SentenceManager | null = null;
+  private speechInsertBuffer = "";
+  private speechInsertTimer: ReturnType<typeof setTimeout> | null = null;
   autoStopTimer: ReturnType<typeof setInterval> | null = null;
   autoStopSecondsRemaining = 0;
 
   async onload(): Promise<void> {
     await this.loadSettings();
     this.speechRecorder.setApp(this.app);
+    this.speechRecorder.setSettingsLanguage(this.settings.speechLanguage);
+    this.speechRecorder.setSettingsVadSensitivity(this.settings.speechVadSensitivity);
+    this.speechRecorder.setHotwordsFile(this.settings.speechHotwordsFile);
+    this.speechRecorder.setSettingsAutoPunctuate(this.settings.speechAutoPunctuate);
     const debugLogPath = await resetDebugLog(this.app);
     debugLog(this.app, "plugin.onload", {
       version: this.manifest.version,
@@ -292,6 +298,9 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       if (!(file instanceof TFile) || !(currentFile instanceof TFile) || file.path !== currentFile.path) {
         return;
       }
+      if (this.speechRecorder.isActive && file.path === currentFile.path) {
+        return;
+      }
 
       this.refreshAllViews({
         reason: "metadata",
@@ -299,14 +308,6 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       });
     }));
     this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => {
-      const viewType = leaf?.view?.getViewType() ?? null;
-      const viewFile = leaf?.view instanceof FileView ? leaf.view.file?.path ?? null : null;
-      debugLog(this.app, "active-leaf-change:before-timeout", {
-        viewType,
-        viewFile,
-        lastSupportedFilePath: this.lastSupportedFilePath,
-        lastExcalidrawFilePath: this.lastExcalidrawFilePath,
-      });
       setTimeout(() => {
         const view = leaf?.view;
         let leafFile: TFile | null = null;
@@ -329,14 +330,6 @@ export default class LinkTagIntelligencePlugin extends Plugin {
             }
           }
         }
-
-        debugLog(this.app, "active-leaf-change:after-timeout", {
-          viewType: view?.getViewType() ?? null,
-          leafFile: leafFile?.path ?? null,
-          isExcalidrawViewReady,
-          lastSupportedFilePath: this.lastSupportedFilePath,
-          lastExcalidrawFilePath: this.lastExcalidrawFilePath,
-        });
 
         const fileChanged = this.captureSupportedFileContext(leafFile);
         const editorChanged = this.captureEditorContext(leaf);
@@ -375,6 +368,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
   onunload(): void {
     this.cancelAutoStopTimer();
+    this.flushSpeechInsertBuffer();
     this._sentenceManager = null;
     this.speechRecorder.destroy();
     this.referencePreview.destroy();
@@ -392,6 +386,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     this.speechRecorder.setSettingsLanguage(this.settings.speechLanguage);
     this.speechRecorder.setSettingsVadSensitivity(this.settings.speechVadSensitivity);
     this.speechRecorder.setHotwordsFile(this.settings.speechHotwordsFile);
+    this.speechRecorder.setSettingsAutoPunctuate(this.settings.speechAutoPunctuate);
     await this.saveData(this.settings);
     return;
 
@@ -648,15 +643,6 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     const activeView = this.app.workspace.getActiveViewOfType(FileView);
     const leafViewFile = activeView?.file ?? null;
 
-    debugLog(this.app, "getContextNoteFile", {
-      getActiveFile_result: activeFile?.path ?? null,
-      leafViewFile: leafViewFile?.path ?? null,
-      isSupported_activeFile: isSupportedNoteFile(activeFile),
-      isExcalidraw_leafViewFile: leafViewFile instanceof TFile ? isExcalidrawFile(leafViewFile) : false,
-      lastSupportedFilePath: this.lastSupportedFilePath,
-      lastExcalidrawFilePath: this.lastExcalidrawFilePath,
-    });
-
     if (activeFile instanceof TFile) {
       if (isSupportedNoteFile(activeFile)) {
         this.captureSupportedFileContext(activeFile);
@@ -743,13 +729,8 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
   refreshAllViews(request: ViewRefreshRequest = { reason: "mutation" }): void {
     const leaves = this.app.workspace.getLeavesOfType(LINK_TAG_INTELLIGENCE_VIEW);
-    debugLog(this.app, "refreshAllViews", { leafCount: leaves.length, reason: request.reason, changedPaths: request.changedPaths ?? [] });
     for (const leaf of leaves) {
       const view = leaf.view;
-      debugLog(this.app, "refreshAllViews:viewCheck", {
-        viewType: view?.constructor.name,
-        isLTIView: view instanceof LinkTagIntelligenceView
-      });
       if (view instanceof LinkTagIntelligenceView) {
         view.requestRefresh(request);
       }
@@ -1125,6 +1106,67 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     } catch { return null; }
   }
 
+  private async ensurePunctuationModel(): Promise<boolean> {
+    const fs = this.getFs();
+    if (!fs) return false;
+
+    const adapter = this.app.vault.adapter;
+    const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
+    const puncDir = basePath + "/.obsidian/plugins/link-tag-intelligence/models/punc-zh-2024/";
+    const modelFile = puncDir + "model.onnx";
+
+    if (fs.existsSync(modelFile)) {
+      return true;
+    }
+
+    // Check if models folder exists, create it
+    const modelsDir = basePath + "/.obsidian/plugins/link-tag-intelligence/models/";
+    if (!fs.existsSync(modelsDir)) {
+      fs.mkdirSync(modelsDir, { recursive: true });
+    }
+    if (!fs.existsSync(puncDir)) {
+      fs.mkdirSync(puncDir, { recursive: true });
+    }
+
+    const notice = new Notice("正在后台下载离线中文标点预测模型 (~40MB)...", 0);
+
+    try {
+      const url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/punctuation-models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12.tar.bz2";
+      const archiveName = "sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12.tar.bz2";
+      const archivePath = puncDir + archiveName;
+
+      const cp = require("child_process") as { execSync: (c: string, o?: { maxBuffer?: number }) => Buffer };
+      cp.execSync(
+        `curl -L -o "${archivePath}" "${url}" --progress-bar 2>&1`,
+        { maxBuffer: 1024 * 1024 }
+      );
+
+      notice.setMessage("正在解压标点恢复模型...");
+      cp.execSync(`tar -xjf "${archiveName}" --strip-components=1`, { cwd: puncDir, maxBuffer: 1024 * 1024 });
+
+      // Clean up archive
+      const fs2 = require("fs") as typeof import("fs");
+      try { fs2.unlinkSync(archivePath); } catch { /* ok */ }
+
+      // Keep only model.onnx to save space
+      const { join } = require("path") as { join: (...p: string[]) => string };
+      for (const f of fs2.readdirSync(puncDir)) {
+        const p = join(puncDir, f);
+        if (fs2.statSync(p).isFile() && f !== "model.onnx") {
+          fs2.unlinkSync(p);
+        }
+      }
+
+      notice.hide();
+      new Notice("离线标点符号预测模型就绪。");
+      return true;
+    } catch (e) {
+      notice.hide();
+      new Notice("标点模型离线下载失败: " + String(e), 8000);
+      return false;
+    }
+  }
+
   private async ensureSpeechModel(): Promise<boolean> {
     const fs = this.getFs();
     const modelDir = this.speechRecorder.getModelDirInternal();
@@ -1146,7 +1188,12 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       }
     }
 
-    if (allExist) return true;
+    if (allExist) {
+      if (lang === "zh" && this.settings.speechAutoPunctuate) {
+        return this.ensurePunctuationModel();
+      }
+      return true;
+    }
 
     if (!anyExist) {
       new Notice(
@@ -1160,7 +1207,11 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       );
     }
 
-    return this.downloadSpeechModel();
+    const asrReady = await this.downloadSpeechModel();
+    if (asrReady && lang === "zh" && this.settings.speechAutoPunctuate) {
+      return this.ensurePunctuationModel();
+    }
+    return asrReady;
   }
 
   private async downloadZhArchive(modelDir: string): Promise<boolean> {
@@ -1565,7 +1616,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
         // Pass it directly to finalizeSentence(text) — the text parameter
         // REPLACES the buffer, avoiding quadratic accumulation.
         const finalSentence = this._sentenceManager!.finalizeSentence(text);
-        if (finalSentence) this.insertSpeechText(finalSentence);
+        if (finalSentence) this.queueSpeechText(finalSentence);
       } else {
         // Partial: accumulate for live preview only (don't insert)
         this._sentenceManager!.addPartialText(text);
@@ -1601,12 +1652,34 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       const before = this._sentenceManager.getPartialText();
       if (before.trim()) {
         const final = this._sentenceManager.finalizeSentence();
-        if (final) this.insertSpeechText(final);
+        if (final) this.queueSpeechText(final);
       }
+      this.flushSpeechInsertBuffer();
       this.cancelAutoStopTimer();
     }
 
     this.refreshAllViews();
+  }
+
+  private queueSpeechText(text: string): void {
+    if (!text) return;
+    this.speechInsertBuffer += `${text} `;
+    if (!this.speechInsertTimer) {
+      this.speechInsertTimer = setTimeout(() => {
+        this.speechInsertTimer = null;
+        this.flushSpeechInsertBuffer();
+      }, 1200);
+    }
+  }
+
+  private flushSpeechInsertBuffer(): void {
+    if (this.speechInsertTimer) {
+      clearTimeout(this.speechInsertTimer);
+      this.speechInsertTimer = null;
+    }
+    const text = this.speechInsertBuffer;
+    this.speechInsertBuffer = "";
+    this.insertSpeechText(text);
   }
 
   private insertSpeechText(text: string): void {
@@ -1620,18 +1693,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
     const editor = editorView.editor;
 
-    // D-08: Save cursor position before insert (for concurrent typing protection)
-    const cursor = editor.getCursor();
-
-    // D-07: Insert sentence at current cursor with trailing space
-    editor.replaceSelection(text + " ");
-
-    // D-08: Cursor is already positioned after inserted text by replaceSelection
-    debugLog(this.app, "speech.text-inserted", {
-      textLen: text.length,
-      cursorLine: cursor.line,
-      cursorCh: cursor.ch,
-    });
+    editor.replaceSelection(text);
   }
 
   // ─── Auto-stop timer ─────────────────────────────────────────────────

@@ -49,15 +49,27 @@ function applyEndpointCorrections(text: string): string {
   return result;
 }
 
+function restorePunctuation(rawText: string): string {
+  if (punctuation && rawText.trim()) {
+    try {
+      return punctuation.addPunct(rawText);
+    } catch (e) {
+      console.error("[lti-asr-worker] Punctuation error:", e);
+    }
+  }
+  return rawText;
+}
+
 // ---- ASR engine ----
 
 let recognizer: Recognizer | null = null;
 let stream: Stream | null = null;
 let prevWasEndpoint = false;
+let punctuation: any = null;
 
 const rl = require("readline").createInterface({ input: process.stdin });
 rl.on("line", (raw: string) => {
-  let msg: { type: string; modelDir?: string; language?: string; vadSensitivity?: number; bufferB64?: string; lexicon?: string; ruleFsts?: string };
+  let msg: { type: string; modelDir?: string; language?: string; vadSensitivity?: number; bufferB64?: string; lexicon?: string; ruleFsts?: string; speechAutoPunctuate?: boolean };
   try { msg = JSON.parse(raw); } catch { return; }
 
   try {
@@ -92,6 +104,24 @@ rl.on("line", (raw: string) => {
           });
           stream = recognizer ? recognizer.createStream() : null;
           prevWasEndpoint = false;
+
+          // Initialize offline punctuation if requested and Chinese language
+          punctuation = null;
+          if (msg.speechAutoPunctuate && msg.language === "zh") {
+            const path = require("path");
+            const puncModelPath = path.join(msg.modelDir, "..", "punc-zh-2024", "model.onnx");
+            if (fs.existsSync(puncModelPath)) {
+              punctuation = sherpaOnnx.createOfflinePunctuation({
+                model: {
+                  ctTransformer: puncModelPath,
+                  numThreads: 1,
+                }
+              });
+            } else {
+              console.warn("[lti-asr-worker] Punctuation model not found at path:", puncModelPath);
+            }
+          }
+
           process.stdout.write(JSON.stringify({ type: "ready", ok: !!recognizer }) + "\n");
         } catch (e) {
           process.stdout.write(JSON.stringify({ type: "ready", ok: false, error: String(e) }) + "\n");
@@ -114,7 +144,10 @@ rl.on("line", (raw: string) => {
           // getResult() returns incremental text — emit directly.
           let text = r.text || "";
           if (text) {
-            if (endpointNow) text = applyEndpointCorrections(text);
+            if (endpointNow) {
+              text = applyEndpointCorrections(text);
+              text = restorePunctuation(text);
+            }
             process.stdout.write(JSON.stringify({ type: "result", text, isEndpoint: endpointNow }) + "\n");
           }
         }
@@ -124,6 +157,7 @@ rl.on("line", (raw: string) => {
       case "destroy": {
         if (stream) { stream.free(); stream = null; }
         if (recognizer) { recognizer.free(); recognizer = null; }
+        if (punctuation) { punctuation.free(); punctuation = null; }
         process.stdout.write(JSON.stringify({ type: "destroyed" }) + "\n");
         process.exit(0);
       }

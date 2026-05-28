@@ -240,6 +240,7 @@ export class LinkTagIntelligenceView extends ItemView {
   private refreshPromise: Promise<void> | null = null;
   private pendingRefresh: ViewRefreshRequest | null = null;
   private refreshFrame: number | null = null;
+  private vuMeterFrame: number | null = null;
   private dependencyPaths = new Set<string>();
   private toolbarSignature: string | null = null;
   private sectionsContainerEl: HTMLDivElement | null = null;
@@ -336,6 +337,36 @@ export class LinkTagIntelligenceView extends ItemView {
   }
 
   private buildShell(): void {
+    // 1. Create a dedicated speech control panel at the very top of the sidebar (D-07)
+    const speechPanel = this.contentEl.createDiv({ cls: "lti-speech-panel" });
+    
+    const speechButton = speechPanel.createEl("button", {
+      text: this.plugin.t("speechRecord"),
+      cls: "lti-toolbar-button lti-speech-record-btn",
+      attr: { type: "button" }
+    });
+    speechButton.dataset.action = "speechRecord";
+    speechButton.addEventListener("click", () => {
+      void this.plugin.toggleSpeechRecording();
+    });
+    this.toolbarButtons.set("speechRecord", speechButton);
+
+    const vuMeter = speechPanel.createDiv({ cls: "lti-vu-meter" });
+    vuMeter.hidden = true;
+    this.vuMeterEl = vuMeter;
+    
+    // Add premium live indicator dot
+    vuMeter.createSpan({ cls: "lti-vu-live-dot" });
+
+    this.vuMeterBars = [];
+    for (let i = 0; i < 5; i++) {
+      const bar = vuMeter.createDiv({ cls: "lti-vu-bar" });
+      bar.dataset.index = String(i);
+      this.vuMeterBars.push(bar);
+    }
+    this.vuMeterDbLabel = vuMeter.createSpan({ cls: "lti-vu-db-label", text: "" });
+
+    // 2. Create the standard action buttons toolbar below the speech panel (3 columns)
     const toolbar = this.contentEl.createDiv({ cls: "lti-toolbar" });
     for (const [key, handler] of this.getToolbarActions()) {
       const button = toolbar.createEl("button", {
@@ -348,18 +379,6 @@ export class LinkTagIntelligenceView extends ItemView {
       this.toolbarButtons.set(key, button);
     }
 
-    // VU meter: 5-bar + dB readout, positioned adjacent to speech button (D-07)
-    const vuMeter = toolbar.createDiv({ cls: "lti-vu-meter" });
-    vuMeter.hidden = true;
-    this.vuMeterEl = vuMeter;
-    this.vuMeterBars = [];
-    for (let i = 0; i < 5; i++) {
-      const bar = vuMeter.createDiv({ cls: "lti-vu-bar" });
-      bar.dataset.index = String(i);
-      this.vuMeterBars.push(bar);
-    }
-    this.vuMeterDbLabel = vuMeter.createSpan({ cls: "lti-vu-db-label", text: "" });
-
     const sections = this.contentEl.createDiv({ cls: "lti-sidebar-sections" });
     this.sectionsContainerEl = sections;
     for (const definition of SECTION_DEFINITIONS) {
@@ -369,9 +388,6 @@ export class LinkTagIntelligenceView extends ItemView {
 
   private getToolbarActions(): Array<[ToolbarActionId, () => void]> {
     return [
-      ["speechRecord", () => {
-        void this.plugin.toggleSpeechRecording();
-      }],
       ["ingestionCapture", () => this.plugin.openResearchIngestion()],
       ["insertLink", () => this.plugin.openLinkInsertModal("wikilink")],
       ["insertBlockRef", () => this.plugin.openBlockReferenceFlow()],
@@ -521,10 +537,7 @@ export class LinkTagIntelligenceView extends ItemView {
   private buildToolbarSnapshot(): ToolbarButtonSnapshot[] {
     const hasContext = Boolean(this.plugin.getContextNoteFile());
     const snapshot = this.plugin.getSpeechRecorderSnapshot();
-    return this.getToolbarActions().map(([key]) => {
-      if (key === "speechRecord") {
-        return this.buildSpeechButtonSnapshot(key, snapshot);
-      }
+    const buttons = this.getToolbarActions().map(([key]) => {
       const disabled = FILE_REQUIRED_ACTIONS.has(key) && !hasContext;
       return {
         key,
@@ -533,6 +546,10 @@ export class LinkTagIntelligenceView extends ItemView {
         title: disabled ? this.plugin.t("noActiveNote") : undefined
       };
     });
+    
+    // Explicitly add speechRecord button snapshot so applyToolbarSnapshot updates it
+    buttons.push(this.buildSpeechButtonSnapshot("speechRecord", snapshot));
+    return buttons;
   }
 
   private buildSpeechButtonSnapshot(
@@ -820,30 +837,47 @@ export class LinkTagIntelligenceView extends ItemView {
         button.removeAttribute("title");
       }
       button.classList.toggle("lti-toolbar-button-disabled", item.disabled);
-
-      // Speech button: apply state class and countdown flash (D-12)
-      if (item.key === "speechRecord") {
-        if (item.state) {
-          button.classList.add(`is-${item.state}`);
-        }
-        const remaining = this.plugin.getAutoStopSecondsRemaining();
-        button.classList.toggle("is-countdown-flash", remaining === 1);
-      }
     }
 
-    // Speech recording button: apply state CSS classes (D-04, D-06, D-08)
+    // Speech recording button: apply state CSS classes (D-04, D-06, D-08, D-12)
     const speechButton = this.toolbarButtons.get("speechRecord");
     if (speechButton) {
       const speechItem = toolbar.find((item) => item.key === "speechRecord");
+      
+      // Sync general button properties
+      if (speechItem) {
+        speechButton.textContent = speechItem.label;
+        speechButton.disabled = speechItem.disabled;
+        if (speechItem.title) {
+          speechButton.title = speechItem.title;
+        } else {
+          speechButton.removeAttribute("title");
+        }
+        speechButton.classList.toggle("lti-toolbar-button-disabled", speechItem.disabled);
+      }
+
       // Remove all state modifier classes
       speechButton.classList.remove(
-        "is-idle", "is-initializing", "is-recording", "is-processing", "is-error"
+        "is-idle", "is-initializing", "is-recording", "is-processing", "is-error", "is-countdown-flash"
       );
       if (speechItem?.state) {
         speechButton.classList.add(`is-${speechItem.state}`);
       }
-      // Update VU meter visibility: only show during recording
-      this.updateVuMeter(speechItem?.state === "recording" ? speechItem : null);
+
+      // Handle countdown flash when active and auto-stop is near (D-12)
+      if (speechItem?.state === "recording") {
+        const remaining = this.plugin.getAutoStopSecondsRemaining();
+        speechButton.classList.toggle("is-countdown-flash", remaining === 1);
+      }
+      
+      // Update VU meter visibility and real-time animation loop
+      const isRecording = speechItem?.state === "recording";
+      this.updateVuMeter(isRecording ? speechItem : null);
+      if (isRecording) {
+        this.startVuMeterLoop();
+      } else {
+        this.stopVuMeterLoop();
+      }
     }
   }
 
@@ -884,6 +918,38 @@ export class LinkTagIntelligenceView extends ItemView {
 
     if (this.vuMeterDbLabel) {
       this.vuMeterDbLabel.textContent = dbValue === -Infinity ? "-\u221E" : `${Math.round(dbValue)} dB`;
+    }
+  }
+
+  private startVuMeterLoop(): void {
+    if (this.vuMeterFrame !== null) {
+      return;
+    }
+    const loop = () => {
+      const snapshot = this.plugin.getSpeechRecorderSnapshot();
+      if (snapshot.phase === "recording") {
+        const speechItem = {
+          key: "speechRecord" as ToolbarActionId,
+          label: this.plugin.t("speechRecord"),
+          disabled: false,
+          state: snapshot.phase,
+          audioLevel: snapshot.audioLevel,
+          dbValue: snapshot.dbValue
+        };
+        this.updateVuMeter(speechItem);
+        this.vuMeterFrame = window.requestAnimationFrame(loop);
+      } else {
+        this.vuMeterFrame = null;
+        this.updateVuMeter(null);
+      }
+    };
+    this.vuMeterFrame = window.requestAnimationFrame(loop);
+  }
+
+  private stopVuMeterLoop(): void {
+    if (this.vuMeterFrame !== null) {
+      window.cancelAnimationFrame(this.vuMeterFrame);
+      this.vuMeterFrame = null;
     }
   }
 
@@ -1184,6 +1250,11 @@ export class LinkTagIntelligenceView extends ItemView {
     if (this.refreshFrame !== null) {
       window.cancelAnimationFrame(this.refreshFrame);
       this.refreshFrame = null;
+    }
+
+    if (this.vuMeterFrame !== null) {
+      window.cancelAnimationFrame(this.vuMeterFrame);
+      this.vuMeterFrame = null;
     }
 
     this.pendingRefresh = null;

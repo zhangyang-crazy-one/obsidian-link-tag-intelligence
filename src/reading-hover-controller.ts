@@ -300,17 +300,8 @@ export function getReadingReferenceHoverController(
   getPreviewData: (options: ReadingReferencePreviewOptions) => Promise<ReferencePreviewData>
 ): ReadingReferenceHoverController {
   const { hostEl, hoverParent } = resolveHoverHost(app, containerEl);
-  debugLog(app, "reading.hover.resolve-host", {
-    sourcePath: ctx.sourcePath,
-    hostClass: hostEl.className,
-    hoverParentType: hoverParent?.constructor?.name ?? "null"
-  });
   const existing = controllerMap.get(hostEl);
   if (existing) {
-    debugLog(app, "reading.hover.controller-reuse", {
-      sourcePath: ctx.sourcePath,
-      hostClass: hostEl.className
-    });
     return existing;
   }
 

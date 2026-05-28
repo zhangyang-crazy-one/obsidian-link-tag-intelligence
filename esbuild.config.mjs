@@ -66,7 +66,31 @@ if (production) {
     console.log("  Model ready");
   }
 
-  console.log("  dist/ ready: main.js + asr-worker.js + model + sherpa-onnx");
+  // Download and bundle the Chinese punctuation model (ct-punc) (~40MB compressed).
+  const puncDir = path.join(distDir, "models", "punc-zh-2024");
+  const puncFiles = ["model.onnx"];
+  const puncComplete = puncFiles.every((f) => fs.existsSync(path.join(puncDir, f)));
+  if (!puncComplete) {
+    const { execSync } = await import("node:child_process");
+    const puncUrl = "https://github.com/k2-fsa/sherpa-onnx/releases/download/punctuation-models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12.tar.bz2";
+    const puncArchive = path.join(distDir, "punc.tar.bz2");
+    console.log("  Downloading punctuation model (~40MB)...");
+    execSync(`curl -L -o "${puncArchive}" "${puncUrl}"`, { stdio: "inherit" });
+    console.log("  Extracting punctuation model...");
+    fs.mkdirSync(puncDir, { recursive: true });
+    execSync(`tar -xjf "${puncArchive}" --strip-components=1 -C "${puncDir}"`, { stdio: "inherit" });
+    // Keep only needed files
+    for (const f of fs.readdirSync(puncDir)) {
+      const p = path.join(puncDir, f);
+      if (fs.statSync(p).isFile() && !puncFiles.includes(f)) {
+        fs.unlinkSync(p);
+      }
+    }
+    fs.unlinkSync(puncArchive);
+    console.log("  Punctuation model ready");
+  }
+
+  console.log("  dist/ ready: main.js + asr-worker.js + model + punc + sherpa-onnx");
 } else {
   await context.watch();
 }

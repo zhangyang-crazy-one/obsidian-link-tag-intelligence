@@ -147,6 +147,7 @@ type TranslationKey =
   | "settingsWorkbenchPagePlugins"
   | "settingsWorkbenchPageWorkflow"
   | "settingsWorkbenchPageTaxonomy"
+  | "settingsWorkbenchPageSpeech"
   | "settingsWorkbenchOn"
   | "settingsWorkbenchOff"
   | "settingsWorkbenchDetails"
@@ -259,6 +260,8 @@ type TranslationKey =
   | "speechAudioContextFailed"
   | "speechAutoStopTimeout"
   | "speechAutoStopTimeoutDescription"
+  | "speechAutoPunctuate"
+  | "speechAutoPunctuateDescription"
   | "speechBrowse"
   | "speechLanguage"
   | "speechLanguageEn"
@@ -513,6 +516,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsWorkbenchPagePlugins: "Plugins",
     settingsWorkbenchPageWorkflow: "Workflow",
     settingsWorkbenchPageTaxonomy: "Taxonomy",
+    settingsWorkbenchPageSpeech: "Voice",
     settingsWorkbenchOn: "On",
     settingsWorkbenchOff: "Off",
     settingsWorkbenchDetails: "Details",
@@ -625,6 +629,8 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     speechAudioContextFailed: "Audio system initialization failed. Please restart Obsidian and try again.",
     speechAutoStopTimeout: "Auto-stop timeout (seconds)",
     speechAutoStopTimeoutDescription: "Automatically stop recording after this duration of silence. Set to 0 to disable. Range 10-300 seconds.",
+    speechAutoPunctuate: "Auto-restore punctuation",
+    speechAutoPunctuateDescription: "Automatically predict and restore punctuation marks for Chinese speech recognition results using an offline transformer model.",
     speechBrowse: "Browse...",
     speechLanguage: "Recognition language",
     speechLanguageEn: "English (en)",
@@ -878,6 +884,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsWorkbenchPagePlugins: "插件",
     settingsWorkbenchPageWorkflow: "工作流",
     settingsWorkbenchPageTaxonomy: "词表",
+    settingsWorkbenchPageSpeech: "语音",
     settingsWorkbenchOn: "开启",
     settingsWorkbenchOff: "关闭",
     settingsWorkbenchDetails: "详情",
@@ -990,6 +997,8 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     speechAudioContextFailed: "音频系统初始化失败，请重启 Obsidian 后重试。",
     speechAutoStopTimeout: "自动停止超时（秒）",
     speechAutoStopTimeoutDescription: "静音超过此时长后自动停止录音。设为 0 禁用自动停止。范围 10-300 秒。",
+    speechAutoPunctuate: "自动还原标点符号",
+    speechAutoPunctuateDescription: "开启后，使用离线标点符号 Transformer 模型自动为中文流式识别结果添加最适宜的标点，告别纯文字流。",
     speechBrowse: "浏览...",
     speechLanguage: "识别语言",
     speechLanguageEn: "English (en)",

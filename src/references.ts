@@ -278,10 +278,10 @@ export function renderLegacyReferences(
     getReadingHoverController: (containerEl: HTMLElement, ctx: MarkdownPostProcessorContext) => ReadingReferenceHoverController;
   }
 ): void {
-  const hoverController = helpers.getReadingHoverController(el, ctx);
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
   const textNodes: Text[] = [];
   let currentNode: Node | null;
+  let hoverController: ReadingReferenceHoverController | null = null;
 
   while ((currentNode = walker.nextNode())) {
     if (currentNode instanceof Text && currentNode.nodeValue && !shouldSkipTextNode(currentNode)) {
@@ -299,6 +299,7 @@ export function renderLegacyReferences(
     if (references.length === 0) {
       continue;
     }
+    hoverController ??= helpers.getReadingHoverController(el, ctx);
 
     const fragment = document.createDocumentFragment();
     let cursor = 0;
@@ -327,8 +328,8 @@ export function renderLegacyReferences(
         helpers.openResolvedLineReference(reference.target, ctx.sourcePath, reference.startLine, reference.endLine);
       });
       chip.addEventListener("mouseenter", () => {
-        hoverController.cancelHide();
-        void hoverController.show(chip, {
+        hoverController?.cancelHide();
+        void hoverController?.show(chip, {
           kind: reference.kind,
           target: reference.target,
           sourcePath: ctx.sourcePath,
@@ -338,11 +339,11 @@ export function renderLegacyReferences(
         } satisfies ReadingReferencePreviewOptions);
       });
       chip.addEventListener("mouseleave", () => {
-        hoverController.scheduleHide();
+        hoverController?.scheduleHide();
       });
       chip.addEventListener("focus", () => {
-        hoverController.cancelHide();
-        void hoverController.show(chip, {
+        hoverController?.cancelHide();
+        void hoverController?.show(chip, {
           kind: reference.kind,
           target: reference.target,
           sourcePath: ctx.sourcePath,
@@ -352,7 +353,7 @@ export function renderLegacyReferences(
         } satisfies ReadingReferencePreviewOptions);
       });
       chip.addEventListener("blur", () => {
-        hoverController.scheduleHide();
+        hoverController?.scheduleHide();
       });
 
       fragment.append(chip);

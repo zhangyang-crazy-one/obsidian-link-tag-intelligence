@@ -22,12 +22,15 @@ export class SpeechRecorder {
   private throttleTimer: ReturnType<typeof setTimeout> | null = null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private asrProcess: any = null;
-  private asrStdin: { write: (d: string) => void } | null = null;
+  private asrStdin: { write: (d: string) => boolean; end: () => void; writableLength?: number } | null = null;
+  private asrBackpressure = false;
   private asrReady = false;
   private pendingLanguage: "zh" | "en" | null = null;
+  private asrInitError: string | null = null;
   private appRef: App | null = null;
   private settingsLanguage: "zh" | "en" = "zh";
   private settingsVadSensitivity = 2;
+  private settingsAutoPunctuate = true;
 
   /** Callback set by main.ts to receive ASR results. */
   onAsrResult: ((text: string, isEndpoint: boolean) => void) | null = null;
@@ -82,6 +85,7 @@ export class SpeechRecorder {
   forceStop(): void {
     if (this.phase === "initializing" || this.phase === "recording") {
       this.cleanupCapture();
+      this.destroyAsrProcess();
       this.phase = "idle";
     }
   }
@@ -99,18 +103,14 @@ export class SpeechRecorder {
             this.audioLevel = rms;
           }, 60);
         }
-        if (this.asrProcess && this.asrReady) {
-          const b64 = Buffer.from(new Uint8Array(chunk.buffer)).toString("base64");
-          this.asrStdin?.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");
-        }
+        this.sendAudioChunkToAsr(chunk);
       });
 
       // Register device disconnect listener (D-03)
       this.registerDeviceChangeHandler(t);
 
-      // Spawn ASR child process with shell:true for PATH resolution of 'node' — avoid exec() buffer accumulation
-      // and orphaned processes. Shell-based exec() leaves the Node.js worker running
-      // (80-167MB WASM) when the shell is killed.
+      // Use a shell for PATH resolution inside Obsidian/Electron, but place it in
+      // its own process group so cleanup can kill the shell and node worker together.
       if (!this.asrProcess) {
         const adapter = this.appRef?.vault.adapter;
         const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
@@ -119,8 +119,13 @@ export class SpeechRecorder {
         try {
           // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
           const cp = require("child_process") as {
-            spawn: (cmd: string, args: string[], opts?: { cwd?: string; stdio?: string[] }) => {
-              stdin: { write: (d: string) => boolean; end: () => void };
+            spawn: (cmd: string, args: string[], opts?: { cwd?: string; stdio?: string[]; shell?: boolean; detached?: boolean }) => {
+              stdin: {
+                write: (d: string) => boolean;
+                end: () => void;
+                on: (e: string, cb: () => void) => void;
+                writableLength?: number;
+              };
               stdout: { on: (e: string, cb: (d: Buffer) => void) => void };
               stderr: { on: (e: string, cb: (d: Buffer) => void) => void };
               on: (e: string, cb: (code: number | null, signal: string | null) => void) => void;
@@ -128,14 +133,22 @@ export class SpeechRecorder {
               pid?: number;
             };
           };
-          // Use 'node' binary (not process.execPath which is the Electron/Obsidian app binary).
-          // shell: true ensures PATH resolution for 'node' in Electron renderer.
+          // Use 'node' binary (not process.execPath, which is the Electron/Obsidian app binary).
           this.asrProcess = cp.spawn("node", [workerPath], {
             cwd: pluginDir,
             stdio: ["pipe", "pipe", "pipe"],
             shell: true,
+            detached: true,
           });
-          this.asrStdin = { write: (d: string) => { this.asrProcess?.stdin?.write(d); } };
+          const child = this.asrProcess;
+          this.asrStdin = {
+            write: (d: string) => child.stdin.write(d),
+            end: () => { child.stdin.end(); },
+            get writableLength() { return child.stdin.writableLength; },
+          };
+          child.stdin.on("drain", () => {
+            this.asrBackpressure = false;
+          });
 
           let stdoutBuf = "";
           this.asrProcess.stdout.on("data", (chunk: Buffer) => {
@@ -144,8 +157,16 @@ export class SpeechRecorder {
             stdoutBuf = lines.pop() ?? "";
             for (const line of lines) {
               try {
-                const msg = JSON.parse(line) as { type: string; ok?: boolean; text?: string; isEndpoint?: boolean };
-                if (msg.type === "ready") this.asrReady = !!msg.ok;
+                const msg = JSON.parse(line) as { type: string; ok?: boolean; error?: string; text?: string; isEndpoint?: boolean };
+                if (msg.type === "ready") {
+                  this.asrReady = !!msg.ok;
+                  this.asrInitError = msg.ok ? null : (msg.error ?? "ASR worker reported ready=false");
+                  if (!msg.ok && this.appRef) {
+                    debugLog(this.appRef, "speech-recorder.asr-ready-failed", {
+                      error: this.asrInitError
+                    });
+                  }
+                }
                 else if (msg.type === "result") this.onAsrResult?.(msg.text ?? "", msg.isEndpoint ?? false);
               } catch { /* skip */ }
             }
@@ -154,7 +175,10 @@ export class SpeechRecorder {
             console.error("[lti-asr-worker]", chunk.toString().trim());
           });
           this.asrProcess.on("exit", (_code: number | null, _signal: string | null) => {
-            // Worker exited — cleanup handled by destroy()
+            this.asrProcess = null;
+            this.asrStdin = null;
+            this.asrBackpressure = false;
+            this.asrReady = false;
           });
         } catch (e) {
           throw new Error("ASR Worker init failed: " + String(e));
@@ -166,15 +190,13 @@ export class SpeechRecorder {
       this.pendingLanguage = this.settingsLanguage;
       // Hotwords file: optional domain-specific terms list in plugin dir
       const hotwordsFile = this.getHotwordsPath();
-      // HomophoneReplacer: lexicon + replace.fst for pinyin-based homophone correction
-      const hrPaths = this.getHomophoneReplacerPaths();
       const initMsg = JSON.stringify({
         type: "init",
         modelDir: this.getModelDir(),
         language: this.settingsLanguage,
         vadSensitivity: this.settingsVadSensitivity,
+        speechAutoPunctuate: this.settingsAutoPunctuate,
         ...(hotwordsFile ? { hotwordsFile } : {}),
-        ...(hrPaths ? hrPaths : {}),
       }) + "\n";
       this.asrStdin?.write(initMsg);
 
@@ -183,6 +205,7 @@ export class SpeechRecorder {
         const timeout = setTimeout(() => { clearInterval(check); reject(new Error("ASR Worker init timed out")); }, 15000);
         const check = setInterval(() => {
           if (this.asrReady) { clearTimeout(timeout); clearInterval(check); resolve(); }
+          if (this.asrInitError) { clearTimeout(timeout); clearInterval(check); reject(new Error(this.asrInitError)); }
         }, 100);
       });
 
@@ -194,9 +217,7 @@ export class SpeechRecorder {
       this.cleanupCapture();
       this.removeDeviceChangeHandler();
       if (this.asrProcess) {
-        this.killAsrProcess();
-        this.asrProcess = null;
-        this.asrStdin = null;
+        this.destroyAsrProcess();
       }
       this.asrReady = false;
 
@@ -231,14 +252,27 @@ export class SpeechRecorder {
 
     this.removeDeviceChangeHandler();
 
-    // Reset recognizer state for next toggle
-    if (this.asrProcess && this.asrReady) {
-      this.asrStdin?.write(JSON.stringify({ type: "reset" }) + "\n");
-    }
-
     this.cleanupCapture();
+    this.destroyAsrProcess();
     this.phase = "idle";
     return null;
+  }
+
+  private sendAudioChunkToAsr(chunk: Float32Array): void {
+    if (!this.asrProcess || !this.asrReady || !this.asrStdin || this.asrBackpressure) {
+      return;
+    }
+
+    if ((this.asrStdin.writableLength ?? 0) > 1024 * 1024) {
+      this.asrBackpressure = true;
+      return;
+    }
+
+    const b64 = Buffer.from(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength)).toString("base64");
+    const accepted = this.asrStdin.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");
+    if (!accepted) {
+      this.asrBackpressure = true;
+    }
   }
 
   private cleanupCapture(): void {
@@ -313,30 +347,45 @@ export class SpeechRecorder {
     return pluginDir + "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
   }
 
-  /** Kill the ASR child process and its entire process group.
-   *  With shell:true, spawn creates /bin/sh which spawns node.
-   *  process.kill(-pid) sends the signal to the entire process group. */
-  private killAsrProcess(): void {
+  private destroyAsrProcess(): void {
     if (!this.asrProcess) return;
+    const child = this.asrProcess;
+    this.asrProcess = null;
+    this.asrStdin = null;
+    this.asrBackpressure = false;
+    this.asrReady = false;
+    this.asrInitError = null;
+
     try {
-      // Send "destroy" first so worker can free WASM gracefully
-      this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
-      // Kill entire process group (shell + node child)
-      process.kill(-this.asrProcess.pid, "SIGTERM");
+      // Give sherpa-onnx a chance to free WASM/native state before process exit.
+      child.stdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
+      child.stdin?.end();
     } catch {
-      // Fallback: direct kill on the shell process
-      try { this.asrProcess.kill("SIGKILL"); } catch { /* already dead */ }
+      // Pipe can already be closed if the worker died first.
     }
+
+    const pid = child.pid;
+    const sigtermTimer = setTimeout(() => {
+      if (!pid || child.killed || child.exitCode !== null || child.signalCode !== null) return;
+      try { process.kill(-pid, "SIGTERM"); } catch {
+        try { child.kill("SIGTERM"); } catch { /* already dead */ }
+      }
+      const sigkillTimer = setTimeout(() => {
+        if (child.killed || child.exitCode !== null || child.signalCode !== null) return;
+        try { process.kill(-pid, "SIGKILL"); } catch {
+          try { child.kill("SIGKILL"); } catch { /* already dead */ }
+        }
+      }, 500);
+      sigkillTimer.unref?.();
+    }, 500);
+    sigtermTimer.unref?.();
   }
 
   /** Full cleanup for plugin onunload(). */
   destroy(): void {
     this.onAsrResult = null;
     if (this.asrProcess) {
-      this.killAsrProcess();
-      this.asrProcess = null;
-      this.asrStdin = null;
-      this.asrReady = false;
+      this.destroyAsrProcess();
     }
     this.removeDeviceChangeHandler();
     this.cleanupCapture();
@@ -350,16 +399,17 @@ export class SpeechRecorder {
     this.settingsLanguage = lang;
     // If not currently recording, destroy child process so next spawn uses new language
     if (!this.isActive && this.asrProcess) {
-      this.killAsrProcess()
-      this.asrProcess = null;
-      this.asrStdin = null;
-      this.asrReady = false;
+      this.destroyAsrProcess();
     }
   }
 
   setSettingsVadSensitivity(sensitivity: number): void {
     const clamped = Math.max(0, Math.min(3, Math.round(sensitivity)));
     this.settingsVadSensitivity = clamped;
+  }
+
+  setSettingsAutoPunctuate(autoPunc: boolean): void {
+    this.settingsAutoPunctuate = autoPunc;
   }
 
   private hotwordsPath: string | null = null;
@@ -385,24 +435,6 @@ export class SpeechRecorder {
       const fs = require("fs") as { existsSync: (p: string) => boolean };
       return fs.existsSync(path) ? path : null;
     } catch { return null; }
-  }
-
-  /** Resolve HomophoneReplacer paths (lexicon.txt + replace.fst) for pinyin-based correction. */
-  private getHomophoneReplacerPaths(): { lexicon: string; ruleFsts: string } | null {
-    const adapter = this.appRef?.vault.adapter;
-    const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
-    if (!basePath) return null;
-    const modelsDir = basePath + "/.obsidian/plugins/link-tag-intelligence/models/";
-    const lexicon = modelsDir + "lexicon.txt";
-    const ruleFsts = modelsDir + "replace.fst";
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
-      const fs = require("fs") as { existsSync: (p: string) => boolean };
-      if (fs.existsSync(lexicon) && fs.existsSync(ruleFsts)) {
-        return { lexicon, ruleFsts };
-      }
-    } catch { /* ignore */ }
-    return null;
   }
 
   /** Expose model directory path for file checks by main.ts. */

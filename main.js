@@ -174,10 +174,10 @@ function formatReferenceTitle(target) {
   return strippedPath.replace(/\.md$/i, "");
 }
 function renderLegacyReferences(el, ctx, helpers) {
-  const hoverController = helpers.getReadingHoverController(el, ctx);
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
   const textNodes = [];
   let currentNode;
+  let hoverController = null;
   while (currentNode = walker.nextNode()) {
     if (currentNode instanceof Text && currentNode.nodeValue && !shouldSkipTextNode(currentNode)) {
       textNodes.push(currentNode);
@@ -192,6 +192,7 @@ function renderLegacyReferences(el, ctx, helpers) {
     if (references.length === 0) {
       continue;
     }
+    hoverController ??= helpers.getReadingHoverController(el, ctx);
     const fragment = document.createDocumentFragment();
     let cursor = 0;
     for (const reference of references) {
@@ -216,8 +217,8 @@ function renderLegacyReferences(el, ctx, helpers) {
         helpers.openResolvedLineReference(reference.target, ctx.sourcePath, reference.startLine, reference.endLine);
       });
       chip.addEventListener("mouseenter", () => {
-        hoverController.cancelHide();
-        void hoverController.show(chip, {
+        hoverController?.cancelHide();
+        void hoverController?.show(chip, {
           kind: reference.kind,
           target: reference.target,
           sourcePath: ctx.sourcePath,
@@ -227,11 +228,11 @@ function renderLegacyReferences(el, ctx, helpers) {
         });
       });
       chip.addEventListener("mouseleave", () => {
-        hoverController.scheduleHide();
+        hoverController?.scheduleHide();
       });
       chip.addEventListener("focus", () => {
-        hoverController.cancelHide();
-        void hoverController.show(chip, {
+        hoverController?.cancelHide();
+        void hoverController?.show(chip, {
           kind: reference.kind,
           target: reference.target,
           sourcePath: ctx.sourcePath,
@@ -241,7 +242,7 @@ function renderLegacyReferences(el, ctx, helpers) {
         });
       });
       chip.addEventListener("blur", () => {
-        hoverController.scheduleHide();
+        hoverController?.scheduleHide();
       });
       fragment.append(chip);
       cursor = reference.position.end;
@@ -962,6 +963,7 @@ var TRANSLATIONS = {
     settingsWorkbenchPagePlugins: "Plugins",
     settingsWorkbenchPageWorkflow: "Workflow",
     settingsWorkbenchPageTaxonomy: "Taxonomy",
+    settingsWorkbenchPageSpeech: "Voice",
     settingsWorkbenchOn: "On",
     settingsWorkbenchOff: "Off",
     settingsWorkbenchDetails: "Details",
@@ -1074,6 +1076,8 @@ var TRANSLATIONS = {
     speechAudioContextFailed: "Audio system initialization failed. Please restart Obsidian and try again.",
     speechAutoStopTimeout: "Auto-stop timeout (seconds)",
     speechAutoStopTimeoutDescription: "Automatically stop recording after this duration of silence. Set to 0 to disable. Range 10-300 seconds.",
+    speechAutoPunctuate: "Auto-restore punctuation",
+    speechAutoPunctuateDescription: "Automatically predict and restore punctuation marks for Chinese speech recognition results using an offline transformer model.",
     speechBrowse: "Browse...",
     speechLanguage: "Recognition language",
     speechLanguageEn: "English (en)",
@@ -1327,6 +1331,7 @@ var TRANSLATIONS = {
     settingsWorkbenchPagePlugins: "\u63D2\u4EF6",
     settingsWorkbenchPageWorkflow: "\u5DE5\u4F5C\u6D41",
     settingsWorkbenchPageTaxonomy: "\u8BCD\u8868",
+    settingsWorkbenchPageSpeech: "\u8BED\u97F3",
     settingsWorkbenchOn: "\u5F00\u542F",
     settingsWorkbenchOff: "\u5173\u95ED",
     settingsWorkbenchDetails: "\u8BE6\u60C5",
@@ -1439,6 +1444,8 @@ var TRANSLATIONS = {
     speechAudioContextFailed: "\u97F3\u9891\u7CFB\u7EDF\u521D\u59CB\u5316\u5931\u8D25\uFF0C\u8BF7\u91CD\u542F Obsidian \u540E\u91CD\u8BD5\u3002",
     speechAutoStopTimeout: "\u81EA\u52A8\u505C\u6B62\u8D85\u65F6\uFF08\u79D2\uFF09",
     speechAutoStopTimeoutDescription: "\u9759\u97F3\u8D85\u8FC7\u6B64\u65F6\u957F\u540E\u81EA\u52A8\u505C\u6B62\u5F55\u97F3\u3002\u8BBE\u4E3A 0 \u7981\u7528\u81EA\u52A8\u505C\u6B62\u3002\u8303\u56F4 10-300 \u79D2\u3002",
+    speechAutoPunctuate: "\u81EA\u52A8\u8FD8\u539F\u6807\u70B9\u7B26\u53F7",
+    speechAutoPunctuateDescription: "\u5F00\u542F\u540E\uFF0C\u4F7F\u7528\u79BB\u7EBF\u6807\u70B9\u7B26\u53F7 Transformer \u6A21\u578B\u81EA\u52A8\u4E3A\u4E2D\u6587\u6D41\u5F0F\u8BC6\u522B\u7ED3\u679C\u6DFB\u52A0\u6700\u9002\u5B9C\u7684\u6807\u70B9\uFF0C\u544A\u522B\u7EAF\u6587\u5B57\u6D41\u3002",
     speechBrowse: "\u6D4F\u89C8...",
     speechLanguage: "\u8BC6\u522B\u8BED\u8A00",
     speechLanguageEn: "English (en)",
@@ -4619,17 +4626,8 @@ var LegacyReadingHoverController = class extends import_obsidian8.MarkdownRender
 };
 function getReadingReferenceHoverController(app, containerEl, ctx, getPreviewData) {
   const { hostEl, hoverParent } = resolveHoverHost(app, containerEl);
-  debugLog(app, "reading.hover.resolve-host", {
-    sourcePath: ctx.sourcePath,
-    hostClass: hostEl.className,
-    hoverParentType: hoverParent?.constructor?.name ?? "null"
-  });
   const existing = controllerMap.get(hostEl);
   if (existing) {
-    debugLog(app, "reading.hover.controller-reuse", {
-      sourcePath: ctx.sourcePath,
-      hostClass: hostEl.className
-    });
     return existing;
   }
   const sentinel = hostEl.ownerDocument.createElement("span");
@@ -4765,7 +4763,8 @@ function buildDefaultSettings(configDir = "") {
     speechLanguage: "zh",
     speechHotwordsFile: "",
     speechVadSensitivity: 2,
-    speechAutoStopSec: 0
+    speechAutoStopSec: 0,
+    speechAutoPunctuate: true
   };
 }
 var DEFAULT_SETTINGS = buildDefaultSettings();
@@ -4898,6 +4897,7 @@ function normalizeLoadedSettings(data, configDir = "") {
   normalized.speechLanguage = normalized.speechLanguage === "en" ? "en" : "zh";
   normalized.speechVadSensitivity = Number.isFinite(normalized.speechVadSensitivity) && normalized.speechVadSensitivity >= 0 && normalized.speechVadSensitivity <= 3 ? Math.round(normalized.speechVadSensitivity) : defaults.speechVadSensitivity;
   normalized.speechAutoStopSec = Number.isFinite(normalized.speechAutoStopSec) ? normalized.speechAutoStopSec === 0 ? 0 : Math.max(10, Math.min(300, Math.round(normalized.speechAutoStopSec))) : defaults.speechAutoStopSec;
+  normalized.speechAutoPunctuate = typeof normalized.speechAutoPunctuate === "boolean" ? normalized.speechAutoPunctuate : defaults.speechAutoPunctuate;
   return normalized;
 }
 var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSettingTab {
@@ -4912,7 +4912,6 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSetting
     const { containerEl } = this;
     containerEl.empty();
     containerEl.addClass("lti-settings-root");
-    this.renderVoiceSection(containerEl);
     const shell = containerEl.createDiv({ cls: "lti-workbench" });
     shell.createDiv({
       text: this.plugin.t("loading"),
@@ -4932,6 +4931,7 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSetting
     this.createPageTab(nav, "workflow", this.plugin.t("settingsWorkbenchPageWorkflow"));
     this.createPageTab(nav, "plugins", this.plugin.t("settingsWorkbenchPagePlugins"));
     this.createPageTab(nav, "taxonomy", this.plugin.t("settingsWorkbenchPageTaxonomy"));
+    this.createPageTab(nav, "speech", this.plugin.t("settingsWorkbenchPageSpeech"));
     const page = containerEl.createDiv({ cls: "lti-workbench-page" });
     switch (this.activePage) {
       case "overview":
@@ -4945,6 +4945,9 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSetting
         break;
       case "taxonomy":
         this.renderTaxonomyPage(page);
+        break;
+      case "speech":
+        this.renderVoiceSection(page);
         break;
     }
   }
@@ -5088,24 +5091,40 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSetting
   currentWorkbenchGuide() {
     return WORKBENCH_GUIDE[this.plugin.currentLanguage()];
   }
+  createCollapsibleCard(parent, title, description) {
+    const details = parent.createEl("details", { cls: "lti-workbench-guide-details" });
+    const summary = details.createEl("summary", { cls: "lti-workbench-guide-summary" });
+    const header = summary.createDiv({ cls: "lti-workbench-guide-header" });
+    header.createEl("h3", { text: title, cls: "lti-workbench-section-title" });
+    if (description) {
+      header.createDiv({
+        text: description,
+        cls: "setting-item-description lti-workbench-section-description"
+      });
+    }
+    const inner = details.createDiv({ cls: "lti-workbench-guide-inner" });
+    return inner;
+  }
   renderOverviewGuideSection(containerEl) {
     const guide = this.currentWorkbenchGuide();
-    const section = this.createSectionCard(containerEl, guide.overviewTitle, guide.overviewDescription);
-    const grid = section.createDiv({ cls: "lti-workbench-intro-grid" });
-    this.renderGuideLocaleCard(grid, "zh");
-    this.renderGuideLocaleCard(grid, "en");
+    const activeLang = this.plugin.currentLanguage();
+    const hintText = activeLang === "zh" ? "\u{1F4A1} \u70B9\u51FB\u5C55\u5F00\u7814\u7A76\u6808\u8BF4\u660E\u4E0E\u6838\u5FC3\u6307\u5357" : "\u{1F4A1} Click to expand research stack & core guides";
+    const inner = this.createCollapsibleCard(containerEl, guide.overviewTitle, hintText);
+    this.renderGuideLocaleCard(inner, activeLang);
   }
   renderWorkflowGuideSection(containerEl) {
     const guide = this.currentWorkbenchGuide();
-    const section = this.createSectionCard(containerEl, guide.workflowTitle, guide.workflowDescription);
-    section.createDiv({
+    const activeLang = this.plugin.currentLanguage();
+    const hintText = activeLang === "zh" ? "\u{1F4A1} \u70B9\u51FB\u5C55\u5F00\u5B8C\u6574\u5DE5\u4F5C\u6D41\u6267\u884C\u7EC6\u8282\u4E0E\u6392\u9519\u5EFA\u8BAE" : "\u{1F4A1} Click to expand full workflow execution details & troubleshooting";
+    const inner = this.createCollapsibleCard(containerEl, guide.workflowTitle, hintText);
+    inner.createDiv({
       text: guide.lead,
       cls: "setting-item-description lti-workbench-intro-lead"
     });
-    this.renderGuideNoteBlock(section, guide.bridgeLabel, guide.bridgeValue);
-    this.renderGuideListBlock(section, guide.stackTitle, guide.stackItems);
-    this.renderGuideListBlock(section, guide.flowTitle, guide.flowItems, true);
-    this.renderGuideNoteBlock(section, guide.troubleshootTitle, guide.troubleshootBody);
+    this.renderGuideNoteBlock(inner, guide.bridgeLabel, guide.bridgeValue);
+    this.renderGuideListBlock(inner, guide.stackTitle, guide.stackItems);
+    this.renderGuideListBlock(inner, guide.flowTitle, guide.flowItems, true);
+    this.renderGuideNoteBlock(inner, guide.troubleshootTitle, guide.troubleshootBody);
   }
   renderGuideLocaleCard(containerEl, language) {
     const guide = WORKBENCH_GUIDE[language];
@@ -6096,6 +6115,16 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSetting
         void this.plugin.saveSettings();
       }
     });
+    this.createToggleField(
+      section,
+      this.plugin.t("speechAutoPunctuate"),
+      this.plugin.t("speechAutoPunctuateDescription"),
+      this.plugin.settings.speechAutoPunctuate,
+      async (value) => {
+        this.plugin.settings.speechAutoPunctuate = value;
+        await this.plugin.saveSettings();
+      }
+    );
   }
 };
 
@@ -6178,6 +6207,7 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
     this.refreshPromise = null;
     this.pendingRefresh = null;
     this.refreshFrame = null;
+    this.vuMeterFrame = null;
     this.dependencyPaths = /* @__PURE__ */ new Set();
     this.toolbarSignature = null;
     this.sectionsContainerEl = null;
@@ -6255,6 +6285,28 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
     this.dependencyPaths = new Set(snapshot.dependencyPaths);
   }
   buildShell() {
+    const speechPanel = this.contentEl.createDiv({ cls: "lti-speech-panel" });
+    const speechButton = speechPanel.createEl("button", {
+      text: this.plugin.t("speechRecord"),
+      cls: "lti-toolbar-button lti-speech-record-btn",
+      attr: { type: "button" }
+    });
+    speechButton.dataset.action = "speechRecord";
+    speechButton.addEventListener("click", () => {
+      void this.plugin.toggleSpeechRecording();
+    });
+    this.toolbarButtons.set("speechRecord", speechButton);
+    const vuMeter = speechPanel.createDiv({ cls: "lti-vu-meter" });
+    vuMeter.hidden = true;
+    this.vuMeterEl = vuMeter;
+    vuMeter.createSpan({ cls: "lti-vu-live-dot" });
+    this.vuMeterBars = [];
+    for (let i = 0; i < 5; i++) {
+      const bar = vuMeter.createDiv({ cls: "lti-vu-bar" });
+      bar.dataset.index = String(i);
+      this.vuMeterBars.push(bar);
+    }
+    this.vuMeterDbLabel = vuMeter.createSpan({ cls: "lti-vu-db-label", text: "" });
     const toolbar = this.contentEl.createDiv({ cls: "lti-toolbar" });
     for (const [key, handler] of this.getToolbarActions()) {
       const button = toolbar.createEl("button", {
@@ -6266,16 +6318,6 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
       button.addEventListener("click", handler);
       this.toolbarButtons.set(key, button);
     }
-    const vuMeter = toolbar.createDiv({ cls: "lti-vu-meter" });
-    vuMeter.hidden = true;
-    this.vuMeterEl = vuMeter;
-    this.vuMeterBars = [];
-    for (let i = 0; i < 5; i++) {
-      const bar = vuMeter.createDiv({ cls: "lti-vu-bar" });
-      bar.dataset.index = String(i);
-      this.vuMeterBars.push(bar);
-    }
-    this.vuMeterDbLabel = vuMeter.createSpan({ cls: "lti-vu-db-label", text: "" });
     const sections = this.contentEl.createDiv({ cls: "lti-sidebar-sections" });
     this.sectionsContainerEl = sections;
     for (const definition of SECTION_DEFINITIONS) {
@@ -6284,9 +6326,6 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
   }
   getToolbarActions() {
     return [
-      ["speechRecord", () => {
-        void this.plugin.toggleSpeechRecording();
-      }],
       ["ingestionCapture", () => this.plugin.openResearchIngestion()],
       ["insertLink", () => this.plugin.openLinkInsertModal("wikilink")],
       ["insertBlockRef", () => this.plugin.openBlockReferenceFlow()],
@@ -6415,10 +6454,7 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
   buildToolbarSnapshot() {
     const hasContext = Boolean(this.plugin.getContextNoteFile());
     const snapshot = this.plugin.getSpeechRecorderSnapshot();
-    return this.getToolbarActions().map(([key]) => {
-      if (key === "speechRecord") {
-        return this.buildSpeechButtonSnapshot(key, snapshot);
-      }
+    const buttons = this.getToolbarActions().map(([key]) => {
       const disabled = FILE_REQUIRED_ACTIONS.has(key) && !hasContext;
       return {
         key,
@@ -6427,6 +6463,8 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
         title: disabled ? this.plugin.t("noActiveNote") : void 0
       };
     });
+    buttons.push(this.buildSpeechButtonSnapshot("speechRecord", snapshot));
+    return buttons;
   }
   buildSpeechButtonSnapshot(key, snapshot) {
     const asrLoading = snapshot.phase === "initializing" || snapshot.phase === "recording" && !snapshot.asrReady;
@@ -6658,28 +6696,42 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
         button.removeAttribute("title");
       }
       button.classList.toggle("lti-toolbar-button-disabled", item.disabled);
-      if (item.key === "speechRecord") {
-        if (item.state) {
-          button.classList.add(`is-${item.state}`);
-        }
-        const remaining = this.plugin.getAutoStopSecondsRemaining();
-        button.classList.toggle("is-countdown-flash", remaining === 1);
-      }
     }
     const speechButton = this.toolbarButtons.get("speechRecord");
     if (speechButton) {
       const speechItem = toolbar.find((item) => item.key === "speechRecord");
+      if (speechItem) {
+        speechButton.textContent = speechItem.label;
+        speechButton.disabled = speechItem.disabled;
+        if (speechItem.title) {
+          speechButton.title = speechItem.title;
+        } else {
+          speechButton.removeAttribute("title");
+        }
+        speechButton.classList.toggle("lti-toolbar-button-disabled", speechItem.disabled);
+      }
       speechButton.classList.remove(
         "is-idle",
         "is-initializing",
         "is-recording",
         "is-processing",
-        "is-error"
+        "is-error",
+        "is-countdown-flash"
       );
       if (speechItem?.state) {
         speechButton.classList.add(`is-${speechItem.state}`);
       }
-      this.updateVuMeter(speechItem?.state === "recording" ? speechItem : null);
+      if (speechItem?.state === "recording") {
+        const remaining = this.plugin.getAutoStopSecondsRemaining();
+        speechButton.classList.toggle("is-countdown-flash", remaining === 1);
+      }
+      const isRecording = speechItem?.state === "recording";
+      this.updateVuMeter(isRecording ? speechItem : null);
+      if (isRecording) {
+        this.startVuMeterLoop();
+      } else {
+        this.stopVuMeterLoop();
+      }
     }
   }
   /**
@@ -6713,6 +6765,36 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
     }
     if (this.vuMeterDbLabel) {
       this.vuMeterDbLabel.textContent = dbValue === -Infinity ? "-\u221E" : `${Math.round(dbValue)} dB`;
+    }
+  }
+  startVuMeterLoop() {
+    if (this.vuMeterFrame !== null) {
+      return;
+    }
+    const loop = () => {
+      const snapshot = this.plugin.getSpeechRecorderSnapshot();
+      if (snapshot.phase === "recording") {
+        const speechItem = {
+          key: "speechRecord",
+          label: this.plugin.t("speechRecord"),
+          disabled: false,
+          state: snapshot.phase,
+          audioLevel: snapshot.audioLevel,
+          dbValue: snapshot.dbValue
+        };
+        this.updateVuMeter(speechItem);
+        this.vuMeterFrame = window.requestAnimationFrame(loop);
+      } else {
+        this.vuMeterFrame = null;
+        this.updateVuMeter(null);
+      }
+    };
+    this.vuMeterFrame = window.requestAnimationFrame(loop);
+  }
+  stopVuMeterLoop() {
+    if (this.vuMeterFrame !== null) {
+      window.cancelAnimationFrame(this.vuMeterFrame);
+      this.vuMeterFrame = null;
     }
   }
   applyContextVisibility(snapshot) {
@@ -6980,6 +7062,10 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
       window.cancelAnimationFrame(this.refreshFrame);
       this.refreshFrame = null;
     }
+    if (this.vuMeterFrame !== null) {
+      window.cancelAnimationFrame(this.vuMeterFrame);
+      this.vuMeterFrame = null;
+    }
     this.pendingRefresh = null;
     this.refreshPromise = null;
     this.vuMeterEl = null;
@@ -7114,11 +7200,14 @@ var SpeechRecorder = class {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.asrProcess = null;
     this.asrStdin = null;
+    this.asrBackpressure = false;
     this.asrReady = false;
     this.pendingLanguage = null;
+    this.asrInitError = null;
     this.appRef = null;
     this.settingsLanguage = "zh";
     this.settingsVadSensitivity = 2;
+    this.settingsAutoPunctuate = true;
     /** Callback set by main.ts to receive ASR results. */
     this.onAsrResult = null;
     this.hotwordsPath = null;
@@ -7167,6 +7256,7 @@ var SpeechRecorder = class {
   forceStop() {
     if (this.phase === "initializing" || this.phase === "recording") {
       this.cleanupCapture();
+      this.destroyAsrProcess();
       this.phase = "idle";
     }
   }
@@ -7181,10 +7271,7 @@ var SpeechRecorder = class {
             this.audioLevel = rms;
           }, 60);
         }
-        if (this.asrProcess && this.asrReady) {
-          const b64 = Buffer.from(new Uint8Array(chunk.buffer)).toString("base64");
-          this.asrStdin?.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");
-        }
+        this.sendAudioChunkToAsr(chunk);
       });
       this.registerDeviceChangeHandler(t);
       if (!this.asrProcess) {
@@ -7197,11 +7284,22 @@ var SpeechRecorder = class {
           this.asrProcess = cp.spawn("node", [workerPath], {
             cwd: pluginDir,
             stdio: ["pipe", "pipe", "pipe"],
-            shell: true
+            shell: true,
+            detached: true
           });
-          this.asrStdin = { write: (d) => {
-            this.asrProcess?.stdin?.write(d);
-          } };
+          const child = this.asrProcess;
+          this.asrStdin = {
+            write: (d) => child.stdin.write(d),
+            end: () => {
+              child.stdin.end();
+            },
+            get writableLength() {
+              return child.stdin.writableLength;
+            }
+          };
+          child.stdin.on("drain", () => {
+            this.asrBackpressure = false;
+          });
           let stdoutBuf = "";
           this.asrProcess.stdout.on("data", (chunk) => {
             stdoutBuf += chunk.toString();
@@ -7210,8 +7308,15 @@ var SpeechRecorder = class {
             for (const line of lines) {
               try {
                 const msg = JSON.parse(line);
-                if (msg.type === "ready") this.asrReady = !!msg.ok;
-                else if (msg.type === "result") this.onAsrResult?.(msg.text ?? "", msg.isEndpoint ?? false);
+                if (msg.type === "ready") {
+                  this.asrReady = !!msg.ok;
+                  this.asrInitError = msg.ok ? null : msg.error ?? "ASR worker reported ready=false";
+                  if (!msg.ok && this.appRef) {
+                    debugLog(this.appRef, "speech-recorder.asr-ready-failed", {
+                      error: this.asrInitError
+                    });
+                  }
+                } else if (msg.type === "result") this.onAsrResult?.(msg.text ?? "", msg.isEndpoint ?? false);
               } catch {
               }
             }
@@ -7220,6 +7325,10 @@ var SpeechRecorder = class {
             console.error("[lti-asr-worker]", chunk.toString().trim());
           });
           this.asrProcess.on("exit", (_code, _signal) => {
+            this.asrProcess = null;
+            this.asrStdin = null;
+            this.asrBackpressure = false;
+            this.asrReady = false;
           });
         } catch (e) {
           throw new Error("ASR Worker init failed: " + String(e));
@@ -7228,14 +7337,13 @@ var SpeechRecorder = class {
       this.asrReady = false;
       this.pendingLanguage = this.settingsLanguage;
       const hotwordsFile = this.getHotwordsPath();
-      const hrPaths = this.getHomophoneReplacerPaths();
       const initMsg = JSON.stringify({
         type: "init",
         modelDir: this.getModelDir(),
         language: this.settingsLanguage,
         vadSensitivity: this.settingsVadSensitivity,
-        ...hotwordsFile ? { hotwordsFile } : {},
-        ...hrPaths ? hrPaths : {}
+        speechAutoPunctuate: this.settingsAutoPunctuate,
+        ...hotwordsFile ? { hotwordsFile } : {}
       }) + "\n";
       this.asrStdin?.write(initMsg);
       await new Promise((resolve, reject) => {
@@ -7249,6 +7357,11 @@ var SpeechRecorder = class {
             clearInterval(check);
             resolve();
           }
+          if (this.asrInitError) {
+            clearTimeout(timeout);
+            clearInterval(check);
+            reject(new Error(this.asrInitError));
+          }
         }, 100);
       });
       this.phase = "recording";
@@ -7258,9 +7371,7 @@ var SpeechRecorder = class {
       this.cleanupCapture();
       this.removeDeviceChangeHandler();
       if (this.asrProcess) {
-        this.killAsrProcess();
-        this.asrProcess = null;
-        this.asrStdin = null;
+        this.destroyAsrProcess();
       }
       this.asrReady = false;
       if (error instanceof Error && error.message.includes("ASR Worker")) {
@@ -7287,12 +7398,24 @@ var SpeechRecorder = class {
   async stop() {
     this.phase = "processing";
     this.removeDeviceChangeHandler();
-    if (this.asrProcess && this.asrReady) {
-      this.asrStdin?.write(JSON.stringify({ type: "reset" }) + "\n");
-    }
     this.cleanupCapture();
+    this.destroyAsrProcess();
     this.phase = "idle";
     return null;
+  }
+  sendAudioChunkToAsr(chunk) {
+    if (!this.asrProcess || !this.asrReady || !this.asrStdin || this.asrBackpressure) {
+      return;
+    }
+    if ((this.asrStdin.writableLength ?? 0) > 1024 * 1024) {
+      this.asrBackpressure = true;
+      return;
+    }
+    const b64 = Buffer.from(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength)).toString("base64");
+    const accepted = this.asrStdin.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");
+    if (!accepted) {
+      this.asrBackpressure = true;
+    }
   }
   cleanupCapture() {
     if (this.throttleTimer) {
@@ -7355,29 +7478,50 @@ var SpeechRecorder = class {
     const lang = this.pendingLanguage ?? "zh";
     return pluginDir + "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
   }
-  /** Kill the ASR child process and its entire process group.
-   *  With shell:true, spawn creates /bin/sh which spawns node.
-   *  process.kill(-pid) sends the signal to the entire process group. */
-  killAsrProcess() {
+  destroyAsrProcess() {
     if (!this.asrProcess) return;
+    const child = this.asrProcess;
+    this.asrProcess = null;
+    this.asrStdin = null;
+    this.asrBackpressure = false;
+    this.asrReady = false;
+    this.asrInitError = null;
     try {
-      this.asrStdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
-      process.kill(-this.asrProcess.pid, "SIGTERM");
+      child.stdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
+      child.stdin?.end();
     } catch {
-      try {
-        this.asrProcess.kill("SIGKILL");
-      } catch {
-      }
     }
+    const pid = child.pid;
+    const sigtermTimer = setTimeout(() => {
+      if (!pid || child.killed || child.exitCode !== null || child.signalCode !== null) return;
+      try {
+        process.kill(-pid, "SIGTERM");
+      } catch {
+        try {
+          child.kill("SIGTERM");
+        } catch {
+        }
+      }
+      const sigkillTimer = setTimeout(() => {
+        if (child.killed || child.exitCode !== null || child.signalCode !== null) return;
+        try {
+          process.kill(-pid, "SIGKILL");
+        } catch {
+          try {
+            child.kill("SIGKILL");
+          } catch {
+          }
+        }
+      }, 500);
+      sigkillTimer.unref?.();
+    }, 500);
+    sigtermTimer.unref?.();
   }
   /** Full cleanup for plugin onunload(). */
   destroy() {
     this.onAsrResult = null;
     if (this.asrProcess) {
-      this.killAsrProcess();
-      this.asrProcess = null;
-      this.asrStdin = null;
-      this.asrReady = false;
+      this.destroyAsrProcess();
     }
     this.removeDeviceChangeHandler();
     this.cleanupCapture();
@@ -7389,15 +7533,15 @@ var SpeechRecorder = class {
     if (lang === this.settingsLanguage) return;
     this.settingsLanguage = lang;
     if (!this.isActive && this.asrProcess) {
-      this.killAsrProcess();
-      this.asrProcess = null;
-      this.asrStdin = null;
-      this.asrReady = false;
+      this.destroyAsrProcess();
     }
   }
   setSettingsVadSensitivity(sensitivity) {
     const clamped = Math.max(0, Math.min(3, Math.round(sensitivity)));
     this.settingsVadSensitivity = clamped;
+  }
+  setSettingsAutoPunctuate(autoPunc) {
+    this.settingsAutoPunctuate = autoPunc;
   }
   setHotwordsFile(path) {
     this.hotwordsPath = path || null;
@@ -7419,23 +7563,6 @@ var SpeechRecorder = class {
     } catch {
       return null;
     }
-  }
-  /** Resolve HomophoneReplacer paths (lexicon.txt + replace.fst) for pinyin-based correction. */
-  getHomophoneReplacerPaths() {
-    const adapter = this.appRef?.vault.adapter;
-    const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
-    if (!basePath) return null;
-    const modelsDir = basePath + "/.obsidian/plugins/link-tag-intelligence/models/";
-    const lexicon = modelsDir + "lexicon.txt";
-    const ruleFsts = modelsDir + "replace.fst";
-    try {
-      const fs = require("fs");
-      if (fs.existsSync(lexicon) && fs.existsSync(ruleFsts)) {
-        return { lexicon, ruleFsts };
-      }
-    } catch {
-    }
-    return null;
   }
   /** Expose model directory path for file checks by main.ts. */
   getModelDirInternal(language) {
@@ -7605,12 +7732,18 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     this.referencePreviewToken = 0;
     this.speechRecorder = new SpeechRecorder();
     this._sentenceManager = null;
+    this.speechInsertBuffer = "";
+    this.speechInsertTimer = null;
     this.autoStopTimer = null;
     this.autoStopSecondsRemaining = 0;
   }
   async onload() {
     await this.loadSettings();
     this.speechRecorder.setApp(this.app);
+    this.speechRecorder.setSettingsLanguage(this.settings.speechLanguage);
+    this.speechRecorder.setSettingsVadSensitivity(this.settings.speechVadSensitivity);
+    this.speechRecorder.setHotwordsFile(this.settings.speechHotwordsFile);
+    this.speechRecorder.setSettingsAutoPunctuate(this.settings.speechAutoPunctuate);
     const debugLogPath = await resetDebugLog(this.app);
     debugLog(this.app, "plugin.onload", {
       version: this.manifest.version,
@@ -7788,20 +7921,15 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       if (!(file instanceof import_obsidian12.TFile) || !(currentFile instanceof import_obsidian12.TFile) || file.path !== currentFile.path) {
         return;
       }
+      if (this.speechRecorder.isActive && file.path === currentFile.path) {
+        return;
+      }
       this.refreshAllViews({
         reason: "metadata",
         changedPaths: [file.path]
       });
     }));
     this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => {
-      const viewType = leaf?.view?.getViewType() ?? null;
-      const viewFile = leaf?.view instanceof import_obsidian12.FileView ? leaf.view.file?.path ?? null : null;
-      debugLog(this.app, "active-leaf-change:before-timeout", {
-        viewType,
-        viewFile,
-        lastSupportedFilePath: this.lastSupportedFilePath,
-        lastExcalidrawFilePath: this.lastExcalidrawFilePath
-      });
       setTimeout(() => {
         const view = leaf?.view;
         let leafFile = null;
@@ -7822,13 +7950,6 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
             }
           }
         }
-        debugLog(this.app, "active-leaf-change:after-timeout", {
-          viewType: view?.getViewType() ?? null,
-          leafFile: leafFile?.path ?? null,
-          isExcalidrawViewReady,
-          lastSupportedFilePath: this.lastSupportedFilePath,
-          lastExcalidrawFilePath: this.lastExcalidrawFilePath
-        });
         const fileChanged = this.captureSupportedFileContext(leafFile);
         const editorChanged = this.captureEditorContext(leaf);
         if (editorChanged || fileChanged || isExcalidrawViewReady) {
@@ -7864,6 +7985,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
   }
   onunload() {
     this.cancelAutoStopTimer();
+    this.flushSpeechInsertBuffer();
     this._sentenceManager = null;
     this.speechRecorder.destroy();
     this.referencePreview.destroy();
@@ -7877,6 +7999,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     this.speechRecorder.setSettingsLanguage(this.settings.speechLanguage);
     this.speechRecorder.setSettingsVadSensitivity(this.settings.speechVadSensitivity);
     this.speechRecorder.setHotwordsFile(this.settings.speechHotwordsFile);
+    this.speechRecorder.setSettingsAutoPunctuate(this.settings.speechAutoPunctuate);
     await this.saveData(this.settings);
     return;
     if (!this.speechRecorder.isActive) {
@@ -8084,14 +8207,6 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     const activeFile = this.app.workspace.getActiveFile();
     const activeView = this.app.workspace.getActiveViewOfType(import_obsidian12.FileView);
     const leafViewFile = activeView?.file ?? null;
-    debugLog(this.app, "getContextNoteFile", {
-      getActiveFile_result: activeFile?.path ?? null,
-      leafViewFile: leafViewFile?.path ?? null,
-      isSupported_activeFile: isSupportedNoteFile(activeFile),
-      isExcalidraw_leafViewFile: leafViewFile instanceof import_obsidian12.TFile ? isExcalidrawFile(leafViewFile) : false,
-      lastSupportedFilePath: this.lastSupportedFilePath,
-      lastExcalidrawFilePath: this.lastExcalidrawFilePath
-    });
     if (activeFile instanceof import_obsidian12.TFile) {
       if (isSupportedNoteFile(activeFile)) {
         this.captureSupportedFileContext(activeFile);
@@ -8162,13 +8277,8 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
   }
   refreshAllViews(request = { reason: "mutation" }) {
     const leaves = this.app.workspace.getLeavesOfType(LINK_TAG_INTELLIGENCE_VIEW);
-    debugLog(this.app, "refreshAllViews", { leafCount: leaves.length, reason: request.reason, changedPaths: request.changedPaths ?? [] });
     for (const leaf of leaves) {
       const view = leaf.view;
-      debugLog(this.app, "refreshAllViews:viewCheck", {
-        viewType: view?.constructor.name,
-        isLTIView: view instanceof LinkTagIntelligenceView
-      });
       if (view instanceof LinkTagIntelligenceView) {
         view.requestRefresh(request);
       }
@@ -8447,6 +8557,56 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       return null;
     }
   }
+  async ensurePunctuationModel() {
+    const fs = this.getFs();
+    if (!fs) return false;
+    const adapter = this.app.vault.adapter;
+    const basePath = adapter instanceof import_obsidian12.FileSystemAdapter ? adapter.getBasePath() : "";
+    const puncDir = basePath + "/.obsidian/plugins/link-tag-intelligence/models/punc-zh-2024/";
+    const modelFile = puncDir + "model.onnx";
+    if (fs.existsSync(modelFile)) {
+      return true;
+    }
+    const modelsDir = basePath + "/.obsidian/plugins/link-tag-intelligence/models/";
+    if (!fs.existsSync(modelsDir)) {
+      fs.mkdirSync(modelsDir, { recursive: true });
+    }
+    if (!fs.existsSync(puncDir)) {
+      fs.mkdirSync(puncDir, { recursive: true });
+    }
+    const notice = new import_obsidian12.Notice("\u6B63\u5728\u540E\u53F0\u4E0B\u8F7D\u79BB\u7EBF\u4E2D\u6587\u6807\u70B9\u9884\u6D4B\u6A21\u578B (~40MB)...", 0);
+    try {
+      const url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/punctuation-models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12.tar.bz2";
+      const archiveName = "sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12.tar.bz2";
+      const archivePath = puncDir + archiveName;
+      const cp = require("child_process");
+      cp.execSync(
+        `curl -L -o "${archivePath}" "${url}" --progress-bar 2>&1`,
+        { maxBuffer: 1024 * 1024 }
+      );
+      notice.setMessage("\u6B63\u5728\u89E3\u538B\u6807\u70B9\u6062\u590D\u6A21\u578B...");
+      cp.execSync(`tar -xjf "${archiveName}" --strip-components=1`, { cwd: puncDir, maxBuffer: 1024 * 1024 });
+      const fs2 = require("fs");
+      try {
+        fs2.unlinkSync(archivePath);
+      } catch {
+      }
+      const { join } = require("path");
+      for (const f of fs2.readdirSync(puncDir)) {
+        const p = join(puncDir, f);
+        if (fs2.statSync(p).isFile() && f !== "model.onnx") {
+          fs2.unlinkSync(p);
+        }
+      }
+      notice.hide();
+      new import_obsidian12.Notice("\u79BB\u7EBF\u6807\u70B9\u7B26\u53F7\u9884\u6D4B\u6A21\u578B\u5C31\u7EEA\u3002");
+      return true;
+    } catch (e) {
+      notice.hide();
+      new import_obsidian12.Notice("\u6807\u70B9\u6A21\u578B\u79BB\u7EBF\u4E0B\u8F7D\u5931\u8D25: " + String(e), 8e3);
+      return false;
+    }
+  }
   async ensureSpeechModel() {
     const fs = this.getFs();
     const modelDir = this.speechRecorder.getModelDirInternal();
@@ -8465,7 +8625,12 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
         allExist = false;
       }
     }
-    if (allExist) return true;
+    if (allExist) {
+      if (lang === "zh" && this.settings.speechAutoPunctuate) {
+        return this.ensurePunctuationModel();
+      }
+      return true;
+    }
     if (!anyExist) {
       new import_obsidian12.Notice(
         this.t("speechModelFirstRunTitle") + "\n\n" + this.t("speechModelFirstRunGuide", {
@@ -8476,7 +8641,11 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
         12e3
       );
     }
-    return this.downloadSpeechModel();
+    const asrReady = await this.downloadSpeechModel();
+    if (asrReady && lang === "zh" && this.settings.speechAutoPunctuate) {
+      return this.ensurePunctuationModel();
+    }
+    return asrReady;
   }
   async downloadZhArchive(modelDir) {
     const url = getModelRepo("zh");
@@ -8808,7 +8977,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       if (!text) return;
       if (isEndpoint) {
         const finalSentence = this._sentenceManager.finalizeSentence(text);
-        if (finalSentence) this.insertSpeechText(finalSentence);
+        if (finalSentence) this.queueSpeechText(finalSentence);
       } else {
         this._sentenceManager.addPartialText(text);
       }
@@ -8834,11 +9003,31 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       const before = this._sentenceManager.getPartialText();
       if (before.trim()) {
         const final = this._sentenceManager.finalizeSentence();
-        if (final) this.insertSpeechText(final);
+        if (final) this.queueSpeechText(final);
       }
+      this.flushSpeechInsertBuffer();
       this.cancelAutoStopTimer();
     }
     this.refreshAllViews();
+  }
+  queueSpeechText(text) {
+    if (!text) return;
+    this.speechInsertBuffer += `${text} `;
+    if (!this.speechInsertTimer) {
+      this.speechInsertTimer = setTimeout(() => {
+        this.speechInsertTimer = null;
+        this.flushSpeechInsertBuffer();
+      }, 1200);
+    }
+  }
+  flushSpeechInsertBuffer() {
+    if (this.speechInsertTimer) {
+      clearTimeout(this.speechInsertTimer);
+      this.speechInsertTimer = null;
+    }
+    const text = this.speechInsertBuffer;
+    this.speechInsertBuffer = "";
+    this.insertSpeechText(text);
   }
   insertSpeechText(text) {
     if (!text) return;
@@ -8848,13 +9037,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       return;
     }
     const editor = editorView.editor;
-    const cursor = editor.getCursor();
-    editor.replaceSelection(text + " ");
-    debugLog(this.app, "speech.text-inserted", {
-      textLen: text.length,
-      cursorLine: cursor.line,
-      cursorCh: cursor.ch
-    });
+    editor.replaceSelection(text);
   }
   // ─── Auto-stop timer ─────────────────────────────────────────────────
   startAutoStopTimer() {

@@ -25,9 +25,20 @@ function applyEndpointCorrections(text) {
   }
   return result;
 }
+function restorePunctuation(rawText) {
+  if (punctuation && rawText.trim()) {
+    try {
+      return punctuation.addPunct(rawText);
+    } catch (e) {
+      console.error("[lti-asr-worker] Punctuation error:", e);
+    }
+  }
+  return rawText;
+}
 var recognizer = null;
 var stream = null;
 var prevWasEndpoint = false;
+var punctuation = null;
 var rl = require("readline").createInterface({ input: process.stdin });
 rl.on("line", (raw) => {
   let msg;
@@ -76,6 +87,21 @@ rl.on("line", (raw) => {
           });
           stream = recognizer ? recognizer.createStream() : null;
           prevWasEndpoint = false;
+          punctuation = null;
+          if (msg.speechAutoPunctuate && msg.language === "zh") {
+            const path = require("path");
+            const puncModelPath = path.join(msg.modelDir, "..", "punc-zh-2024", "model.onnx");
+            if (fs.existsSync(puncModelPath)) {
+              punctuation = sherpaOnnx.createOfflinePunctuation({
+                model: {
+                  ctTransformer: puncModelPath,
+                  numThreads: 1
+                }
+              });
+            } else {
+              console.warn("[lti-asr-worker] Punctuation model not found at path:", puncModelPath);
+            }
+          }
           process.stdout.write(JSON.stringify({ type: "ready", ok: !!recognizer }) + "\n");
         } catch (e) {
           process.stdout.write(JSON.stringify({ type: "ready", ok: false, error: String(e) }) + "\n");
@@ -103,7 +129,10 @@ rl.on("line", (raw) => {
           }
           let text = r.text || "";
           if (text) {
-            if (endpointNow) text = applyEndpointCorrections(text);
+            if (endpointNow) {
+              text = applyEndpointCorrections(text);
+              text = restorePunctuation(text);
+            }
             process.stdout.write(JSON.stringify({ type: "result", text, isEndpoint: endpointNow }) + "\n");
           }
         }
@@ -120,6 +149,10 @@ rl.on("line", (raw) => {
         if (recognizer) {
           recognizer.free();
           recognizer = null;
+        }
+        if (punctuation) {
+          punctuation.free();
+          punctuation = null;
         }
         process.stdout.write(JSON.stringify({ type: "destroyed" }) + "\n");
         process.exit(0);

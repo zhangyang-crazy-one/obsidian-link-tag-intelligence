@@ -1,16 +1,25 @@
+import { EventEmitter } from "node:events";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const { mockStartCapture, mockStopCapture } = vi.hoisted(() => ({
+  mockStartCapture: vi.fn(),
+  mockStopCapture: vi.fn(),
+}));
 
 // Mock the browser-dependent speech-capture module
 // State machine tests don't need real microphone access
 // Default: startCapture rejects (simulates no-API environment)
 vi.mock("../src/speech-capture", () => ({
-  startCapture: vi.fn().mockRejectedValue(new DOMException("Permission denied", "NotAllowedError")),
-  stopCapture: vi.fn(),
+  startCapture: mockStartCapture,
+  stopCapture: mockStopCapture,
   calculateRMS: vi.fn().mockReturnValue(0.3),
   rmsToDecibels: vi.fn().mockReturnValue(-10.5)
 }));
 
 import { SpeechRecorder, type RecorderPhase } from "../src/speech-recorder";
+
+mockStartCapture.mockRejectedValue(new DOMException("Permission denied", "NotAllowedError"));
 
 function mockT(key: string, vars?: Record<string, string | number>): string {
   if (vars) {
@@ -153,6 +162,112 @@ describe("SpeechRecorder — forceStop() and destroy()", () => {
   it("destroy on idle recorder does not throw", () => {
     const recorder = new SpeechRecorder();
     expect(() => recorder.destroy()).not.toThrow();
+  });
+});
+
+describe("SpeechRecorder — ASR worker lifecycle", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    mockStartCapture.mockReset();
+    mockStopCapture.mockReset();
+    mockStartCapture.mockRejectedValue(new DOMException("Permission denied", "NotAllowedError"));
+  });
+
+  it("destroys the ASR worker instead of leaving the model resident", () => {
+    vi.useFakeTimers();
+    try {
+      const writes: string[] = [];
+      const child = new EventEmitter() as EventEmitter & {
+        stdin: { write: (d: string) => boolean; end: () => void };
+        kill: ReturnType<typeof vi.fn>;
+        killed: boolean;
+        pid: number;
+        exitCode: number | null;
+        signalCode: string | null;
+      };
+      child.stdin = {
+        write: (d: string) => {
+          writes.push(d);
+          return true;
+        },
+        end: vi.fn(),
+      };
+      child.kill = vi.fn(() => {
+        child.killed = true;
+        return true;
+      });
+      child.killed = false;
+      child.pid = 12345;
+      child.exitCode = null;
+      child.signalCode = null;
+      const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+
+      const recorder = new SpeechRecorder() as unknown as {
+        asrProcess: typeof child | null;
+        asrStdin: typeof child.stdin | null;
+        asrReady: boolean;
+        destroyAsrProcess: () => void;
+      };
+      recorder.asrProcess = child;
+      recorder.asrStdin = child.stdin;
+      recorder.asrReady = true;
+      recorder.destroyAsrProcess();
+
+      expect(writes.some((line) => JSON.parse(line).type === "destroy")).toBe(true);
+      expect(writes.some((line) => JSON.parse(line).type === "reset")).toBe(false);
+      expect(child.stdin.end).toHaveBeenCalled();
+      expect(recorder.asrProcess).toBeNull();
+      expect(recorder.asrStdin).toBeNull();
+      expect(recorder.asrReady).toBe(false);
+      vi.runAllTimers();
+      expect(killSpy).toHaveBeenCalledWith(-12345, "SIGTERM");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("drops audio chunks while ASR stdin is backpressured", () => {
+    const writes: string[] = [];
+    const child = new EventEmitter() as EventEmitter & {
+      stdin: EventEmitter & { write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn>; writableLength: number };
+    };
+    child.stdin = Object.assign(new EventEmitter(), {
+      write: vi.fn((d: string) => {
+        writes.push(d);
+        return writes.length < 2;
+      }),
+      end: vi.fn(),
+      writableLength: 0,
+    });
+
+    const recorder = new SpeechRecorder() as unknown as {
+      asrProcess: typeof child | null;
+      asrStdin: typeof child.stdin | null;
+      asrReady: boolean;
+      asrBackpressure: boolean;
+      sendAudioChunkToAsr: (chunk: Float32Array) => void;
+      destroy: () => void;
+    };
+    recorder.asrProcess = child;
+    recorder.asrStdin = child.stdin;
+    recorder.asrReady = true;
+    recorder.asrBackpressure = false;
+
+    recorder.sendAudioChunkToAsr(new Float32Array([0.1, 0.2]));
+    recorder.sendAudioChunkToAsr(new Float32Array([0.3, 0.4]));
+    recorder.sendAudioChunkToAsr(new Float32Array([0.5, 0.6]));
+
+    const audioWritesBeforeDrain = writes.filter((line) => JSON.parse(line).type === "audio").length;
+    expect(audioWritesBeforeDrain).toBe(2);
+    expect(recorder.asrBackpressure).toBe(true);
+
+    recorder.asrBackpressure = false;
+    recorder.sendAudioChunkToAsr(new Float32Array([0.7, 0.8]));
+
+    const audioWritesAfterDrain = writes.filter((line) => JSON.parse(line).type === "audio").length;
+    expect(audioWritesAfterDrain).toBe(3);
+
+    recorder.destroy();
   });
 });
 
