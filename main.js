@@ -7275,9 +7275,9 @@ var SpeechRecorder = class {
       });
       this.registerDeviceChangeHandler(t);
       if (!this.asrProcess) {
-        const adapter = this.appRef?.vault.adapter;
-        const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
-        const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence";
+        const adapter2 = this.appRef?.vault.adapter;
+        const basePath2 = adapter2 instanceof import_obsidian11.FileSystemAdapter ? adapter2.getBasePath() : "";
+        const pluginDir = basePath2 + "/.obsidian/plugins/link-tag-intelligence";
         const workerPath = pluginDir + "/asr-worker.js";
         try {
           const cp = require("child_process");
@@ -7337,13 +7337,33 @@ var SpeechRecorder = class {
       this.asrReady = false;
       this.pendingLanguage = this.settingsLanguage;
       const hotwordsFile = this.getHotwordsPath();
+      let lexiconFile = void 0;
+      let ruleFstsFile = void 0;
+      const adapter = this.appRef?.vault.adapter;
+      const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
+      if (basePath) {
+        try {
+          const path = require("path");
+          const fs = require("fs");
+          const lexiconPath = path.join(basePath, ".obsidian", "plugins", "link-tag-intelligence", "models", "lexicon.txt");
+          const fstPath = path.join(basePath, ".obsidian", "plugins", "link-tag-intelligence", "models", "replace.fst");
+          if (fs.existsSync(lexiconPath) && fs.existsSync(fstPath)) {
+            lexiconFile = lexiconPath;
+            ruleFstsFile = fstPath;
+          }
+        } catch (e) {
+          console.warn("[lti-speech] Failed to resolve FST paths:", e);
+        }
+      }
       const initMsg = JSON.stringify({
         type: "init",
         modelDir: this.getModelDir(),
         language: this.settingsLanguage,
         vadSensitivity: this.settingsVadSensitivity,
         speechAutoPunctuate: this.settingsAutoPunctuate,
-        ...hotwordsFile ? { hotwordsFile } : {}
+        ...hotwordsFile ? { hotwordsFile } : {},
+        ...lexiconFile ? { lexicon: lexiconFile } : {},
+        ...ruleFstsFile ? { ruleFsts: ruleFstsFile } : {}
       }) + "\n";
       this.asrStdin?.write(initMsg);
       await new Promise((resolve, reject) => {

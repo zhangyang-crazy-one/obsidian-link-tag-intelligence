@@ -24,3 +24,8 @@ planning/
 *.icloud
 .DS_Store
 Thumbs.db
+
+# Models cache
+models/punc-zh-2024/
+models/zh-2025/
+*.tar.bz2
