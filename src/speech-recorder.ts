@@ -166,8 +166,6 @@ export class SpeechRecorder {
                       ok: msg.ok,
                       error: this.asrInitError,
                       hasHotwords: !!hotwordsFile,
-                      hasLexicon: !!lexiconFile,
-                      hasFst: !!ruleFstsFile,
                     });
                   }
                 }
@@ -195,28 +193,6 @@ export class SpeechRecorder {
       // Hotwords file: optional domain-specific terms list in plugin dir
       const hotwordsFile = this.getHotwordsPath();
 
-      // Resolve optional Homophone Replacer FST files
-      let lexiconFile: string | undefined = undefined;
-      let ruleFstsFile: string | undefined = undefined;
-      const adapter = this.appRef?.vault.adapter;
-      const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
-      if (basePath) {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
-          const path = require("path") as typeof import("path");
-          // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
-          const fs = require("fs") as typeof import("fs");
-          const lexiconPath = path.join(basePath, ".obsidian", "plugins", "link-tag-intelligence", "models", "lexicon.txt");
-          const fstPath = path.join(basePath, ".obsidian", "plugins", "link-tag-intelligence", "models", "replace.fst");
-          if (fs.existsSync(lexiconPath) && fs.existsSync(fstPath)) {
-            lexiconFile = lexiconPath;
-            ruleFstsFile = fstPath;
-          }
-        } catch (e) {
-          console.warn("[lti-speech] Failed to resolve FST paths:", e);
-        }
-      }
-
       const initMsg = JSON.stringify({
         type: "init",
         modelDir: this.getModelDir(),
@@ -224,8 +200,6 @@ export class SpeechRecorder {
         vadSensitivity: this.settingsVadSensitivity,
         speechAutoPunctuate: this.settingsAutoPunctuate,
         ...(hotwordsFile ? { hotwordsFile } : {}),
-        ...(lexiconFile ? { lexicon: lexiconFile } : {}),
-        ...(ruleFstsFile ? { ruleFsts: ruleFstsFile } : {}),
       }) + "\n";
       this.asrStdin?.write(initMsg);
 

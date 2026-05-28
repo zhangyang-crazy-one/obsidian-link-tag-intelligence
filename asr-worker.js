@@ -62,6 +62,10 @@ rl.on("line", (raw) => {
           const hrConfig = msg.lexicon && msg.ruleFsts ? {
             hr: { lexicon: msg.lexicon, ruleFsts: msg.ruleFsts, dictDir: "" }
           } : {};
+          const hotwordsConfig = msg.hotwordsFile ? {
+            hotwordsFile: msg.hotwordsFile,
+            hotwordsScore: 3
+          } : {};
           recognizer = sherpaOnnx.createOnlineRecognizer({
             modelConfig: {
               transducer: {
@@ -83,7 +87,8 @@ rl.on("line", (raw) => {
             rule1MinTrailingSilence: mapVadToRule1(msg.vadSensitivity ?? 2),
             rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
             rule3MinUtteranceLength: 20,
-            ...hrConfig
+            ...hrConfig,
+            ...hotwordsConfig
           });
           stream = recognizer ? recognizer.createStream() : null;
           prevWasEndpoint = false;

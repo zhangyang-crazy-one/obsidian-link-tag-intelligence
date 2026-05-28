@@ -69,7 +69,7 @@ let punctuation: any = null;
 
 const rl = require("readline").createInterface({ input: process.stdin });
 rl.on("line", (raw: string) => {
-  let msg: { type: string; modelDir?: string; language?: string; vadSensitivity?: number; bufferB64?: string; lexicon?: string; ruleFsts?: string; speechAutoPunctuate?: boolean };
+  let msg: { type: string; modelDir?: string; language?: string; vadSensitivity?: number; bufferB64?: string; lexicon?: string; ruleFsts?: string; speechAutoPunctuate?: boolean; hotwordsFile?: string };
   try { msg = JSON.parse(raw); } catch { return; }
 
   try {
@@ -80,6 +80,10 @@ rl.on("line", (raw: string) => {
         try {
           const hrConfig = (msg.lexicon && msg.ruleFsts) ? {
             hr: { lexicon: msg.lexicon, ruleFsts: msg.ruleFsts, dictDir: "" },
+          } : {};
+          const hotwordsConfig = msg.hotwordsFile ? {
+            hotwordsFile: msg.hotwordsFile,
+            hotwordsScore: 3.0,
           } : {};
           recognizer = sherpaOnnx.createOnlineRecognizer({
             modelConfig: {
@@ -101,6 +105,7 @@ rl.on("line", (raw: string) => {
             rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
             rule3MinUtteranceLength: 20.0,
             ...hrConfig,
+            ...hotwordsConfig,
           });
           stream = recognizer ? recognizer.createStream() : null;
           prevWasEndpoint = false;
