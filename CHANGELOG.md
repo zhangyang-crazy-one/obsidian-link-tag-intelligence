@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.2.6] - 2026-05-28
+
+### Added / 新特性
+- **Near-Real-Time Transcription Support / 支持更实时的语音输出**:
+  - Decreased the minimum limit of the max segment duration setting from 5 seconds to **1 second**.
+  - Allows sentences to be finalized and inserted into the editor almost in real-time (every 1-2 seconds) while keeping punctuation restoration active.
+  - 将单句最大分段时长的下限从 5 秒调低至 **1 秒**。
+  - 支持说话时以极短的间隔（例如 1-2 秒）快速向编辑器插入已断句并进行标点还原后的文字，实现更加实时的文字上屏效果。
+
+---
+
 ## [0.2.5] - 2026-05-28
 
 ### Added / 新特性

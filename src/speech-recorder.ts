@@ -448,7 +448,7 @@ export class SpeechRecorder {
   }
 
   setSettingsMaxUtteranceSec(sec: number): void {
-    const clamped = Math.max(5, Math.min(60, Math.round(sec)));
+    const clamped = Math.max(1, Math.min(60, Math.round(sec)));
     this.settingsMaxUtteranceSec = clamped;
   }
 

@@ -366,7 +366,7 @@ export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagI
     : defaults.speechAutoStopSec;
   normalized.speechAutoPunctuate = typeof normalized.speechAutoPunctuate === "boolean" ? normalized.speechAutoPunctuate : defaults.speechAutoPunctuate;
   normalized.speechDecodingMethod = normalized.speechDecodingMethod === "modified_beam_search" ? "modified_beam_search" : "greedy_search";
-  normalized.speechMaxUtteranceSec = Number.isFinite(normalized.speechMaxUtteranceSec) && normalized.speechMaxUtteranceSec >= 5 && normalized.speechMaxUtteranceSec <= 60
+  normalized.speechMaxUtteranceSec = Number.isFinite(normalized.speechMaxUtteranceSec) && normalized.speechMaxUtteranceSec >= 1 && normalized.speechMaxUtteranceSec <= 60
     ? Math.round(normalized.speechMaxUtteranceSec)
     : defaults.speechMaxUtteranceSec;
 
@@ -1758,11 +1758,11 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
       void this.plugin.saveSettings();
     });
 
-    // Max segment duration — slider 5-60, default 20
+    // Max segment duration — slider 1-60, default 20
     const durationField = this.createFieldShell(section, this.plugin.t("speechMaxUtteranceSec"), this.plugin.t("speechMaxUtteranceSecDescription"));
     const durationRow = durationField.createDiv({ cls: "lti-voice-slider-row" });
     const durationSlider = durationRow.createEl("input", { type: "range", cls: "lti-voice-slider" });
-    durationSlider.min = "5";
+    durationSlider.min = "1";
     durationSlider.max = "60";
     durationSlider.step = "1";
     durationSlider.value = String(this.plugin.settings.speechMaxUtteranceSec);

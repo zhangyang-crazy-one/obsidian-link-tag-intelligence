@@ -1080,7 +1080,7 @@ var TRANSLATIONS = {
     speechAutoPunctuate: "Auto-restore punctuation",
     speechAutoPunctuateDescription: "Automatically predict and restore punctuation marks for Chinese speech recognition results using an offline transformer model.",
     speechMaxUtteranceSec: "Max segment duration (seconds)",
-    speechMaxUtteranceSecDescription: "The maximum duration of continuous speech in a single segment before forcing a sentence break and outputting. Range: 5-60 seconds.",
+    speechMaxUtteranceSecDescription: "The maximum duration of continuous speech in a single segment before forcing a sentence break and outputting. Range: 1-60 seconds.",
     speechDecodingMethod: "ASR Search Method",
     speechDecodingMethodDescription: "Choose Greedy Search for fast general transcription, or Modified Beam Search for domain terminology biasing via hotwords.",
     speechDecodingMethodGreedy: "Greedy Search (Faster, standard)",
@@ -1454,7 +1454,7 @@ var TRANSLATIONS = {
     speechAutoPunctuate: "\u81EA\u52A8\u8FD8\u539F\u6807\u70B9\u7B26\u53F7",
     speechAutoPunctuateDescription: "\u5F00\u542F\u540E\uFF0C\u4F7F\u7528\u79BB\u7EBF\u6807\u70B9\u7B26\u53F7 Transformer \u6A21\u578B\u81EA\u52A8\u4E3A\u4E2D\u6587\u6D41\u5F0F\u8BC6\u522B\u7ED3\u679C\u6DFB\u52A0\u6700\u9002\u5B9C\u7684\u6807\u70B9\uFF0C\u544A\u522B\u7EAF\u6587\u5B57\u6D41\u3002",
     speechMaxUtteranceSec: "\u5355\u53E5\u6700\u5927\u5206\u6BB5\u65F6\u957F\uFF08\u79D2\uFF09",
-    speechMaxUtteranceSecDescription: "\u5F53\u8FDE\u7EED\u8BF4\u8BDD\u8FBE\u5230\u8BE5\u65F6\u957F\uFF0C\u5373\u4FBF\u6CA1\u6709\u505C\u987F\uFF0C\u4E5F\u4F1A\u5F3A\u5236\u89E6\u53D1\u65AD\u53E5\u5206\u6BB5\u5E76\u8FDB\u884C\u6807\u70B9\u9884\u6D4B\u8F93\u51FA\u3002\u8303\u56F4\uFF1A5-60 \u79D2\u3002",
+    speechMaxUtteranceSecDescription: "\u5F53\u8FDE\u7EED\u8BF4\u8BDD\u8FBE\u5230\u8BE5\u65F6\u957F\uFF0C\u5373\u4FBF\u6CA1\u6709\u505C\u987F\uFF0C\u4E5F\u4F1A\u5F3A\u5236\u89E6\u53D1\u65AD\u53E5\u5206\u6BB5\u5E76\u8FDB\u884C\u6807\u70B9\u9884\u6D4B\u8F93\u51FA\u3002\u8303\u56F4\uFF1A1-60 \u79D2\u3002",
     speechDecodingMethod: "\u8BED\u97F3\u641C\u7D22\u89E3\u7801\u65B9\u5F0F",
     speechDecodingMethodDescription: "\u9009\u62E9 Greedy Search \u4EE5\u83B7\u5F97\u66F4\u5FEB\u7684\u666E\u901A\u8BC6\u522B\u54CD\u5E94\uFF1B\u9009\u62E9 Modified Beam Search \u4EE5\u4FBF\u914D\u5408\u70ED\u8BCD\u6587\u4EF6\u8FDB\u884C\u7279\u5B9A\u9886\u57DF\u672F\u8BED\u7684\u503E\u5411\u6027\u7EA0\u6B63\u3002",
     speechDecodingMethodGreedy: "Greedy Search (\u5FEB\u901F\u3001\u6807\u51C6)",
@@ -4914,7 +4914,7 @@ function normalizeLoadedSettings(data, configDir = "") {
   normalized.speechAutoStopSec = Number.isFinite(normalized.speechAutoStopSec) ? normalized.speechAutoStopSec === 0 ? 0 : Math.max(10, Math.min(300, Math.round(normalized.speechAutoStopSec))) : defaults.speechAutoStopSec;
   normalized.speechAutoPunctuate = typeof normalized.speechAutoPunctuate === "boolean" ? normalized.speechAutoPunctuate : defaults.speechAutoPunctuate;
   normalized.speechDecodingMethod = normalized.speechDecodingMethod === "modified_beam_search" ? "modified_beam_search" : "greedy_search";
-  normalized.speechMaxUtteranceSec = Number.isFinite(normalized.speechMaxUtteranceSec) && normalized.speechMaxUtteranceSec >= 5 && normalized.speechMaxUtteranceSec <= 60 ? Math.round(normalized.speechMaxUtteranceSec) : defaults.speechMaxUtteranceSec;
+  normalized.speechMaxUtteranceSec = Number.isFinite(normalized.speechMaxUtteranceSec) && normalized.speechMaxUtteranceSec >= 1 && normalized.speechMaxUtteranceSec <= 60 ? Math.round(normalized.speechMaxUtteranceSec) : defaults.speechMaxUtteranceSec;
   return normalized;
 }
 var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSettingTab {
@@ -6135,7 +6135,7 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSetting
     const durationField = this.createFieldShell(section, this.plugin.t("speechMaxUtteranceSec"), this.plugin.t("speechMaxUtteranceSecDescription"));
     const durationRow = durationField.createDiv({ cls: "lti-voice-slider-row" });
     const durationSlider = durationRow.createEl("input", { type: "range", cls: "lti-voice-slider" });
-    durationSlider.min = "5";
+    durationSlider.min = "1";
     durationSlider.max = "60";
     durationSlider.step = "1";
     durationSlider.value = String(this.plugin.settings.speechMaxUtteranceSec);
@@ -7622,7 +7622,7 @@ var SpeechRecorder = class {
     this.settingsAutoPunctuate = autoPunc;
   }
   setSettingsMaxUtteranceSec(sec) {
-    const clamped = Math.max(5, Math.min(60, Math.round(sec)));
+    const clamped = Math.max(1, Math.min(60, Math.round(sec)));
     this.settingsMaxUtteranceSec = clamped;
   }
   setSettingsDecodingMethod(method) {
