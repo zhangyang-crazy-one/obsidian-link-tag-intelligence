@@ -69,7 +69,7 @@ let punctuation: any = null;
 
 const rl = require("readline").createInterface({ input: process.stdin });
 rl.on("line", (raw: string) => {
-  let msg: { type: string; modelDir?: string; language?: string; vadSensitivity?: number; bufferB64?: string; lexicon?: string; ruleFsts?: string; speechAutoPunctuate?: boolean; hotwordsFile?: string };
+  let msg: { type: string; modelDir?: string; language?: string; vadSensitivity?: number; bufferB64?: string; lexicon?: string; ruleFsts?: string; speechAutoPunctuate?: boolean; hotwordsFile?: string; decodingMethod?: string };
   try { msg = JSON.parse(raw); } catch { return; }
 
   try {
@@ -81,13 +81,15 @@ rl.on("line", (raw: string) => {
           const hrConfig = (msg.lexicon && msg.ruleFsts) ? {
             hr: { lexicon: msg.lexicon, ruleFsts: msg.ruleFsts, dictDir: "" },
           } : {};
-          const hotwordsConfig = msg.hotwordsFile ? {
+          const method = msg.decodingMethod ?? "greedy_search";
+          const hotwordsConfig = (method === "modified_beam_search" && msg.hotwordsFile) ? {
             hotwordsFile: msg.hotwordsFile,
             hotwordsScore: 3.0,
             decodingMethod: "modified_beam_search",
             maxActivePaths: 4,
           } : {
-            decodingMethod: "greedy_search",
+            decodingMethod: method,
+            ...(method === "modified_beam_search" ? { maxActivePaths: 4 } : {}),
           };
           recognizer = sherpaOnnx.createOnlineRecognizer({
             modelConfig: {

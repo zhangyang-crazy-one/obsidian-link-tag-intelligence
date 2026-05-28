@@ -1079,6 +1079,10 @@ var TRANSLATIONS = {
     speechAutoStopTimeoutDescription: "Automatically stop recording after this duration of silence. Set to 0 to disable. Range 10-300 seconds.",
     speechAutoPunctuate: "Auto-restore punctuation",
     speechAutoPunctuateDescription: "Automatically predict and restore punctuation marks for Chinese speech recognition results using an offline transformer model.",
+    speechDecodingMethod: "ASR Search Method",
+    speechDecodingMethodDescription: "Choose Greedy Search for fast general transcription, or Modified Beam Search for domain terminology biasing via hotwords.",
+    speechDecodingMethodGreedy: "Greedy Search (Faster, standard)",
+    speechDecodingMethodBeam: "Modified Beam Search (Supports hotwords biasing)",
     speechBrowse: "Browse...",
     speechLanguage: "Recognition language",
     speechLanguageEn: "English (en)",
@@ -1447,6 +1451,10 @@ var TRANSLATIONS = {
     speechAutoStopTimeoutDescription: "\u9759\u97F3\u8D85\u8FC7\u6B64\u65F6\u957F\u540E\u81EA\u52A8\u505C\u6B62\u5F55\u97F3\u3002\u8BBE\u4E3A 0 \u7981\u7528\u81EA\u52A8\u505C\u6B62\u3002\u8303\u56F4 10-300 \u79D2\u3002",
     speechAutoPunctuate: "\u81EA\u52A8\u8FD8\u539F\u6807\u70B9\u7B26\u53F7",
     speechAutoPunctuateDescription: "\u5F00\u542F\u540E\uFF0C\u4F7F\u7528\u79BB\u7EBF\u6807\u70B9\u7B26\u53F7 Transformer \u6A21\u578B\u81EA\u52A8\u4E3A\u4E2D\u6587\u6D41\u5F0F\u8BC6\u522B\u7ED3\u679C\u6DFB\u52A0\u6700\u9002\u5B9C\u7684\u6807\u70B9\uFF0C\u544A\u522B\u7EAF\u6587\u5B57\u6D41\u3002",
+    speechDecodingMethod: "\u8BED\u97F3\u641C\u7D22\u89E3\u7801\u65B9\u5F0F",
+    speechDecodingMethodDescription: "\u9009\u62E9 Greedy Search \u4EE5\u83B7\u5F97\u66F4\u5FEB\u7684\u666E\u901A\u8BC6\u522B\u54CD\u5E94\uFF1B\u9009\u62E9 Modified Beam Search \u4EE5\u4FBF\u914D\u5408\u70ED\u8BCD\u6587\u4EF6\u8FDB\u884C\u7279\u5B9A\u9886\u57DF\u672F\u8BED\u7684\u503E\u5411\u6027\u7EA0\u6B63\u3002",
+    speechDecodingMethodGreedy: "Greedy Search (\u5FEB\u901F\u3001\u6807\u51C6)",
+    speechDecodingMethodBeam: "Modified Beam Search (\u652F\u6301\u70ED\u8BCD\u6587\u4EF6\u7EA0\u504F)",
     speechBrowse: "\u6D4F\u89C8...",
     speechLanguage: "\u8BC6\u522B\u8BED\u8A00",
     speechLanguageEn: "English (en)",
@@ -4765,7 +4773,8 @@ function buildDefaultSettings(configDir = "") {
     speechHotwordsFile: "",
     speechVadSensitivity: 2,
     speechAutoStopSec: 0,
-    speechAutoPunctuate: true
+    speechAutoPunctuate: true,
+    speechDecodingMethod: "greedy_search"
   };
 }
 var DEFAULT_SETTINGS = buildDefaultSettings();
@@ -4899,6 +4908,7 @@ function normalizeLoadedSettings(data, configDir = "") {
   normalized.speechVadSensitivity = Number.isFinite(normalized.speechVadSensitivity) && normalized.speechVadSensitivity >= 0 && normalized.speechVadSensitivity <= 3 ? Math.round(normalized.speechVadSensitivity) : defaults.speechVadSensitivity;
   normalized.speechAutoStopSec = Number.isFinite(normalized.speechAutoStopSec) ? normalized.speechAutoStopSec === 0 ? 0 : Math.max(10, Math.min(300, Math.round(normalized.speechAutoStopSec))) : defaults.speechAutoStopSec;
   normalized.speechAutoPunctuate = typeof normalized.speechAutoPunctuate === "boolean" ? normalized.speechAutoPunctuate : defaults.speechAutoPunctuate;
+  normalized.speechDecodingMethod = normalized.speechDecodingMethod === "modified_beam_search" ? "modified_beam_search" : "greedy_search";
   return normalized;
 }
 var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSettingTab {
@@ -6074,6 +6084,20 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSetting
     });
     this.createSelectField(
       section,
+      this.plugin.t("speechDecodingMethod"),
+      this.plugin.t("speechDecodingMethodDescription"),
+      [
+        { value: "greedy_search", label: this.plugin.t("speechDecodingMethodGreedy") },
+        { value: "modified_beam_search", label: this.plugin.t("speechDecodingMethodBeam") }
+      ],
+      this.plugin.settings.speechDecodingMethod,
+      async (value) => {
+        this.plugin.settings.speechDecodingMethod = value;
+        await this.plugin.saveSettings();
+      }
+    );
+    this.createSelectField(
+      section,
       this.plugin.t("speechLanguage"),
       "",
       [
@@ -7209,6 +7233,7 @@ var SpeechRecorder = class {
     this.settingsLanguage = "zh";
     this.settingsVadSensitivity = 2;
     this.settingsAutoPunctuate = true;
+    this.settingsDecodingMethod = "greedy_search";
     /** Callback set by main.ts to receive ASR results. */
     this.onAsrResult = null;
     this.hotwordsPath = null;
@@ -7339,13 +7364,14 @@ var SpeechRecorder = class {
       }
       this.asrReady = false;
       this.pendingLanguage = this.settingsLanguage;
-      const hotwordsFile = this.getHotwordsPath();
+      const hotwordsFile = this.settingsDecodingMethod === "modified_beam_search" ? this.getHotwordsPath() : null;
       const initMsg = JSON.stringify({
         type: "init",
         modelDir: this.getModelDir(),
         language: this.settingsLanguage,
         vadSensitivity: this.settingsVadSensitivity,
         speechAutoPunctuate: this.settingsAutoPunctuate,
+        decodingMethod: this.settingsDecodingMethod,
         ...hotwordsFile ? { hotwordsFile } : {}
       }) + "\n";
       this.asrStdin?.write(initMsg);
@@ -7545,6 +7571,13 @@ var SpeechRecorder = class {
   }
   setSettingsAutoPunctuate(autoPunc) {
     this.settingsAutoPunctuate = autoPunc;
+  }
+  setSettingsDecodingMethod(method) {
+    if (method === this.settingsDecodingMethod) return;
+    this.settingsDecodingMethod = method;
+    if (!this.isActive && this.asrProcess) {
+      this.destroyAsrProcess();
+    }
   }
   setHotwordsFile(path) {
     this.hotwordsPath = path || null;
@@ -7762,6 +7795,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     this.speechRecorder.setSettingsVadSensitivity(this.settings.speechVadSensitivity);
     this.speechRecorder.setHotwordsFile(this.settings.speechHotwordsFile);
     this.speechRecorder.setSettingsAutoPunctuate(this.settings.speechAutoPunctuate);
+    this.speechRecorder.setSettingsDecodingMethod(this.settings.speechDecodingMethod);
     const debugLogPath = await resetDebugLog(this.app);
     debugLog(this.app, "plugin.onload", {
       version: this.manifest.version,
@@ -8018,6 +8052,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     this.speechRecorder.setSettingsVadSensitivity(this.settings.speechVadSensitivity);
     this.speechRecorder.setHotwordsFile(this.settings.speechHotwordsFile);
     this.speechRecorder.setSettingsAutoPunctuate(this.settings.speechAutoPunctuate);
+    this.speechRecorder.setSettingsDecodingMethod(this.settings.speechDecodingMethod);
     await this.saveData(this.settings);
     return;
     if (!this.speechRecorder.isActive) {

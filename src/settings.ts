@@ -143,6 +143,7 @@ export interface LinkTagIntelligenceSettings {
   speechVadSensitivity: number;
   speechAutoStopSec: number;
   speechAutoPunctuate: boolean;
+  speechDecodingMethod: "greedy_search" | "modified_beam_search";
 }
 
 export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSettings {
@@ -183,7 +184,8 @@ export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSetting
     speechHotwordsFile: "",
     speechVadSensitivity: 2,
     speechAutoStopSec: 0,
-    speechAutoPunctuate: true
+    speechAutoPunctuate: true,
+    speechDecodingMethod: "greedy_search"
   };
 }
 
@@ -361,6 +363,7 @@ export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagI
     ? (normalized.speechAutoStopSec === 0 ? 0 : Math.max(10, Math.min(300, Math.round(normalized.speechAutoStopSec))))
     : defaults.speechAutoStopSec;
   normalized.speechAutoPunctuate = typeof normalized.speechAutoPunctuate === "boolean" ? normalized.speechAutoPunctuate : defaults.speechAutoPunctuate;
+  normalized.speechDecodingMethod = normalized.speechDecodingMethod === "modified_beam_search" ? "modified_beam_search" : "greedy_search";
 
   return normalized;
 }
@@ -1699,6 +1702,22 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
       this.plugin.settings.speechHotwordsFile = hotwordsInput.value.trim();
       void this.plugin.saveSettings();
     });
+
+    // Decoding method - dropdown with greedy_search / modified_beam_search
+    this.createSelectField(
+      section,
+      this.plugin.t("speechDecodingMethod"),
+      this.plugin.t("speechDecodingMethodDescription"),
+      [
+        { value: "greedy_search", label: this.plugin.t("speechDecodingMethodGreedy") },
+        { value: "modified_beam_search", label: this.plugin.t("speechDecodingMethodBeam") }
+      ],
+      this.plugin.settings.speechDecodingMethod,
+      async (value) => {
+        this.plugin.settings.speechDecodingMethod = value as "greedy_search" | "modified_beam_search";
+        await this.plugin.saveSettings();
+      }
+    );
 
     // Language selector — dropdown with zh/en (D-16)
     this.createSelectField(

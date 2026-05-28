@@ -62,13 +62,15 @@ rl.on("line", (raw) => {
           const hrConfig = msg.lexicon && msg.ruleFsts ? {
             hr: { lexicon: msg.lexicon, ruleFsts: msg.ruleFsts, dictDir: "" }
           } : {};
-          const hotwordsConfig = msg.hotwordsFile ? {
+          const method = msg.decodingMethod ?? "greedy_search";
+          const hotwordsConfig = method === "modified_beam_search" && msg.hotwordsFile ? {
             hotwordsFile: msg.hotwordsFile,
             hotwordsScore: 3,
             decodingMethod: "modified_beam_search",
             maxActivePaths: 4
           } : {
-            decodingMethod: "greedy_search"
+            decodingMethod: method,
+            ...method === "modified_beam_search" ? { maxActivePaths: 4 } : {}
           };
           recognizer = sherpaOnnx.createOnlineRecognizer({
             modelConfig: {

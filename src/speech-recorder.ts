@@ -31,6 +31,7 @@ export class SpeechRecorder {
   private settingsLanguage: "zh" | "en" = "zh";
   private settingsVadSensitivity = 2;
   private settingsAutoPunctuate = true;
+  private settingsDecodingMethod: "greedy_search" | "modified_beam_search" = "greedy_search";
 
   /** Callback set by main.ts to receive ASR results. */
   onAsrResult: ((text: string, isEndpoint: boolean) => void) | null = null;
@@ -191,7 +192,7 @@ export class SpeechRecorder {
       this.asrReady = false;
       this.pendingLanguage = this.settingsLanguage;
       // Hotwords file: optional domain-specific terms list in plugin dir
-      const hotwordsFile = this.getHotwordsPath();
+      const hotwordsFile = this.settingsDecodingMethod === "modified_beam_search" ? this.getHotwordsPath() : null;
 
       const initMsg = JSON.stringify({
         type: "init",
@@ -199,6 +200,7 @@ export class SpeechRecorder {
         language: this.settingsLanguage,
         vadSensitivity: this.settingsVadSensitivity,
         speechAutoPunctuate: this.settingsAutoPunctuate,
+        decodingMethod: this.settingsDecodingMethod,
         ...(hotwordsFile ? { hotwordsFile } : {}),
       }) + "\n";
       this.asrStdin?.write(initMsg);
@@ -413,6 +415,15 @@ export class SpeechRecorder {
 
   setSettingsAutoPunctuate(autoPunc: boolean): void {
     this.settingsAutoPunctuate = autoPunc;
+  }
+
+  setSettingsDecodingMethod(method: "greedy_search" | "modified_beam_search"): void {
+    if (method === this.settingsDecodingMethod) return;
+    this.settingsDecodingMethod = method;
+    // If not currently recording, destroy child process so next spawn uses new decoding method
+    if (!this.isActive && this.asrProcess) {
+      this.destroyAsrProcess();
+    }
   }
 
   private hotwordsPath: string | null = null;

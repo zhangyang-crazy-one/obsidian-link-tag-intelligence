@@ -105,6 +105,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     this.speechRecorder.setSettingsVadSensitivity(this.settings.speechVadSensitivity);
     this.speechRecorder.setHotwordsFile(this.settings.speechHotwordsFile);
     this.speechRecorder.setSettingsAutoPunctuate(this.settings.speechAutoPunctuate);
+    this.speechRecorder.setSettingsDecodingMethod(this.settings.speechDecodingMethod);
     const debugLogPath = await resetDebugLog(this.app);
     debugLog(this.app, "plugin.onload", {
       version: this.manifest.version,
@@ -387,6 +388,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     this.speechRecorder.setSettingsVadSensitivity(this.settings.speechVadSensitivity);
     this.speechRecorder.setHotwordsFile(this.settings.speechHotwordsFile);
     this.speechRecorder.setSettingsAutoPunctuate(this.settings.speechAutoPunctuate);
+    this.speechRecorder.setSettingsDecodingMethod(this.settings.speechDecodingMethod);
     await this.saveData(this.settings);
     return;
 
