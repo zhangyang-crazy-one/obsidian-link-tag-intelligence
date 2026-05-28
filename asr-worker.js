@@ -64,8 +64,12 @@ rl.on("line", (raw) => {
           } : {};
           const hotwordsConfig = msg.hotwordsFile ? {
             hotwordsFile: msg.hotwordsFile,
-            hotwordsScore: 3
-          } : {};
+            hotwordsScore: 3,
+            decodingMethod: "modified_beam_search",
+            maxActivePaths: 4
+          } : {
+            decodingMethod: "greedy_search"
+          };
           recognizer = sherpaOnnx.createOnlineRecognizer({
             modelConfig: {
               transducer: {
@@ -81,7 +85,6 @@ rl.on("line", (raw) => {
               debug: 0
             },
             featConfig: { sampleRate: 16e3, featureDim: 80, dither: 3e-5 },
-            decodingMethod: "greedy_search",
             blankPenalty: 1.5,
             enableEndpoint: 1,
             rule1MinTrailingSilence: mapVadToRule1(msg.vadSensitivity ?? 2),
