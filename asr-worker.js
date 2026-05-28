@@ -82,7 +82,7 @@ rl.on("line", (raw) => {
               tokens: msg.modelDir + "tokens.txt",
               modelingUnit: "bpe",
               bpeVocab: msg.modelDir + "bpe.vocab",
-              numThreads: 1,
+              numThreads: Math.min(4, Math.max(1, Math.floor(require("os").cpus().length / 2))),
               provider: "cpu",
               debug: 0
             },
