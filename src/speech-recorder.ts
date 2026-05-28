@@ -135,11 +135,12 @@ export class SpeechRecorder {
             };
           };
           // Use 'node' binary (not process.execPath, which is the Electron/Obsidian app binary).
+          const isWindows = process.platform === "win32";
           this.asrProcess = cp.spawn("node", ["asr-worker.js"], {
             cwd: pluginDir,
             stdio: ["pipe", "pipe", "pipe"],
-            shell: true,
-            detached: true,
+            shell: isWindows ? false : true,
+            detached: isWindows ? false : true,
           });
           const child = this.asrProcess;
           this.asrStdin = {
@@ -152,6 +153,15 @@ export class SpeechRecorder {
           });
 
           let stdoutBuf = "";
+          let stderrLog = "";
+
+          this.asrProcess.on("error", (err: Error) => {
+            this.asrInitError = `ASR Worker process error: ${err.message}`;
+            if (this.appRef) {
+              debugLog(this.appRef, "speech-recorder.asr-worker-error", { error: err.message });
+            }
+          });
+
           this.asrProcess.stdout.on("data", (chunk: Buffer) => {
             stdoutBuf += chunk.toString();
             const lines = stdoutBuf.split("\n");
@@ -175,9 +185,14 @@ export class SpeechRecorder {
             }
           });
           this.asrProcess.stderr.on("data", (chunk: Buffer) => {
-            console.error("[lti-asr-worker]", chunk.toString().trim());
+            const txt = chunk.toString().trim();
+            console.error("[lti-asr-worker]", txt);
+            stderrLog += (stderrLog ? "\n" : "") + txt;
           });
-          this.asrProcess.on("exit", (_code: number | null, _signal: string | null) => {
+          this.asrProcess.on("exit", (code: number | null, signal: string | null) => {
+            if (!this.asrReady) {
+              this.asrInitError = `ASR Worker exited early with code ${code} (signal: ${signal}). Stderr: ${stderrLog || "None"}`;
+            }
             this.asrProcess = null;
             this.asrStdin = null;
             this.asrBackpressure = false;

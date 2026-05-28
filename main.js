@@ -7307,11 +7307,12 @@ var SpeechRecorder = class {
         const workerPath = pluginDir + "/asr-worker.js";
         try {
           const cp = require("child_process");
+          const isWindows = process.platform === "win32";
           this.asrProcess = cp.spawn("node", ["asr-worker.js"], {
             cwd: pluginDir,
             stdio: ["pipe", "pipe", "pipe"],
-            shell: true,
-            detached: true
+            shell: isWindows ? false : true,
+            detached: isWindows ? false : true
           });
           const child = this.asrProcess;
           this.asrStdin = {
@@ -7327,6 +7328,13 @@ var SpeechRecorder = class {
             this.asrBackpressure = false;
           });
           let stdoutBuf = "";
+          let stderrLog = "";
+          this.asrProcess.on("error", (err) => {
+            this.asrInitError = `ASR Worker process error: ${err.message}`;
+            if (this.appRef) {
+              debugLog(this.appRef, "speech-recorder.asr-worker-error", { error: err.message });
+            }
+          });
           this.asrProcess.stdout.on("data", (chunk) => {
             stdoutBuf += chunk.toString();
             const lines = stdoutBuf.split("\n");
@@ -7350,9 +7358,14 @@ var SpeechRecorder = class {
             }
           });
           this.asrProcess.stderr.on("data", (chunk) => {
-            console.error("[lti-asr-worker]", chunk.toString().trim());
+            const txt = chunk.toString().trim();
+            console.error("[lti-asr-worker]", txt);
+            stderrLog += (stderrLog ? "\n" : "") + txt;
           });
-          this.asrProcess.on("exit", (_code, _signal) => {
+          this.asrProcess.on("exit", (code, signal) => {
+            if (!this.asrReady) {
+              this.asrInitError = `ASR Worker exited early with code ${code} (signal: ${signal}). Stderr: ${stderrLog || "None"}`;
+            }
             this.asrProcess = null;
             this.asrStdin = null;
             this.asrBackpressure = false;
