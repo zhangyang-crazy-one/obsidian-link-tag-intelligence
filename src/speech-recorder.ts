@@ -161,9 +161,13 @@ export class SpeechRecorder {
                 if (msg.type === "ready") {
                   this.asrReady = !!msg.ok;
                   this.asrInitError = msg.ok ? null : (msg.error ?? "ASR worker reported ready=false");
-                  if (!msg.ok && this.appRef) {
-                    debugLog(this.appRef, "speech-recorder.asr-ready-failed", {
-                      error: this.asrInitError
+                  if (this.appRef) {
+                    debugLog(this.appRef, "speech-recorder.asr-ready", {
+                      ok: msg.ok,
+                      error: this.asrInitError,
+                      hasHotwords: !!hotwordsFile,
+                      hasLexicon: !!lexiconFile,
+                      hasFst: !!ruleFstsFile,
                     });
                   }
                 }
