@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.2.4] - 2026-05-28
+
+### Fixed / 修复与优化
+- **ASR Worker Spawn & Restart Race Condition / 修复语音识别启停竞态死锁**:
+  - Resolved a race condition where stopping and immediately restarting voice recording caused the previous worker process's termination exit event to corrupt the new process's initialization state.
+  - Implemented process identity checks in child event listeners to prevent cross-process state leakage.
+  - 修复了在录音结束并立即重新启动时，上一个后台 Worker 进程的退出事件与新启动进程的初始化状态发生竞态冲突，导致初始化卡死或报错的 Bug。
+  - 在子进程事件监听中引入了进程实例身份校验，防止跨进程状态泄露。
+
+---
+
 ## [0.2.3] - 2026-05-28
 
 ### Added / 新特性

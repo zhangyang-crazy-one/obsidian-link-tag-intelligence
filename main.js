@@ -7288,6 +7288,7 @@ var SpeechRecorder = class {
   }
   async start(t) {
     this.phase = "initializing";
+    this.asrInitError = null;
     try {
       this.capture = await startCapture((chunk) => {
         const rms = calculateRMS(chunk);
@@ -7329,10 +7330,12 @@ var SpeechRecorder = class {
           });
           let stdoutBuf = "";
           let stderrLog = "";
-          this.asrProcess.on("error", (err) => {
-            this.asrInitError = `ASR Worker process error: ${err.message}`;
-            if (this.appRef) {
-              debugLog(this.appRef, "speech-recorder.asr-worker-error", { error: err.message });
+          child.on("error", (err) => {
+            if (this.asrProcess === child) {
+              this.asrInitError = `ASR Worker process error: ${err.message}`;
+              if (this.appRef) {
+                debugLog(this.appRef, "speech-recorder.asr-worker-error", { error: err.message });
+              }
             }
           });
           this.asrProcess.stdout.on("data", (chunk) => {
@@ -7362,14 +7365,16 @@ var SpeechRecorder = class {
             console.error("[lti-asr-worker]", txt);
             stderrLog += (stderrLog ? "\n" : "") + txt;
           });
-          this.asrProcess.on("exit", (code, signal) => {
-            if (!this.asrReady) {
-              this.asrInitError = `ASR Worker exited early with code ${code} (signal: ${signal}). Stderr: ${stderrLog || "None"}`;
+          child.on("exit", (code, signal) => {
+            if (this.asrProcess === child) {
+              if (!this.asrReady) {
+                this.asrInitError = `ASR Worker exited early with code ${code} (signal: ${signal}). Stderr: ${stderrLog || "None"}`;
+              }
+              this.asrProcess = null;
+              this.asrStdin = null;
+              this.asrBackpressure = false;
+              this.asrReady = false;
             }
-            this.asrProcess = null;
-            this.asrStdin = null;
-            this.asrBackpressure = false;
-            this.asrReady = false;
           });
         } catch (e) {
           throw new Error("ASR Worker init failed: " + String(e));
