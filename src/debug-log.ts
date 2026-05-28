@@ -58,6 +58,7 @@ export async function resetDebugLog(app: App): Promise<string | null> {
 }
 
 export function debugLog(app: App, scope: string, details: Record<string, unknown> = {}): void {
+  console.log(`[lti-debug] [${scope}]`, details);
   const adapter = app.vault.adapter;
   const logPath = getLogRelativePath(app);
   const payload = {

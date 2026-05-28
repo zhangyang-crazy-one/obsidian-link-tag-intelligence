@@ -604,6 +604,7 @@ async function resetDebugLog(app) {
   }
 }
 function debugLog(app, scope, details = {}) {
+  console.log(`[lti-debug] [${scope}]`, details);
   const adapter = app.vault.adapter;
   const logPath = getLogRelativePath(app);
   const payload = {
