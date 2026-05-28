@@ -135,7 +135,7 @@ export class SpeechRecorder {
             };
           };
           // Use 'node' binary (not process.execPath, which is the Electron/Obsidian app binary).
-          this.asrProcess = cp.spawn("node", [workerPath], {
+          this.asrProcess = cp.spawn("node", ["asr-worker.js"], {
             cwd: pluginDir,
             stdio: ["pipe", "pipe", "pipe"],
             shell: true,
@@ -192,7 +192,18 @@ export class SpeechRecorder {
       this.asrReady = false;
       this.pendingLanguage = this.settingsLanguage;
       // Hotwords file: optional domain-specific terms list in plugin dir
-      const hotwordsFile = this.settingsDecodingMethod === "modified_beam_search" ? this.getHotwordsPath() : null;
+      let hotwordsFile = this.settingsDecodingMethod === "modified_beam_search" ? this.getHotwordsPath() : null;
+      if (hotwordsFile) {
+        try {
+          const adapter = this.appRef?.vault.adapter;
+          const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
+          const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
+          const pathModule = require("path") as typeof import("path");
+          hotwordsFile = pathModule.relative(pluginDir, hotwordsFile);
+        } catch {
+          // Fallback to absolute if path resolution fails
+        }
+      }
 
       const initMsg = JSON.stringify({
         type: "init",
@@ -343,13 +354,10 @@ export class SpeechRecorder {
     this.appRef = app;
   }
 
-  /** Resolve the absolute model directory path. */
+  /** Resolve the relative model directory path (relative to the pluginDir CWD). */
   private getModelDir(): string {
-    const adapter = this.appRef?.vault.adapter;
-    const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
-    const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
     const lang = this.pendingLanguage ?? "zh";
-    return pluginDir + "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
+    return "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
   }
 
   private destroyAsrProcess(): void {

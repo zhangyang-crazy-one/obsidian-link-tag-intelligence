@@ -7307,7 +7307,7 @@ var SpeechRecorder = class {
         const workerPath = pluginDir + "/asr-worker.js";
         try {
           const cp = require("child_process");
-          this.asrProcess = cp.spawn("node", [workerPath], {
+          this.asrProcess = cp.spawn("node", ["asr-worker.js"], {
             cwd: pluginDir,
             stdio: ["pipe", "pipe", "pipe"],
             shell: true,
@@ -7364,7 +7364,17 @@ var SpeechRecorder = class {
       }
       this.asrReady = false;
       this.pendingLanguage = this.settingsLanguage;
-      const hotwordsFile = this.settingsDecodingMethod === "modified_beam_search" ? this.getHotwordsPath() : null;
+      let hotwordsFile = this.settingsDecodingMethod === "modified_beam_search" ? this.getHotwordsPath() : null;
+      if (hotwordsFile) {
+        try {
+          const adapter = this.appRef?.vault.adapter;
+          const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
+          const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
+          const pathModule = require("path");
+          hotwordsFile = pathModule.relative(pluginDir, hotwordsFile);
+        } catch {
+        }
+      }
       const initMsg = JSON.stringify({
         type: "init",
         modelDir: this.getModelDir(),
@@ -7499,13 +7509,10 @@ var SpeechRecorder = class {
   setApp(app) {
     this.appRef = app;
   }
-  /** Resolve the absolute model directory path. */
+  /** Resolve the relative model directory path (relative to the pluginDir CWD). */
   getModelDir() {
-    const adapter = this.appRef?.vault.adapter;
-    const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
-    const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
     const lang = this.pendingLanguage ?? "zh";
-    return pluginDir + "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
+    return "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
   }
   destroyAsrProcess() {
     if (!this.asrProcess) return;
