@@ -7552,11 +7552,20 @@ var SpeechRecorder = class {
   /** Resolve hotwords file path: user setting → default → null if none exists. */
   getHotwordsPath() {
     let path = null;
+    const adapter = this.appRef?.vault.adapter;
+    const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
     if (this.hotwordsPath) {
-      path = this.hotwordsPath;
+      try {
+        const pathModule = require("path");
+        if (pathModule.isAbsolute(this.hotwordsPath)) {
+          path = this.hotwordsPath;
+        } else {
+          path = pathModule.join(basePath, this.hotwordsPath);
+        }
+      } catch {
+        path = this.hotwordsPath;
+      }
     } else {
-      const adapter = this.appRef?.vault.adapter;
-      const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
       if (basePath) path = basePath + "/.obsidian/plugins/link-tag-intelligence/models/hotwords.txt";
     }
     if (!path) return null;

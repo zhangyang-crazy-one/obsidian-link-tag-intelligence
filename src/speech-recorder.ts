@@ -423,13 +423,24 @@ export class SpeechRecorder {
   /** Resolve hotwords file path: user setting → default → null if none exists. */
   private getHotwordsPath(): string | null {
     let path: string | null = null;
+    const adapter = this.appRef?.vault.adapter;
+    const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
+
     // User-configured path from settings
     if (this.hotwordsPath) {
-      path = this.hotwordsPath;
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+        const pathModule = require("path") as typeof import("path");
+        if (pathModule.isAbsolute(this.hotwordsPath)) {
+          path = this.hotwordsPath;
+        } else {
+          path = pathModule.join(basePath, this.hotwordsPath);
+        }
+      } catch {
+        path = this.hotwordsPath;
+      }
     } else {
       // Default: plugin dir models/hotwords.txt
-      const adapter = this.appRef?.vault.adapter;
-      const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
       if (basePath) path = basePath + "/.obsidian/plugins/link-tag-intelligence/models/hotwords.txt";
     }
     if (!path) return null;
