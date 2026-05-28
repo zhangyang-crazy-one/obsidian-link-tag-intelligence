@@ -69,7 +69,7 @@ let punctuation: any = null;
 
 const rl = require("readline").createInterface({ input: process.stdin });
 rl.on("line", (raw: string) => {
-  let msg: { type: string; modelDir?: string; language?: string; vadSensitivity?: number; bufferB64?: string; lexicon?: string; ruleFsts?: string; speechAutoPunctuate?: boolean; hotwordsFile?: string; decodingMethod?: string };
+  let msg: { type: string; modelDir?: string; language?: string; vadSensitivity?: number; bufferB64?: string; lexicon?: string; ruleFsts?: string; speechAutoPunctuate?: boolean; hotwordsFile?: string; decodingMethod?: string; speechMaxUtteranceSec?: number };
   try { msg = JSON.parse(raw); } catch { return; }
 
   try {
@@ -108,7 +108,7 @@ rl.on("line", (raw: string) => {
             enableEndpoint: 1,
             rule1MinTrailingSilence: mapVadToRule1(msg.vadSensitivity ?? 2),
             rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
-            rule3MinUtteranceLength: 20.0,
+            rule3MinUtteranceLength: msg.speechMaxUtteranceSec ?? 20.0,
             ...hrConfig,
             ...hotwordsConfig,
           });

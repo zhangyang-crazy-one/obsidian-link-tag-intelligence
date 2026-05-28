@@ -91,7 +91,7 @@ rl.on("line", (raw) => {
             enableEndpoint: 1,
             rule1MinTrailingSilence: mapVadToRule1(msg.vadSensitivity ?? 2),
             rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
-            rule3MinUtteranceLength: 20,
+            rule3MinUtteranceLength: msg.speechMaxUtteranceSec ?? 20,
             ...hrConfig,
             ...hotwordsConfig
           });

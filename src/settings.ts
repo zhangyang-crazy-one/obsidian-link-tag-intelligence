@@ -144,6 +144,7 @@ export interface LinkTagIntelligenceSettings {
   speechAutoStopSec: number;
   speechAutoPunctuate: boolean;
   speechDecodingMethod: "greedy_search" | "modified_beam_search";
+  speechMaxUtteranceSec: number;
 }
 
 export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSettings {
@@ -185,7 +186,8 @@ export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSetting
     speechVadSensitivity: 2,
     speechAutoStopSec: 0,
     speechAutoPunctuate: true,
-    speechDecodingMethod: "greedy_search"
+    speechDecodingMethod: "greedy_search",
+    speechMaxUtteranceSec: 20
   };
 }
 
@@ -364,6 +366,9 @@ export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagI
     : defaults.speechAutoStopSec;
   normalized.speechAutoPunctuate = typeof normalized.speechAutoPunctuate === "boolean" ? normalized.speechAutoPunctuate : defaults.speechAutoPunctuate;
   normalized.speechDecodingMethod = normalized.speechDecodingMethod === "modified_beam_search" ? "modified_beam_search" : "greedy_search";
+  normalized.speechMaxUtteranceSec = Number.isFinite(normalized.speechMaxUtteranceSec) && normalized.speechMaxUtteranceSec >= 5 && normalized.speechMaxUtteranceSec <= 60
+    ? Math.round(normalized.speechMaxUtteranceSec)
+    : defaults.speechMaxUtteranceSec;
 
   return normalized;
 }
@@ -1750,6 +1755,24 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     });
     vadSlider.addEventListener("change", () => {
       this.plugin.settings.speechVadSensitivity = Number.parseInt(vadSlider.value, 10);
+      void this.plugin.saveSettings();
+    });
+
+    // Max segment duration — slider 5-60, default 20
+    const durationField = this.createFieldShell(section, this.plugin.t("speechMaxUtteranceSec"), this.plugin.t("speechMaxUtteranceSecDescription"));
+    const durationRow = durationField.createDiv({ cls: "lti-voice-slider-row" });
+    const durationSlider = durationRow.createEl("input", { type: "range", cls: "lti-voice-slider" });
+    durationSlider.min = "5";
+    durationSlider.max = "60";
+    durationSlider.step = "1";
+    durationSlider.value = String(this.plugin.settings.speechMaxUtteranceSec);
+    const durationLabel = durationRow.createSpan({ cls: "lti-voice-slider-value", text: String(this.plugin.settings.speechMaxUtteranceSec) + "s" });
+    durationSlider.addEventListener("input", () => {
+      const val = Number.parseInt(durationSlider.value, 10);
+      durationLabel.textContent = String(val) + "s";
+    });
+    durationSlider.addEventListener("change", () => {
+      this.plugin.settings.speechMaxUtteranceSec = Number.parseInt(durationSlider.value, 10);
       void this.plugin.saveSettings();
     });
 

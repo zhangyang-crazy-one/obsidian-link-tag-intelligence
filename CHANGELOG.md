@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.2.5] - 2026-05-28
+
+### Added / 新特性
+- **ASR Max Segment Duration Configuration / 语音最大单句分段时长配置**:
+  - Replaced the hardcoded 20-second segment limit with a beautiful, customizable slider in Settings → Voice.
+  - Allows users to control how long they can speak continuously before the speech engine forces a sentence boundary and outputs the punctuation-restored transcription. Range: 5 to 60 seconds.
+  - 将原本硬编码的 20 秒单句断句时长限制，重构为在“设置 → 语音”中可配的美观滑动条。
+  - 用户可以自由调节连续说话的最长分句间隔时长，超时即强制断句并追加标点预测输出。范围支持 5 至 60 秒。
+
+---
+
 ## [0.2.4] - 2026-05-28
 
 ### Fixed / 修复与优化

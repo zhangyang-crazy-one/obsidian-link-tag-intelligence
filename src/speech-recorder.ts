@@ -32,6 +32,7 @@ export class SpeechRecorder {
   private settingsVadSensitivity = 2;
   private settingsAutoPunctuate = true;
   private settingsDecodingMethod: "greedy_search" | "modified_beam_search" = "greedy_search";
+  private settingsMaxUtteranceSec = 20;
 
   /** Callback set by main.ts to receive ASR results. */
   onAsrResult: ((text: string, isEndpoint: boolean) => void) | null = null;
@@ -232,6 +233,7 @@ export class SpeechRecorder {
         vadSensitivity: this.settingsVadSensitivity,
         speechAutoPunctuate: this.settingsAutoPunctuate,
         decodingMethod: this.settingsDecodingMethod,
+        speechMaxUtteranceSec: this.settingsMaxUtteranceSec,
         ...(hotwordsFile ? { hotwordsFile } : {}),
       }) + "\n";
       this.asrStdin?.write(initMsg);
@@ -443,6 +445,11 @@ export class SpeechRecorder {
 
   setSettingsAutoPunctuate(autoPunc: boolean): void {
     this.settingsAutoPunctuate = autoPunc;
+  }
+
+  setSettingsMaxUtteranceSec(sec: number): void {
+    const clamped = Math.max(5, Math.min(60, Math.round(sec)));
+    this.settingsMaxUtteranceSec = clamped;
   }
 
   setSettingsDecodingMethod(method: "greedy_search" | "modified_beam_search"): void {

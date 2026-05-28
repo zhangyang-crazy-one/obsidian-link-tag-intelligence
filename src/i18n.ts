@@ -262,6 +262,8 @@ type TranslationKey =
   | "speechAutoStopTimeoutDescription"
   | "speechAutoPunctuate"
   | "speechAutoPunctuateDescription"
+  | "speechMaxUtteranceSec"
+  | "speechMaxUtteranceSecDescription"
   | "speechDecodingMethod"
   | "speechDecodingMethodDescription"
   | "speechDecodingMethodGreedy"
@@ -635,6 +637,8 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     speechAutoStopTimeoutDescription: "Automatically stop recording after this duration of silence. Set to 0 to disable. Range 10-300 seconds.",
     speechAutoPunctuate: "Auto-restore punctuation",
     speechAutoPunctuateDescription: "Automatically predict and restore punctuation marks for Chinese speech recognition results using an offline transformer model.",
+    speechMaxUtteranceSec: "Max segment duration (seconds)",
+    speechMaxUtteranceSecDescription: "The maximum duration of continuous speech in a single segment before forcing a sentence break and outputting. Range: 5-60 seconds.",
     speechDecodingMethod: "ASR Search Method",
     speechDecodingMethodDescription: "Choose Greedy Search for fast general transcription, or Modified Beam Search for domain terminology biasing via hotwords.",
     speechDecodingMethodGreedy: "Greedy Search (Faster, standard)",
@@ -1007,6 +1011,8 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     speechAutoStopTimeoutDescription: "静音超过此时长后自动停止录音。设为 0 禁用自动停止。范围 10-300 秒。",
     speechAutoPunctuate: "自动还原标点符号",
     speechAutoPunctuateDescription: "开启后，使用离线标点符号 Transformer 模型自动为中文流式识别结果添加最适宜的标点，告别纯文字流。",
+    speechMaxUtteranceSec: "单句最大分段时长（秒）",
+    speechMaxUtteranceSecDescription: "当连续说话达到该时长，即便没有停顿，也会强制触发断句分段并进行标点预测输出。范围：5-60 秒。",
     speechDecodingMethod: "语音搜索解码方式",
     speechDecodingMethodDescription: "选择 Greedy Search 以获得更快的普通识别响应；选择 Modified Beam Search 以便配合热词文件进行特定领域术语的倾向性纠正。",
     speechDecodingMethodGreedy: "Greedy Search (快速、标准)",
