@@ -429,12 +429,17 @@ export class SpeechRecorder {
     // User-configured path from settings
     if (this.hotwordsPath) {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
         const pathModule = require("path") as typeof import("path");
         if (pathModule.isAbsolute(this.hotwordsPath)) {
           path = this.hotwordsPath;
         } else {
-          path = pathModule.join(basePath, this.hotwordsPath);
+          const pluginRelativePath = pathModule.join(basePath, ".obsidian", "plugins", "link-tag-intelligence", this.hotwordsPath);
+          const fs = require("fs") as typeof import("fs");
+          if (fs.existsSync(pluginRelativePath)) {
+            path = pluginRelativePath;
+          } else {
+            path = pathModule.join(basePath, this.hotwordsPath);
+          }
         }
       } catch {
         path = this.hotwordsPath;

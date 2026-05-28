@@ -7560,7 +7560,13 @@ var SpeechRecorder = class {
         if (pathModule.isAbsolute(this.hotwordsPath)) {
           path = this.hotwordsPath;
         } else {
-          path = pathModule.join(basePath, this.hotwordsPath);
+          const pluginRelativePath = pathModule.join(basePath, ".obsidian", "plugins", "link-tag-intelligence", this.hotwordsPath);
+          const fs = require("fs");
+          if (fs.existsSync(pluginRelativePath)) {
+            path = pluginRelativePath;
+          } else {
+            path = pathModule.join(basePath, this.hotwordsPath);
+          }
         }
       } catch {
         path = this.hotwordsPath;
