@@ -8125,11 +8125,43 @@ var LinkTagIntelligenceView = class extends import_obsidian11.ItemView {
           void this.refresh();
         }
       );
+      let insertText = resultText;
+      const isCanvasCard = template.id === "canvas-card" || resultText.trim().startsWith("{") && resultText.includes('"nodes"');
+      if (isCanvasCard) {
+        insertText = "```json\n" + resultText.trim() + "\n```";
+        try {
+          await navigator.clipboard.writeText(resultText.trim());
+          new Notice("\u2728 Canvas \u5361\u7247\u5DF2\u751F\u6210\u5E76\u81EA\u52A8\u590D\u5236\u5230\u526A\u8D34\u677F\uFF01\u53EF\u76F4\u63A5\u5728 Canvas \u4E2D\u6309\u4E0B Ctrl+V \u7C98\u8D34\u3002");
+          const canvasLeaves = this.app.workspace.getLeavesOfType("canvas");
+          if (canvasLeaves.length > 0) {
+            let injected = false;
+            for (const leaf of canvasLeaves) {
+              const canvasView = leaf.view;
+              if (canvasView && canvasView.canvas) {
+                try {
+                  const data = JSON.parse(resultText);
+                  canvasView.canvas.importData(data);
+                  canvasView.canvas.requestFrame();
+                  canvasView.canvas.requestSave();
+                  injected = true;
+                } catch (e) {
+                  console.error("Direct canvas injection failed:", e);
+                }
+              }
+            }
+            if (injected) {
+              new Notice("\u{1F389} \u5DF2\u76F4\u63A5\u8FFD\u52A0\u63D2\u5165\u5230\u60A8\u5F53\u524D\u6253\u5F00\u7684 Canvas \u767D\u677F\u4E2D\uFF01");
+            }
+          }
+        } catch (clipErr) {
+          console.error("Clipboard / Canvas automation failed:", clipErr);
+        }
+      }
       if (selection) {
-        activeView.editor.replaceSelection(resultText);
+        activeView.editor.replaceSelection(insertText);
       } else {
         const cursor = activeView.editor.getCursor();
-        activeView.editor.replaceRange(resultText, cursor);
+        activeView.editor.replaceRange(insertText, cursor);
       }
       this.aiStatusType = "success";
       this.aiStatusText = this.plugin.t("aiStatusSuccess");

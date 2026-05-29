@@ -1708,12 +1708,50 @@ export class LinkTagIntelligenceView extends ItemView {
         }
       );
 
+      // Special handling for Canvas Card template: copy to clipboard & auto-inject into active Canvas
+      let insertText = resultText;
+      const isCanvasCard = template.id === "canvas-card" || (resultText.trim().startsWith("{") && resultText.includes('"nodes"'));
+      
+      if (isCanvasCard) {
+        insertText = "```json\n" + resultText.trim() + "\n```";
+        try {
+          // 1. Write to clipboard
+          await navigator.clipboard.writeText(resultText.trim());
+          new Notice("✨ Canvas 卡片已生成并自动复制到剪贴板！可直接在 Canvas 中按下 Ctrl+V 粘贴。");
+          
+          // 2. Direct injection into active Canvas if open
+          const canvasLeaves = this.app.workspace.getLeavesOfType("canvas");
+          if (canvasLeaves.length > 0) {
+            let injected = false;
+            for (const leaf of canvasLeaves) {
+              const canvasView = leaf.view as any;
+              if (canvasView && canvasView.canvas) {
+                try {
+                  const data = JSON.parse(resultText);
+                  canvasView.canvas.importData(data);
+                  canvasView.canvas.requestFrame();
+                  canvasView.canvas.requestSave();
+                  injected = true;
+                } catch (e) {
+                  console.error("Direct canvas injection failed:", e);
+                }
+              }
+            }
+            if (injected) {
+              new Notice("🎉 已直接追加插入到您当前打开的 Canvas 白板中！");
+            }
+          }
+        } catch (clipErr) {
+          console.error("Clipboard / Canvas automation failed:", clipErr);
+        }
+      }
+
       // Insert at cursor or replace selection
       if (selection) {
-        activeView.editor.replaceSelection(resultText);
+        activeView.editor.replaceSelection(insertText);
       } else {
         const cursor = activeView.editor.getCursor();
-        activeView.editor.replaceRange(resultText, cursor);
+        activeView.editor.replaceRange(insertText, cursor);
       }
 
       this.aiStatusType = "success";
