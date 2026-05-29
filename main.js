@@ -1134,8 +1134,8 @@ var TRANSLATIONS = {
     aiRunTranscription: "Run AI Transcription",
     aiSelectAudioFile: "Target Audio File",
     aiNoAudioFiles: "No audio files found in vault",
-    aiSelectedTextPreview: "Selected text (preview)",
-    aiNoteSummaryPreview: "Note summary (preview)",
+    aiSelectedTextPreview: "\u{1F4DD} Selected Text",
+    aiNoteSummaryPreview: "\u{1F4D6} Note Context",
     aiStatusIdle: "Idle",
     aiStatusDecoding: "Decoding audio data...",
     aiStatusAsr: "Transcribing audio...",
@@ -1551,8 +1551,8 @@ var TRANSLATIONS = {
     aiRunTranscription: "\u5F00\u59CB AI \u667A\u80FD\u8F6C\u5F55",
     aiSelectAudioFile: "\u9009\u62E9\u97F3\u9891\u6587\u4EF6",
     aiNoAudioFiles: "Vault \u4E2D\u672A\u627E\u5230\u97F3\u9891\u6587\u4EF6",
-    aiSelectedTextPreview: "\u6240\u9009\u6587\u672C (\u5361\u7247\u9884\u89C8)",
-    aiNoteSummaryPreview: "\u5168\u6587\u6458\u8981 (\u5361\u7247\u9884\u89C8)",
+    aiSelectedTextPreview: "\u{1F4DD} \u5DF2\u9009\u6587\u5B57\u9884\u89C8",
+    aiNoteSummaryPreview: "\u{1F4D6} \u539F\u7B14\u8BB0\u5185\u5BB9\u9884\u89C8",
     aiStatusIdle: "\u7A7A\u95F2",
     aiStatusDecoding: "\u6B63\u5728\u89E3\u7801\u97F3\u9891\u6570\u636E...",
     aiStatusAsr: "\u6B63\u5728\u8FDB\u884C\u8BED\u97F3\u8BC6\u522B...",
@@ -6935,6 +6935,7 @@ var LinkTagIntelligenceView = class extends import_obsidian11.ItemView {
     this.vuMeterDbLabel = null;
     this.aiTargetFile = null;
     this.aiTemplatesCollapsed = true;
+    this.aiPromptCollapsed = true;
     this.aiStatusText = "";
     this.aiStatusType = "idle";
     this.aiCachedSummary = "";
@@ -8044,15 +8045,28 @@ var LinkTagIntelligenceView = class extends import_obsidian11.ItemView {
       }
     }
     sumCard.createDiv({ text: this.aiCachedSummary, cls: "lti-ai-preview-content lti-ai-preview-summary" });
-    const promptPreviewRow = parent.createDiv({ cls: "lti-ai-prompt-preview-row" });
-    promptPreviewRow.createDiv({ text: "\u{1F4D6} \u63D0\u793A\u8BCD\u9884\u89C8 (\u5305\u542B\u9009\u4E2D\u4E0E\u6B63\u6587) \uFF1A", cls: "lti-ai-label" });
-    const promptArea = promptPreviewRow.createEl("textarea", {
-      cls: "lti-ai-compiled-prompt-textarea lti-workbench-textarea",
-      attr: { readonly: "readonly", rows: "4" }
+    const promptAccordion = parent.createDiv({ cls: "lti-ai-accordion lti-ai-prompt-accordion" });
+    const promptHeader = promptAccordion.createDiv({
+      cls: `lti-ai-accordion-header${this.aiPromptCollapsed ? " is-collapsed" : ""}`
     });
-    void this.compilePromptPreview(lastUsed).then((compiled) => {
-      promptArea.value = compiled;
+    promptHeader.createSpan({
+      text: this.aiPromptCollapsed ? "\u25B6 \u{1F4D6} \u63D0\u793A\u8BCD\u5185\u5BB9\u9884\u89C8" : "\u25BC \u{1F4D6} \u63D0\u793A\u8BCD\u5185\u5BB9\u9884\u89C8",
+      cls: "lti-ai-accordion-title"
     });
+    promptHeader.addEventListener("click", () => {
+      this.aiPromptCollapsed = !this.aiPromptCollapsed;
+      void this.refresh();
+    });
+    if (!this.aiPromptCollapsed) {
+      const promptBody = promptAccordion.createDiv({ cls: "lti-ai-accordion-body" });
+      const promptArea = promptBody.createEl("textarea", {
+        cls: "lti-ai-compiled-prompt-textarea lti-workbench-textarea",
+        attr: { readonly: "readonly", rows: "4" }
+      });
+      void this.compilePromptPreview(lastUsed).then((compiled) => {
+        promptArea.value = compiled;
+      });
+    }
     const accordion = parent.createDiv({ cls: "lti-ai-accordion" });
     const accordionHeader = accordion.createDiv({
       cls: `lti-ai-accordion-header${this.aiTemplatesCollapsed ? " is-collapsed" : ""}`

@@ -254,6 +254,7 @@ export class LinkTagIntelligenceView extends ItemView {
   private vuMeterDbLabel: HTMLSpanElement | null = null;
   private aiTargetFile: TFile | null = null;
   private aiTemplatesCollapsed = true;
+  private aiPromptCollapsed = true;
   private aiStatusText = "";
   private aiStatusType: "idle" | "progress" | "success" | "error" = "idle";
   private aiCachedSummary = "";
@@ -1611,18 +1612,31 @@ export class LinkTagIntelligenceView extends ItemView {
     }
     sumCard.createDiv({ text: this.aiCachedSummary, cls: "lti-ai-preview-content lti-ai-preview-summary" });
 
-    // 3. Compiled Prompt Preview Box
-    const promptPreviewRow = parent.createDiv({ cls: "lti-ai-prompt-preview-row" });
-    promptPreviewRow.createDiv({ text: "📖 提示词预览 (包含选中与正文) ：", cls: "lti-ai-label" });
-
-    const promptArea = promptPreviewRow.createEl("textarea", {
-      cls: "lti-ai-compiled-prompt-textarea lti-workbench-textarea",
-      attr: { readonly: "readonly", rows: "4" }
+    // 3. Collapsible Compiled Prompt Preview Box (Accordion)
+    const promptAccordion = parent.createDiv({ cls: "lti-ai-accordion lti-ai-prompt-accordion" });
+    const promptHeader = promptAccordion.createDiv({ 
+      cls: `lti-ai-accordion-header${this.aiPromptCollapsed ? " is-collapsed" : ""}` 
+    });
+    promptHeader.createSpan({ 
+      text: this.aiPromptCollapsed ? "▶ 📖 提示词内容预览" : "▼ 📖 提示词内容预览", 
+      cls: "lti-ai-accordion-title" 
     });
 
-    void this.compilePromptPreview(lastUsed).then(compiled => {
-      promptArea.value = compiled;
+    promptHeader.addEventListener("click", () => {
+      this.aiPromptCollapsed = !this.aiPromptCollapsed;
+      void this.refresh();
     });
+
+    if (!this.aiPromptCollapsed) {
+      const promptBody = promptAccordion.createDiv({ cls: "lti-ai-accordion-body" });
+      const promptArea = promptBody.createEl("textarea", {
+        cls: "lti-ai-compiled-prompt-textarea lti-workbench-textarea",
+        attr: { readonly: "readonly", rows: "4" }
+      });
+      void this.compilePromptPreview(lastUsed).then(compiled => {
+        promptArea.value = compiled;
+      });
+    }
 
     // Collapsible other templates accordion
     const accordion = parent.createDiv({ cls: "lti-ai-accordion" });
