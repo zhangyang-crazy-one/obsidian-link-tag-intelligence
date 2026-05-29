@@ -24,7 +24,7 @@ __export(main_exports, {
   default: () => LinkTagIntelligencePlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian12 = require("obsidian");
+var import_obsidian13 = require("obsidian");
 
 // src/editor-extension.ts
 var import_state = require("@codemirror/state");
@@ -1108,6 +1108,41 @@ var TRANSLATIONS = {
     speechToggleCommand: "Toggle voice input",
     speechVadSensitivity: "VAD sensitivity",
     speechVadSensitivityDescription: "0=Lecture (2.4s pause)  1=Slow (1.8s)  2=Normal (1.5s)  3=Fast (0.8s). Higher = shorter sentence breaks.",
+    settingsWorkbenchPageAI: "AI Helper",
+    aiSettingsHeading: "AI Transcription & Refinement",
+    aiSettingsDescription: "Configure API access for OpenAI-compatible, Anthropic, DeepSeek, or MiniMax providers. Setup prompt templates to automatically transcribe and polish audio files.",
+    aiProvider: "AI Provider",
+    aiProviderDescription: "Choose the API provider for Chat and LLM-based post-processing.",
+    aiModel: "Model Name",
+    aiModelDescription: "Model name for chat completions (e.g., gpt-4o-mini, deepseek-chat, claude-3-5-sonnet-20241022).",
+    aiApiKey: "API Key",
+    aiApiKeyDescription: "API secret key for authorization. Handled securely.",
+    aiBaseUrl: "API Base URL",
+    aiBaseUrlDescription: "Base URL for the provider API endpoint (e.g., https://api.openai.com/v1, https://api.deepseek.com).",
+    aiAsrSource: "ASR Transcription Source",
+    aiAsrSourceDescription: "Choose where the audio-to-text phase is processed (Local offline engine or Cloud API).",
+    aiAsrSourceLocal: "Local (sherpa-onnx)",
+    aiAsrSourceCloud: "Cloud (OpenAI Whisper / MiniMax ASR)",
+    aiTemplatesHeading: "Prompt Templates",
+    aiTemplatesDescription: "Configure prompt templates. Placeholders: {{selection}} for selected text, {{file:whole}} for entire note, {{transcription}} for raw transcript, {{date}} for YYYY-MM-DD. Max 15 templates.",
+    aiTemplateName: "Template Name",
+    aiTemplatePrompt: "Prompt Template",
+    aiAddTemplate: "Add Template",
+    aiMaxTemplatesReached: "Maximum of 15 templates reached.",
+    aiLastUsedTemplate: "Last Used",
+    aiChooseTemplate: "Choose Template",
+    aiRunTranscription: "Run AI Transcription",
+    aiSelectAudioFile: "Target Audio File",
+    aiNoAudioFiles: "No audio files found in vault",
+    aiSelectedTextPreview: "Selected text (preview)",
+    aiNoteSummaryPreview: "Note summary (preview)",
+    aiStatusIdle: "Idle",
+    aiStatusDecoding: "Decoding audio data...",
+    aiStatusAsr: "Transcribing audio...",
+    aiStatusRefining: "Refining with AI...",
+    aiStatusInserting: "Inserting result...",
+    aiStatusSuccess: "Transcription and refinement successful!",
+    aiStatusError: "Error: ",
     mentionsExplanation: "Notes that mention this note title or aliases without already linking to it.",
     selected: "Selected",
     notSelected: "Not selected",
@@ -1181,6 +1216,14 @@ var TRANSLATIONS = {
     speechAutoStopTimeoutReached: "Auto-stop: recording stopped after silence timeout.",
     speechHotwordsFile: "Hotwords file",
     speechHotwordsFileDescription: "Path to domain-specific vocabulary file (one term per line, optional :score). Improves recognition of specialized terminology. Default: models/hotwords.txt",
+    speechModelChoice: "Speech recognizer model",
+    speechModelChoiceDescription: "Choose between online streaming Zipformer (real-time typing) or offline non-autoregressive SenseVoice-Small (high precision, pause-to-type).",
+    speechModelChoiceZipformer: "Zipformer (Online Streaming)",
+    speechModelChoiceSensevoice: "SenseVoice-Small (Offline High-Precision)",
+    speechAutoHotwords: "Auto-extract notes & tags as hotwords",
+    speechAutoHotwordsDescription: "Automatically index all note basenames and active tags as hotwords to boost double-link and custom term recognition.",
+    speechConfusionMapText: "Custom homophone corrections",
+    speechConfusionMapTextDescription: "Replace common ASR homophone errors based on your accent. Format: incorrectWord:correctWord (one mapping per line).",
     speechModelDownloadStart: "Downloading {lang} speech model files...",
     speechModelDownloadProgress: "{filename} ({percent}%, {loadedMB}/{totalMB} MB) [{current}/{total}]",
     speechModelDownloadComplete: "{lang} speech model ready. You can now start recording.",
@@ -1482,6 +1525,41 @@ var TRANSLATIONS = {
     speechToggleCommand: "\u5207\u6362\u8BED\u97F3\u8F93\u5165",
     speechVadSensitivity: "VAD \u7075\u654F\u5EA6",
     speechVadSensitivityDescription: "0=\u8BFE\u7A0B\u8BB2\u5EA7(2.4s\u505C\u987F)  1=\u6162\u901F(1.8s)  2=\u6B63\u5E38(1.5s)  3=\u5FEB\u901F(0.8s)\u3002\u8D8A\u9AD8\u65AD\u53E5\u8D8A\u9891\u7E41\u3002",
+    settingsWorkbenchPageAI: "AI \u52A9\u624B",
+    aiSettingsHeading: "AI \u667A\u80FD\u8F6C\u5F55\u4E0E\u6DA6\u8272",
+    aiSettingsDescription: "\u914D\u7F6E OpenAI \u517C\u5BB9\u3001Anthropic\u3001DeepSeek \u6216 MiniMax API\u3002\u8BBE\u7F6E\u63D0\u793A\u8BCD\u6A21\u677F\uFF0C\u81EA\u52A8\u8FDB\u884C\u8BED\u97F3\u8F6C\u5F55\u4E0E\u5927\u6A21\u578B\u6574\u7406\u3002",
+    aiProvider: "AI \u670D\u52A1\u5546",
+    aiProviderDescription: "\u9009\u62E9\u7528\u4E8E\u6587\u672C\u6DA6\u8272\u548C Chat Completions \u7684 API \u670D\u52A1\u5546\u3002",
+    aiModel: "\u6A21\u578B\u540D\u79F0",
+    aiModelDescription: "\u5927\u6A21\u578B\u540D\u79F0\uFF08\u4F8B\u5982 gpt-4o-mini, deepseek-chat, claude-3-5-sonnet-20241022\uFF09\u3002",
+    aiApiKey: "API \u5BC6\u94A5 (API Key)",
+    aiApiKeyDescription: "\u7528\u4E8E\u8BBF\u95EE\u63A5\u53E3 of API Key\uFF0C\u8F93\u5165\u540E\u5C06\u5B89\u5168\u63A9\u7801\u663E\u793A\u3002",
+    aiBaseUrl: "API \u63A5\u53E3\u5730\u5740 (Base URL)",
+    aiBaseUrlDescription: "\u63A5\u53E3\u57FA\u7840\u5730\u5740\uFF08\u4F8B\u5982 https://api.openai.com/v1, https://api.deepseek.com\uFF09\u3002",
+    aiAsrSource: "\u8BED\u97F3\u8F6C\u6587\u5B57 (ASR) \u6765\u6E90",
+    aiAsrSourceDescription: "\u9009\u62E9\u8BED\u97F3\u8F6C\u5F55\u9636\u6BB5\u7684\u8FD0\u884C\u4F4D\u7F6E\uFF08\u672C\u5730\u79BB\u7EBF ASR \u5F15\u64CE\u6216\u4E91\u7AEF API \u63A5\u53E3\uFF09\u3002",
+    aiAsrSourceLocal: "\u672C\u5730\u79BB\u7EBF (sherpa-onnx)",
+    aiAsrSourceCloud: "\u4E91\u7AEF\u63A5\u53E3 (OpenAI Whisper / MiniMax ASR)",
+    aiTemplatesHeading: "\u667A\u80FD Prompt \u6A21\u677F",
+    aiTemplatesDescription: "\u914D\u7F6E\u8F6C\u5F55\u6A21\u677F\u3002\u53EF\u7528\u5360\u4F4D\u7B26\uFF1A{{selection}} (\u9009\u4E2D\u6587\u672C), {{file:whole}} (\u6574\u7BC7\u7B14\u8BB0), {{transcription}} (\u539F\u59CB\u8F6C\u5F55\u6587\u672C), {{date}} (\u5F53\u524D\u65E5\u671F)\u3002\u6700\u591A\u53EF\u6DFB\u52A0 15 \u4E2A\u6A21\u677F\u3002",
+    aiTemplateName: "\u6A21\u677F\u540D\u79F0",
+    aiTemplatePrompt: "\u63D0\u793A\u8BCD\u6A21\u677F\u5185\u5BB9",
+    aiAddTemplate: "\u65B0\u589E\u6A21\u677F",
+    aiMaxTemplatesReached: "\u5DF2\u8FBE\u5230\u6700\u591A 15 \u4E2A\u6A21\u677F\u7684\u4E0A\u9650\u3002",
+    aiLastUsedTemplate: "\u4E0A\u6B21\u4F7F\u7528",
+    aiChooseTemplate: "\u9009\u62E9\u8F6C\u5F55\u6A21\u677F",
+    aiRunTranscription: "\u5F00\u59CB AI \u667A\u80FD\u8F6C\u5F55",
+    aiSelectAudioFile: "\u9009\u62E9\u97F3\u9891\u6587\u4EF6",
+    aiNoAudioFiles: "Vault \u4E2D\u672A\u627E\u5230\u97F3\u9891\u6587\u4EF6",
+    aiSelectedTextPreview: "\u6240\u9009\u6587\u672C (\u5361\u7247\u9884\u89C8)",
+    aiNoteSummaryPreview: "\u5168\u6587\u6458\u8981 (\u5361\u7247\u9884\u89C8)",
+    aiStatusIdle: "\u7A7A\u95F2",
+    aiStatusDecoding: "\u6B63\u5728\u89E3\u7801\u97F3\u9891\u6570\u636E...",
+    aiStatusAsr: "\u6B63\u5728\u8FDB\u884C\u8BED\u97F3\u8BC6\u522B...",
+    aiStatusRefining: "\u6B63\u5728\u8FDB\u884C AI \u667A\u80FD\u6DA6\u8272...",
+    aiStatusInserting: "\u6B63\u5728\u63D2\u5165\u7B14\u8BB0...",
+    aiStatusSuccess: "AI \u8F6C\u5F55\u4E0E\u667A\u80FD\u6574\u7406\u6210\u529F\uFF01",
+    aiStatusError: "\u8FD0\u884C\u51FA\u9519\uFF1A",
     mentionsExplanation: "\u5217\u51FA\u63D0\u53CA\u5F53\u524D\u7B14\u8BB0\u6807\u9898\u6216\u522B\u540D\u3001\u4F46\u5C1A\u672A\u5EFA\u7ACB\u94FE\u63A5\u7684\u7B14\u8BB0\u3002",
     selected: "\u5DF2\u9009",
     notSelected: "\u672A\u9009",
@@ -1555,6 +1633,14 @@ var TRANSLATIONS = {
     speechAutoStopTimeoutReached: "\u81EA\u52A8\u505C\u6B62\uFF1A\u9759\u97F3\u8D85\u65F6\uFF0C\u5F55\u97F3\u5DF2\u505C\u6B62\u3002",
     speechHotwordsFile: "\u70ED\u8BCD\u6587\u4EF6\u8DEF\u5F84",
     speechHotwordsFileDescription: "\u9886\u57DF\u8BCD\u6C47\u6587\u4EF6\u8DEF\u5F84\uFF08\u6BCF\u884C\u4E00\u4E2A\u8BCD\uFF0C\u53EF\u9009 :\u5206\u6570 \u540E\u7F00\uFF09\u3002\u53EF\u63D0\u5347\u4E13\u4E1A\u672F\u8BED\u8BC6\u522B\u7387\u3002\u9ED8\u8BA4\u4F4D\u7F6E\uFF1Amodels/hotwords.txt",
+    speechModelChoice: "\u7AEF\u4FA7\u8BED\u97F3\u8BC6\u522B\u6A21\u578B",
+    speechModelChoiceDescription: "\u9009\u62E9\u6D41\u5F0F Zipformer \u6A21\u578B\uFF08\u5B9E\u65F6\u6253\u5B57\u673A\u4E0A\u5C4F\uFF09\u6216\u79BB\u7EBF\u975E\u81EA\u56DE\u5F52 SenseVoice-Small \u6A21\u578B\uFF08\u8D85\u9AD8\u7CBE\u5EA6\uFF0C\u547C\u5438\u5F0F\u505C\u987F\u81EA\u7136\u4E0A\u5C4F\uFF09\u3002",
+    speechModelChoiceZipformer: "Zipformer (\u5B9E\u65F6\u6D41\u5F0F\u6253\u5B57)",
+    speechModelChoiceSensevoice: "SenseVoice-Small (\u79BB\u7EBF\u9AD8\u7CBE\u5EA6)",
+    speechAutoHotwords: "\u81EA\u52A8\u63D0\u53D6\u7B14\u8BB0\u4E0E\u6807\u7B7E\u4E3A\u70ED\u8BCD",
+    speechAutoHotwordsDescription: "\u81EA\u52A8\u626B\u63CF\u60A8\u7684\u6240\u6709\u7B14\u8BB0\u6587\u4EF6\u540D\uFF08\u53CC\u94FE\u5019\u9009\uFF09\u4E0E\u6807\u7B7E\u5E76\u6CE8\u5165\u70ED\u8BCD\u5E93\uFF0C\u5927\u5E45\u63D0\u5347\u4E13\u4E1A\u540D\u8BCD\u8F6C\u5199\u7CBE\u5EA6\u3002",
+    speechConfusionMapText: "\u81EA\u5B9A\u4E49\u540C\u97F3\u5B57\u7EA0\u9519\u6620\u5C04",
+    speechConfusionMapTextDescription: "\u6839\u636E\u60A8\u7684\u53E3\u97F3\u7EA0\u6B63\u7279\u5B9A\u7684\u540C\u97F3\u5B57\u9519\u8BEF\u3002\u683C\u5F0F\u4E3A \u9519\u522B\u5B57:\u6B63\u786E\u5B57\uFF08\u6BCF\u884C\u4E00\u7EC4\uFF0C\u4F8B\u5982\uFF1A\u5728\u663E:\u5728\u9669\uFF09\u3002",
     speechModelDownloadStart: "\u6B63\u5728\u4E0B\u8F7D{lang}\u8BED\u97F3\u6A21\u578B\u6587\u4EF6...",
     speechModelDownloadProgress: "{filename} ({percent}%, {loadedMB}/{totalMB} MB) [{current}/{total}]",
     speechModelDownloadComplete: "{lang}\u8BED\u97F3\u6A21\u578B\u5C31\u7EEA\u3002\u73B0\u5728\u53EF\u4EE5\u5F00\u59CB\u5F55\u97F3\u3002",
@@ -4654,7 +4740,284 @@ function getReadingReferenceHoverController(app, containerEl, ctx, getPreviewDat
 }
 
 // src/settings.ts
+var import_obsidian10 = require("obsidian");
+
+// src/ai-service.ts
 var import_obsidian9 = require("obsidian");
+var AIService = class {
+  constructor(app, settings) {
+    this.app = app;
+    this.settings = settings;
+  }
+  /**
+   * Decode any browser-supported audio file inside the vault into raw mono Float32Array PCM samples at 16kHz.
+   */
+  async decodeAudioFile(file) {
+    const buffer = await this.app.vault.readBinary(file);
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16e3 });
+    try {
+      const audioBuffer = await audioCtx.decodeAudioData(buffer);
+      return audioBuffer.getChannelData(0);
+    } finally {
+      void audioCtx.close();
+    }
+  }
+  /**
+   * Run local ASR on raw Float32Array PCM samples using the child process sherpa-onnx worker.
+   */
+  async runLocalASR(samples, onProgress) {
+    const adapter = this.app.vault.adapter;
+    const basePath = adapter instanceof import_obsidian9.FileSystemAdapter ? adapter.getBasePath() : "";
+    const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence";
+    const modelDir = getSpeechModelDir(this.app, this.settings.speechLanguage);
+    const lexicon = pluginDir + "/models/lexicon.txt";
+    const ruleFsts = pluginDir + "/models/replace.fst";
+    const hotwordsFile = this.settings.speechHotwordsFile ? pluginDir + "/" + this.settings.speechHotwordsFile : "";
+    const cp = require("child_process");
+    const isWindows = process.platform === "win32";
+    return new Promise((resolve, reject) => {
+      onProgress("aiStatusAsr", "0%");
+      const child = cp.spawn("node", ["asr-worker.js"], {
+        cwd: pluginDir,
+        stdio: ["pipe", "pipe", "pipe"],
+        shell: isWindows ? false : true,
+        detached: isWindows ? false : true
+      });
+      let stdoutBuf = "";
+      let stderrLog = "";
+      const sentences = [];
+      let isReady = false;
+      child.on("error", (err) => {
+        reject(new Error(`Failed to start local ASR process: ${err.message}`));
+      });
+      child.stdout.on("data", (chunk) => {
+        stdoutBuf += chunk.toString();
+        const lines = stdoutBuf.split("\n");
+        stdoutBuf = lines.pop() ?? "";
+        for (const line of lines) {
+          try {
+            const msg = JSON.parse(line);
+            if (msg.type === "ready") {
+              if (msg.ok) {
+                isReady = true;
+                void feedAudio();
+              } else {
+                child.kill();
+                reject(new Error(msg.error || "ASR worker failed to initialize"));
+              }
+            } else if (msg.type === "result") {
+              if (msg.text && msg.isEndpoint) {
+                sentences.push(msg.text);
+                onProgress("aiStatusAsr", sentences.join(" "));
+              }
+            }
+          } catch {
+          }
+        }
+      });
+      child.stderr.on("data", (chunk) => {
+        stderrLog += chunk.toString();
+      });
+      child.on("exit", (code) => {
+        if (code !== null && code !== 0) {
+          reject(new Error(`Local ASR process exited with code ${code}. Stderr: ${stderrLog}`));
+        } else {
+          resolve(sentences.join(" ").trim());
+        }
+      });
+      child.stdin.write(JSON.stringify({
+        type: "init",
+        modelDir,
+        language: this.settings.speechLanguage,
+        vadSensitivity: this.settings.speechVadSensitivity,
+        speechAutoPunctuate: this.settings.speechAutoPunctuate,
+        decodingMethod: this.settings.speechDecodingMethod,
+        speechMaxUtteranceSec: this.settings.speechMaxUtteranceSec,
+        lexicon,
+        ruleFsts,
+        hotwordsFile
+      }) + "\n");
+      const feedAudio = async () => {
+        try {
+          const chunkLength = 16e3 * 2;
+          const totalSamples = samples.length;
+          for (let i = 0; i < totalSamples; i += chunkLength) {
+            const chunk = samples.subarray(i, Math.min(i + chunkLength, totalSamples));
+            const buf = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+            const base64 = buf.toString("base64");
+            child.stdin.write(JSON.stringify({ type: "audio", bufferB64: base64 }) + "\n");
+            const pct = Math.min(100, Math.round(i / totalSamples * 100));
+            onProgress("aiStatusAsr", `${pct}%`);
+            await new Promise((r) => setTimeout(r, 10));
+          }
+          const silence = new Float32Array(16e3 * 2.5);
+          const silenceBuf = Buffer.from(silence.buffer, silence.byteOffset, silence.byteLength);
+          child.stdin.write(JSON.stringify({ type: "audio", bufferB64: silenceBuf.toString("base64") }) + "\n");
+          await new Promise((r) => setTimeout(r, 1e3));
+          child.stdin.write(JSON.stringify({ type: "destroy" }) + "\n");
+        } catch (err) {
+          child.kill();
+          reject(err);
+        }
+      };
+    });
+  }
+  /**
+   * Send the audio binary to cloud speech-to-text API (OpenAI Whisper or MiniMax ASR).
+   */
+  async runCloudASR(file, onProgress) {
+    onProgress("aiStatusAsr", "Uploading to Cloud...");
+    const buffer = await this.app.vault.readBinary(file);
+    const formData = new FormData();
+    let mimeType = "audio/wav";
+    if (file.extension === "mp3") mimeType = "audio/mp3";
+    else if (file.extension === "m4a") mimeType = "audio/m4a";
+    else if (file.extension === "webm") mimeType = "audio/webm";
+    else if (file.extension === "ogg") mimeType = "audio/ogg";
+    else if (file.extension === "aac") mimeType = "audio/aac";
+    const blob = new Blob([buffer], { type: mimeType });
+    formData.append("file", blob, file.name);
+    let url = "";
+    const headers = {
+      "Authorization": `Bearer ${this.settings.aiApiKey}`
+    };
+    if (this.settings.aiProvider === "minimax") {
+      formData.append("model", "speech-to-text");
+      url = `${this.settings.aiBaseUrl}/audio/speech_to_text`;
+    } else {
+      formData.append("model", "whisper-1");
+      url = `${this.settings.aiBaseUrl}/audio/transcriptions`;
+    }
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: formData
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Cloud ASR API error (${response.status}): ${errText}`);
+    }
+    const json = await response.json();
+    return json.text || json.transcript || "";
+  }
+  /**
+   * Run the LLM refinement completion (OpenAI-compatible or Anthropic).
+   */
+  async runRefinement(prompt) {
+    const provider = this.settings.aiProvider;
+    if (provider === "anthropic") {
+      return this.runAnthropicChat(prompt);
+    } else {
+      return this.runOpenAIChat(prompt);
+    }
+  }
+  async runOpenAIChat(prompt) {
+    const url = `${this.settings.aiBaseUrl}/chat/completions`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${this.settings.aiApiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: this.settings.aiModel,
+        messages: [
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.3
+      })
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Chat API error (${response.status}): ${errText}`);
+    }
+    const json = await response.json();
+    if (json.error) {
+      throw new Error(json.error.message || JSON.stringify(json.error));
+    }
+    const content = json.choices?.[0]?.message?.content || "";
+    if (!content.trim()) {
+      throw new Error(`\u63A5\u53E3\u54CD\u5E94\u5185\u5BB9\u4E3A\u7A7A\u3002\u5B8C\u6574\u54CD\u5E94\u4F53: ${JSON.stringify(json)}`);
+    }
+    return content;
+  }
+  async runAnthropicChat(prompt) {
+    const url = `${this.settings.aiBaseUrl}/messages`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "x-api-key": this.settings.aiApiKey,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: this.settings.aiModel,
+        max_tokens: 4096,
+        messages: [
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.3
+      })
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Anthropic Messages API error (${response.status}): ${errText}`);
+    }
+    const json = await response.json();
+    if (json.error) {
+      throw new Error(json.error.message || JSON.stringify(json.error));
+    }
+    let content = "";
+    if (Array.isArray(json.content)) {
+      content = json.content.filter((item) => item && item.type === "text" && typeof item.text === "string").map((item) => item.text).join("").trim();
+    } else if (typeof json.content === "string") {
+      content = json.content.trim();
+    }
+    if (!content.trim()) {
+      throw new Error(`\u63A5\u53E3\u54CD\u5E94\u5185\u5BB9\u4E3A\u7A7A\u3002\u5B8C\u6574\u54CD\u5E94\u4F53: ${JSON.stringify(json)}`);
+    }
+    return content;
+  }
+  /**
+   * Orchestrate full workflow: ASR -> Variable replacements -> LLM Refinement.
+   */
+  async processTranscription(audioFile, template, selection, wholeFileContent, onProgress) {
+    let transcription = "";
+    if (audioFile) {
+      if (this.settings.aiAsrSource === "local") {
+        onProgress("aiStatusDecoding");
+        const samples = await this.decodeAudioFile(audioFile);
+        transcription = await this.runLocalASR(samples, onProgress);
+      } else {
+        transcription = await this.runCloudASR(audioFile, onProgress);
+      }
+      if (!transcription.trim()) {
+        throw new Error("No speech transcription captured.");
+      }
+    }
+    onProgress("aiStatusRefining");
+    const dateStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+    let prompt = template.prompt;
+    prompt = prompt.replace(/\{\{selection\}\}/g, selection || "");
+    prompt = prompt.replace(/\{\{file:whole\}\}/g, wholeFileContent || "");
+    prompt = prompt.replace(/\{\{date\}\}/g, dateStr);
+    if (prompt.includes("{{transcription}}")) {
+      prompt = prompt.replace(/\{\{transcription\}\}/g, transcription);
+    } else if (transcription) {
+      prompt = `${prompt}
+
+\u5F85\u6574\u7406\u7684\u8F6C\u5F55\u6587\u672C\uFF1A
+${transcription}`;
+    }
+    if (!this.settings.aiApiKey.trim()) {
+      return transcription;
+    }
+    const refinedText = await this.runRefinement(prompt);
+    return refinedText || transcription;
+  }
+};
+
+// src/settings.ts
 var LEGACY_RELATION_KEYS = ["related", "see_also", "parent", "child", "same_as"];
 var RESEARCH_RELATION_KEYS = [
   "supports",
@@ -4685,6 +5048,17 @@ var SMART_CONNECTIONS_HEADINGS = [
   "Acknowledgements"
 ];
 var DEFAULT_SMART_RESULTS_LIMIT = 20;
+function getSpeechModelDir(app, language) {
+  const adapter = app.vault.adapter;
+  const basePath = adapter instanceof import_obsidian10.FileSystemAdapter ? adapter.getBasePath() : "";
+  const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
+  const plugin = app.plugins?.plugins?.["link-tag-intelligence"];
+  const choice = plugin?.settings?.speechModelChoice ?? "zipformer";
+  if (language === "zh") {
+    return pluginDir + "models/" + (choice === "sensevoice" ? "sensevoice/" : "zh-2025/");
+  }
+  return pluginDir + "models/en/";
+}
 function normalizeConfigDir(configDir) {
   return configDir.replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/\/$/, "").trim();
 }
@@ -4739,6 +5113,48 @@ var DEFAULT_TAG_FACET_MAP_TEXT = JSON.stringify(
   null,
   2
 );
+var DEFAULT_AI_TEMPLATES = [
+  {
+    id: "standard-markdown",
+    name: "\u6807\u51C6 Markdown \u6E32\u67D3",
+    prompt: "\u8BF7\u5C06\u4EE5\u4E0B\u8BED\u97F3\u8F6C\u5F55\u5185\u5BB9\u6574\u7406\u6210\u4E00\u7BC7\u7ED3\u6784\u6E05\u6670\u3001\u6392\u7248\u7F8E\u89C2\u7684 Markdown \u7B14\u8BB0\u3002\n\u8981\u6C42\uFF1A\n- \u4F7F\u7528\u9002\u5F53\u7684\u6807\u9898\uFF08H1, H2, H3\uFF09\u5212\u5206\u7ED3\u6784\n- \u4F7F\u7528\u5217\u8868\uFF08\u65E0\u5E8F\u6216\u6709\u5E8F\uFF09\u6574\u7406\u8981\u70B9\n- \u5BF9\u5173\u952E\u672F\u8BED\u6216\u6838\u5FC3\u7ED3\u8BBA\u4F7F\u7528\u7C97\u4F53\u8FDB\u884C\u5F3A\u8C03\n- \u7EA0\u6B63\u53E3\u8BED\u5316\u7684\u8BCD\u6C47\u3001\u8BED\u6C14\u8BCD\u548C\u8BC6\u522B\u9519\u8BEF\n- \u4FDD\u6301\u539F\u6587\u7684\u8BED\u4E49\u548C\u4FE1\u606F\u5B8C\u6574\u6027\n\n\u4E0A\u4E0B\u6587\u7B14\u8BB0\u5185\u5BB9\uFF1A\n{{file:whole}}\n\n\u5F53\u524D\u9009\u4E2D\u7684\u5185\u5BB9\uFF1A\n{{selection}}\n\n\u5F85\u6574\u7406\u7684\u8F6C\u5F55\u6587\u672C\uFF1A\n{{transcription}}"
+  },
+  {
+    id: "visual-table",
+    name: "\u53EF\u89C6\u5316\u6570\u636E\u8868\u683C",
+    prompt: "\u8BF7\u5206\u6790\u4EE5\u4E0B\u8BED\u97F3\u8F6C\u5F55\u5185\u5BB9\uFF0C\u5C06\u5176\u4E2D\u7684\u6570\u636E\u3001\u5BF9\u6BD4\u4FE1\u606F\u6216\u7ED3\u6784\u5316\u4FE1\u606F\u6574\u7406\u6210\u4E00\u4E2A\u6807\u51C6\u7684 Markdown \u8868\u683C\u3002\n\u8981\u6C42\uFF1A\n- \u4F7F\u7528\u7B2C\u4E00\u884C\u4F5C\u4E3A\u8868\u5934\uFF0C\u5E76\u7528 `|---|---|` \u683C\u5F0F\u5206\u9694\n- \u884C\u5217\u5BF9\u9F50\uFF0C\u786E\u4FDD\u8868\u683C\u5728 Markdown \u4E2D\u53EF\u6B63\u5E38\u89E3\u6790\n- \u5982\u679C\u6709\u65E0\u6CD5\u653E\u5165\u8868\u683C\u7684\u8865\u5145\u4FE1\u606F\uFF0C\u5728\u8868\u683C\u4E0B\u65B9\u4EE5\u7B80\u77ED\u5217\u8868\u5F62\u5F0F\u5199\u51FA\n- \u7EA0\u6B63\u8BC6\u522B\u9519\u8BEF\n\n\u4E0A\u4E0B\u6587\u7B14\u8BB0\u5185\u5BB9\uFF1A\n{{file:whole}}\n\n\u5F53\u524D\u9009\u4E2D\u7684\u5185\u5BB9\uFF1A\n{{selection}}\n\n\u5F85\u6574\u7406\u7684\u8F6C\u5F55\u6587\u672C\uFF1A\n{{transcription}}"
+  },
+  {
+    id: "canvas-card",
+    name: "Canvas \u5361\u7247\u8282\u70B9",
+    prompt: '\u8BF7\u5C06\u4EE5\u4E0B\u8BED\u97F3\u8F6C\u5F55\u5185\u5BB9\u8F6C\u5316\u4E3A Obsidian Canvas \u5361\u7247\u8282\u70B9\u7684 JSON \u6570\u636E\u683C\u5F0F\u3002\u8BF7\u53EA\u8FD4\u56DE JSON \u5BF9\u8C61\uFF0C\u4E0D\u8981\u5305\u542B markdown \u4EE3\u7801\u5757\u5305\u88F9\uFF0C\u4EE5\u4FBF\u80FD\u591F\u76F4\u63A5\u590D\u5236\u4F7F\u7528\u3002\n\u683C\u5F0F\u793A\u4F8B\uFF1A\n{\n  "nodes": [\n    {"id": "n1", "type": "text", "text": "\u6838\u5FC3\u4E3B\u9898...", "x": 0, "y": 0, "width": 300, "height": 200},\n    {"id": "n2", "type": "text", "text": "\u5206\u652F\u8981\u70B9...", "x": 400, "y": 0, "width": 300, "height": 200}\n  ],\n  "edges": [\n    {"id": "e1", "fromNode": "n1", "fromSide": "right", "toNode": "n2", "toSide": "left"}\n  ]\n}\n\u8BF7\u6839\u636E\u8F6C\u5F55\u6587\u672C\u7684\u5185\u5BB9\u8BBE\u8BA1\u5361\u7247\u8282\u70B9\u548C\u5B83\u4EEC\u7684\u5173\u7CFB\uFF0C\u5206\u914D\u5408\u7406\u7684\u5750\u6807(x, y)\u4EE5\u9632\u91CD\u53E0\u3002\n\n\u4E0A\u4E0B\u6587\u7B14\u8BB0\u5185\u5BB9\uFF1A\n{{file:whole}}\n\n\u5F53\u524D\u9009\u4E2D\u7684\u5185\u5BB9\uFF1A\n{{selection}}\n\n\u5F85\u6574\u7406\u7684\u8F6C\u5F55\u6587\u672C\uFF1A\n{{transcription}}'
+  },
+  {
+    id: "callout-summary",
+    name: "Callout \u91CD\u70B9\u6458\u8981",
+    prompt: "\u8BF7\u4E3A\u4EE5\u4E0B\u8BED\u97F3\u8F6C\u5F55\u5185\u5BB9\u751F\u6210\u4E00\u4E2A Obsidian Callout \u683C\u5F0F\u7684\u7CBE\u7B80\u6458\u8981\u3002\n\u8981\u6C42\uFF1A\n- \u4F7F\u7528 `>[!summary] \u8BED\u97F3\u8F6C\u5F55\u6458\u8981` \u4F5C\u4E3A\u5F00\u5934\n- \u5185\u90E8\u4F7F\u7528\u5217\u8868\u6574\u7406\u51FA\u6838\u5FC3\u89C2\u70B9\uFF08Key Takeaways\uFF09\n- \u968F\u540E\u4F7F\u7528 `>[!todo] \u5F85\u529E\u4E8B\u9879` \u5217\u51FA\u8BED\u97F3\u4E2D\u63D0\u5230\u7684\u884C\u52A8\u9879\n\n\u4E0A\u4E0B\u6587\u7B14\u8BB0\u5185\u5BB9\uFF1A\n{{file:whole}}\n\n\u5F53\u524D\u9009\u4E2D\u7684\u5185\u5BB9\uFF1A\n{{selection}}\n\n\u5F85\u6574\u7406\u7684\u8F6C\u5F55\u6587\u672C\uFF1A\n{{transcription}}"
+  },
+  {
+    id: "action-items",
+    name: "\u4EFB\u52A1\u4E0E\u884C\u52A8\u6E05\u5355",
+    prompt: "\u8BF7\u4ECE\u4EE5\u4E0B\u8BED\u97F3\u8F6C\u5F55\u5185\u5BB9\u4E2D\u63D0\u53D6\u6240\u6709\u660E\u786E\u6216\u9690\u542B\u7684\u5F85\u529E\u4E8B\u9879\u3001\u4EFB\u52A1\u548C\u884C\u52A8\u9879\u3002\n\u8981\u6C42\uFF1A\n- \u4F7F\u7528 Obsidian \u5F85\u529E\u4E8B\u9879\u8BED\u6CD5 `- [ ] \u4EFB\u52A1\u5185\u5BB9` \u683C\u5F0F\u5316\n- \u5982\u679C\u63D0\u53CA\u4E86\u622A\u6B62\u65F6\u95F4\u6216\u8D23\u4EFB\u4EBA\uFF0C\u8BF7\u5728\u4EFB\u52A1\u540E\u9762\u7528\u62EC\u53F7\u6807\u6CE8\uFF0C\u4F8B\u5982 `- [ ] \u64B0\u5199\u62A5\u544A (\u622A\u6B62: \u5468\u4E94) (@\u5F20\u4E09)`\n- \u6309\u4F18\u5148\u7EA7\u6216\u65F6\u95F4\u5148\u540E\u987A\u5E8F\u8FDB\u884C\u6392\u5E8F\n\n\u4E0A\u4E0B\u6587\u7B14\u8BB0\u5185\u5BB9\uFF1A\n{{file:whole}}\n\n\u5F53\u524D\u9009\u4E2D\u7684\u5185\u5BB9\uFF1A\n{{selection}}\n\n\u5F85\u6574\u7406\u7684\u8F6C\u5F55\u6587\u672C\uFF1A\n{{transcription}}"
+  },
+  {
+    id: "mindmap-outline",
+    name: "\u601D\u7EF4\u5BFC\u56FE\u5927\u7EB2",
+    prompt: "\u8BF7\u5C06\u4EE5\u4E0B\u8BED\u97F3\u8F6C\u5F55\u5185\u5BB9\u6574\u7406\u6210\u4E00\u4E2A\u5C42\u6B21\u5206\u660E\u7684\u591A\u7EA7\u7F29\u8FDB Markdown \u5927\u7EB2\u5217\u8868\u3002\n\u8981\u6C42\uFF1A\n- \u6700\u591A\u4F7F\u7528 3 \u7EA7\u7F29\u8FDB\uFF08- \u8282\u70B9\uFF0C\u56DB\u4E2A\u7A7A\u683C\u7F29\u8FDB - \u5B50\u8282\u70B9\uFF09\n- \u903B\u8F91\u5C42\u7EA7\u6E05\u6670\uFF0C\u7236\u8282\u70B9\u4E3A\u6838\u5FC3\u6982\u5FF5\uFF0C\u5B50\u8282\u70B9\u4E3A\u7F29\u8FDB\u8BF4\u660E\u6216\u5177\u4F53\u7EC6\u8282\n- \u9002\u5408\u76F4\u63A5\u8F6C\u6362\u4E3A\u601D\u7EF4\u5BFC\u56FE\uFF08Mindmap\uFF09\n\n\u4E0A\u4E0B\u6587\u7B14\u8BB0\u5185\u5BB9\uFF1A\n{{file:whole}}\n\n\u5F53\u524D\u9009\u4E2D\u7684\u5185\u5BB9\uFF1A\n{{selection}}\n\n\u5F85\u6574\u7406\u7684\u8F6C\u5F55\u6587\u672C\uFF1A\n{{transcription}}"
+  },
+  {
+    id: "note-properties",
+    name: "\u5E26\u5C5E\u6027 YAML \u7B14\u8BB0",
+    prompt: '\u8BF7\u4E3A\u4EE5\u4E0B\u8F6C\u5F55\u5185\u5BB9\u751F\u6210\u4E00\u4E2A\u7B26\u5408 Obsidian \u5C5E\u6027\uFF08Properties\uFF09\u6807\u51C6\u7684 YAML \u524D\u8111\u4EE5\u53CA\u6574\u7406\u597D\u7684\u6B63\u6587\u3002\n\u683C\u5F0F\u8981\u6C42\uFF1A\n---\ntags:\n  - \u8BED\u97F3\u8F6C\u5F55\n  - \u81EA\u52A8\u751F\u6210\nsummary: "\u7B80\u77ED\u7684\u4E00\u53E5\u8BDD\u6458\u8981"\ndate: {{date}}\n---\n\n# \u8F6C\u5F55\u8BE6\u7EC6\u6574\u7406\n[\u5728\u6B64\u5199\u5165\u6574\u7406\u540E\u7684\u6B63\u6587]\n\n\u5F85\u6574\u7406\u7684\u8F6C\u5F55\u6587\u672C\uFF1A\n{{transcription}}'
+  },
+  {
+    id: "bilingual-translation",
+    name: "\u4E2D\u82F1\u53CC\u8BED\u5BF9\u7167",
+    prompt: "\u8BF7\u5C06\u4EE5\u4E0B\u8BED\u97F3\u8F6C\u5F55\u5185\u5BB9\u8FDB\u884C\u6821\u5BF9\uFF0C\u5E76\u7FFB\u8BD1\u4E3A\u4E2D\u82F1\u53CC\u8BED\u5BF9\u7167\u683C\u5F0F\u3002\n\u8981\u6C42\uFF1A\n- \u5BF9\u53E3\u8BED\u5316\u8868\u8FF0\u8FDB\u884C\u7CBE\u70BC\n- \u6BCF\u4E00\u6BB5\u5148\u7ED9\u51FA\u4E2D\u6587\u6821\u5BF9\u540E\u7684\u6587\u672C\uFF0C\u968F\u540E\u7ED9\u51FA\u5BF9\u5E94\u7684\u82F1\u6587\u7FFB\u8BD1\n- \u786E\u4FDD\u7FFB\u8BD1\u7B26\u5408\u4E13\u4E1A\u5B66\u672F/\u884C\u4E1A\u672F\u8BED\u89C4\u8303\n\n\u4E0A\u4E0B\u6587\u7B14\u8BB0\u5185\u5BB9\uFF1A\n{{file:whole}}\n\n\u5F53\u524D\u9009\u4E2D\u7684\u5185\u5BB9\uFF1A\n{{selection}}\n\n\u5F85\u6574\u7406\u7684\u8F6C\u5F55\u6587\u672C\uFF1A\n{{transcription}}"
+  }
+];
 function buildDefaultSettings(configDir = "") {
   return {
     language: "system",
@@ -4779,7 +5195,18 @@ function buildDefaultSettings(configDir = "") {
     speechAutoStopSec: 0,
     speechAutoPunctuate: true,
     speechDecodingMethod: "greedy_search",
-    speechMaxUtteranceSec: 20
+    speechMaxUtteranceSec: 20,
+    speechModelChoice: "zipformer",
+    speechAutoHotwords: true,
+    speechConfusionMapText: "\u5728\u663E\u4EF7\u503C:\u5728\u9669\u4EF7\u503C\n\u98CE\u9669\u7A57:\u98CE\u9669\u77E9\u9635\n\u5BCC\u529B\u4E1A:\u5085\u91CC\u53F6",
+    // AI Settings defaults
+    aiProvider: "openai",
+    aiModel: "gpt-4o-mini",
+    aiApiKey: "",
+    aiBaseUrl: "https://api.openai.com/v1",
+    aiAsrSource: "local",
+    aiLastUsedTemplateId: "standard-markdown",
+    aiTemplates: [...DEFAULT_AI_TEMPLATES]
   };
 }
 var DEFAULT_SETTINGS = buildDefaultSettings();
@@ -4915,9 +5342,33 @@ function normalizeLoadedSettings(data, configDir = "") {
   normalized.speechAutoPunctuate = typeof normalized.speechAutoPunctuate === "boolean" ? normalized.speechAutoPunctuate : defaults.speechAutoPunctuate;
   normalized.speechDecodingMethod = normalized.speechDecodingMethod === "modified_beam_search" ? "modified_beam_search" : "greedy_search";
   normalized.speechMaxUtteranceSec = Number.isFinite(normalized.speechMaxUtteranceSec) && normalized.speechMaxUtteranceSec >= 1 && normalized.speechMaxUtteranceSec <= 60 ? Math.round(normalized.speechMaxUtteranceSec) : defaults.speechMaxUtteranceSec;
+  normalized.speechModelChoice = normalized.speechModelChoice === "sensevoice" ? "sensevoice" : "zipformer";
+  normalized.speechAutoHotwords = typeof normalized.speechAutoHotwords === "boolean" ? normalized.speechAutoHotwords : defaults.speechAutoHotwords;
+  normalized.speechConfusionMapText = typeof normalized.speechConfusionMapText === "string" ? normalized.speechConfusionMapText : defaults.speechConfusionMapText;
+  normalized.aiProvider = normalized.aiProvider === "anthropic" || normalized.aiProvider === "deepseek" || normalized.aiProvider === "minimax" ? normalized.aiProvider : "openai";
+  normalized.aiModel = typeof normalized.aiModel === "string" && normalized.aiModel.trim() ? normalized.aiModel.trim() : defaults.aiModel;
+  normalized.aiApiKey = typeof normalized.aiApiKey === "string" ? normalized.aiApiKey : "";
+  normalized.aiBaseUrl = typeof normalized.aiBaseUrl === "string" && normalized.aiBaseUrl.trim() ? normalized.aiBaseUrl.trim() : defaults.aiBaseUrl;
+  normalized.aiAsrSource = normalized.aiAsrSource === "cloud" ? "cloud" : "local";
+  normalized.aiLastUsedTemplateId = typeof normalized.aiLastUsedTemplateId === "string" ? normalized.aiLastUsedTemplateId : defaults.aiLastUsedTemplateId;
+  if (Array.isArray(normalized.aiTemplates)) {
+    const validated = [];
+    for (const t of normalized.aiTemplates) {
+      if (t && typeof t === "object" && typeof t.id === "string" && typeof t.name === "string" && typeof t.prompt === "string") {
+        validated.push({
+          id: t.id.trim(),
+          name: t.name.trim(),
+          prompt: t.prompt
+        });
+      }
+    }
+    normalized.aiTemplates = validated.length > 0 ? validated.slice(0, 15) : [...DEFAULT_AI_TEMPLATES];
+  } else {
+    normalized.aiTemplates = [...DEFAULT_AI_TEMPLATES];
+  }
   return normalized;
 }
-var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSettingTab {
+var LinkTagIntelligenceSettingTab = class extends import_obsidian10.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.renderToken = 0;
@@ -4949,6 +5400,7 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSetting
     this.createPageTab(nav, "plugins", this.plugin.t("settingsWorkbenchPagePlugins"));
     this.createPageTab(nav, "taxonomy", this.plugin.t("settingsWorkbenchPageTaxonomy"));
     this.createPageTab(nav, "speech", this.plugin.t("settingsWorkbenchPageSpeech"));
+    this.createPageTab(nav, "ai", this.plugin.t("settingsWorkbenchPageAI"));
     const page = containerEl.createDiv({ cls: "lti-workbench-page" });
     switch (this.activePage) {
       case "overview":
@@ -4965,6 +5417,9 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSetting
         break;
       case "speech":
         this.renderVoiceSection(page);
+        break;
+      case "ai":
+        this.renderAiSection(page);
         break;
     }
   }
@@ -6026,6 +6481,46 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSetting
       this.plugin.t("speechSettingsHeading"),
       this.plugin.t("speechSettingsDescription")
     );
+    this.createSelectField(
+      section,
+      this.plugin.t("speechModelChoice"),
+      this.plugin.t("speechModelChoiceDescription"),
+      [
+        { value: "zipformer", label: this.plugin.t("speechModelChoiceZipformer") },
+        { value: "sensevoice", label: this.plugin.t("speechModelChoiceSensevoice") }
+      ],
+      this.plugin.settings.speechModelChoice,
+      async (value) => {
+        this.plugin.settings.speechModelChoice = value;
+        await this.plugin.saveSettings();
+      }
+    );
+    this.createToggleField(
+      section,
+      this.plugin.t("speechAutoHotwords"),
+      this.plugin.t("speechAutoHotwordsDescription"),
+      this.plugin.settings.speechAutoHotwords,
+      async (value) => {
+        this.plugin.settings.speechAutoHotwords = value;
+        await this.plugin.saveSettings();
+      }
+    );
+    const confusionRow = section.createDiv({ cls: "lti-voice-field-row" });
+    const confusionField = this.createFieldShell(
+      confusionRow,
+      this.plugin.t("speechConfusionMapText"),
+      this.plugin.t("speechConfusionMapTextDescription")
+    );
+    const confusionInput = confusionField.createEl("textarea", {
+      cls: "lti-workbench-textarea lti-voice-confusion-input",
+      value: this.plugin.settings.speechConfusionMapText
+    });
+    confusionInput.rows = 4;
+    confusionInput.placeholder = "\u5728\u663E\u4EF7\u503C:\u5728\u9669\u4EF7\u503C\n\u98CE\u9669\u7A57:\u98CE\u9669\u77E9\u9635";
+    confusionInput.addEventListener("change", () => {
+      this.plugin.settings.speechConfusionMapText = confusionInput.value;
+      void this.plugin.saveSettings();
+    });
     const modelRow = section.createDiv({ cls: "lti-voice-field-row" });
     const modelField = this.createFieldShell(modelRow, this.plugin.t("speechModelPath"), this.plugin.t("speechModelPathDescription"));
     const modelInputRow = modelField.createDiv({ cls: "lti-voice-input-row" });
@@ -6173,10 +6668,186 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian9.PluginSetting
       }
     );
   }
+  renderAiSection(containerEl) {
+    const section = this.createSectionCard(
+      containerEl,
+      this.plugin.t("aiSettingsHeading"),
+      this.plugin.t("aiSettingsDescription")
+    );
+    this.createSelectField(
+      section,
+      this.plugin.t("aiProvider"),
+      this.plugin.t("aiProviderDescription"),
+      [
+        { value: "openai", label: "OpenAI" },
+        { value: "anthropic", label: "Anthropic" },
+        { value: "deepseek", label: "DeepSeek" },
+        { value: "minimax", label: "MiniMax" }
+      ],
+      this.plugin.settings.aiProvider,
+      async (value) => {
+        this.plugin.settings.aiProvider = value;
+        if (value === "deepseek") {
+          this.plugin.settings.aiBaseUrl = "https://api.deepseek.com";
+          this.plugin.settings.aiModel = "deepseek-chat";
+        } else if (value === "minimax") {
+          this.plugin.settings.aiBaseUrl = "https://api.minimax.chat/v1";
+          this.plugin.settings.aiModel = "abab6.5g-chat";
+        } else if (value === "openai") {
+          this.plugin.settings.aiBaseUrl = "https://api.openai.com/v1";
+          this.plugin.settings.aiModel = "gpt-4o-mini";
+        } else if (value === "anthropic") {
+          this.plugin.settings.aiBaseUrl = "https://api.anthropic.com/v1";
+          this.plugin.settings.aiModel = "claude-3-5-sonnet-20241022";
+        }
+        await this.plugin.saveSettings();
+        this.display();
+      }
+    );
+    const urlField = this.createFieldShell(section, this.plugin.t("aiBaseUrl"), this.plugin.t("aiBaseUrlDescription"));
+    const urlInput = urlField.createEl("input", { cls: "lti-workbench-input", type: "text" });
+    urlInput.value = this.plugin.settings.aiBaseUrl;
+    urlInput.addEventListener("change", async () => {
+      this.plugin.settings.aiBaseUrl = urlInput.value.trim();
+      await this.plugin.saveSettings();
+    });
+    const keyField = this.createFieldShell(section, this.plugin.t("aiApiKey"), this.plugin.t("aiApiKeyDescription"));
+    const keyInput = keyField.createEl("input", { cls: "lti-workbench-input", type: "password" });
+    keyInput.value = this.plugin.settings.aiApiKey;
+    keyInput.placeholder = "sk-........................";
+    keyInput.addEventListener("change", async () => {
+      this.plugin.settings.aiApiKey = keyInput.value.trim();
+      await this.plugin.saveSettings();
+    });
+    const modelField = this.createFieldShell(section, this.plugin.t("aiModel"), this.plugin.t("aiModelDescription"));
+    const modelInput = modelField.createEl("input", { cls: "lti-workbench-input", type: "text" });
+    modelInput.value = this.plugin.settings.aiModel;
+    modelInput.addEventListener("change", async () => {
+      this.plugin.settings.aiModel = modelInput.value.trim();
+      await this.plugin.saveSettings();
+    });
+    this.createSelectField(
+      section,
+      this.plugin.t("aiAsrSource"),
+      this.plugin.t("aiAsrSourceDescription"),
+      [
+        { value: "local", label: this.plugin.t("aiAsrSourceLocal") },
+        { value: "cloud", label: this.plugin.t("aiAsrSourceCloud") }
+      ],
+      this.plugin.settings.aiAsrSource,
+      async (value) => {
+        this.plugin.settings.aiAsrSource = value;
+        await this.plugin.saveSettings();
+      }
+    );
+    const testRow = section.createDiv({ cls: "lti-ai-test-row" });
+    const testBtn = testRow.createEl("button", {
+      cls: "lti-workbench-button lti-ai-test-btn",
+      text: "\u6D4B\u8BD5 API \u8FDE\u63A5",
+      type: "button"
+    });
+    const testStatus = testRow.createSpan({ cls: "lti-ai-test-status" });
+    testBtn.addEventListener("click", async () => {
+      if (!this.plugin.settings.aiApiKey.trim()) {
+        testStatus.textContent = "\u274C \u8BF7\u5148\u586B\u5199 API Key\uFF01";
+        testStatus.className = "lti-ai-test-status is-error";
+        return;
+      }
+      testBtn.disabled = true;
+      testStatus.textContent = "\u23F3 \u6B63\u5728\u6D4B\u8BD5\u8FDE\u63A5\u4E2D...";
+      testStatus.className = "lti-ai-test-status is-pending";
+      try {
+        const service = new AIService(this.app, this.plugin.settings);
+        const reply = await service.runRefinement("Please respond only with the word 'Success'.");
+        if (reply.trim()) {
+          testStatus.textContent = `\u2705 \u8FDE\u63A5\u6210\u529F\uFF01\u6A21\u578B\u56DE\u590D: ${reply.trim().substring(0, 30)}${reply.trim().length > 30 ? "..." : ""}`;
+          testStatus.className = "lti-ai-test-status is-success";
+        } else {
+          testStatus.textContent = "\u274C \u8FDE\u63A5\u5931\u8D25\uFF1A\u63A5\u53E3\u8FD4\u56DE\u4E86\u7A7A\u6587\u672C\u3002";
+          testStatus.className = "lti-ai-test-status is-error";
+        }
+      } catch (err) {
+        const errorMsg = String(err.message || err);
+        let beautified = `\u274C API \u8FDE\u63A5\u5931\u8D25: ${errorMsg}`;
+        if (errorMsg.includes("Insufficient Balance") || errorMsg.includes("402") || errorMsg.includes("insufficient_funds")) {
+          beautified = "\u274C API \u8FDE\u63A5\u5931\u8D25\uFF1A\u60A8\u7684\u8D26\u6237\u4F59\u989D\u4E0D\u8DB3 (Insufficient Balance / 402)\u3002\u60A8\u7684 API \u5BC6\u94A5\u53CA\u63A5\u53E3\u914D\u7F6E\u5747\u6B63\u786E\uFF0C\u4F46\u9700\u8981\u767B\u5F55\u60A8\u7684 AI \u670D\u52A1\u5546\u540E\u53F0\u8FDB\u884C\u5145\u503C\u6216\u7ED1\u5B9A\u8D26\u5355\u3002";
+        } else if (errorMsg.includes("401") || errorMsg.includes("Incorrect API key") || errorMsg.includes("invalid_api_key") || errorMsg.includes("Unauthorized")) {
+          beautified = "\u274C API \u8FDE\u63A5\u5931\u8D25\uFF1AAPI \u5BC6\u94A5 (API Key) \u65E0\u6548 (401 / Unauthorized)\u3002\u8BF7\u68C0\u67E5\u60A8\u7684 API Key \u662F\u5426\u590D\u5236\u6B63\u786E\uFF0C\u6216\u524D\u5F80\u63A7\u5236\u53F0\u751F\u6210\u65B0\u7684\u5BC6\u94A5\u3002";
+        } else if (errorMsg.includes("404") || errorMsg.includes("model_not_found")) {
+          beautified = "\u274C API \u8FDE\u63A5\u5931\u8D25\uFF1A\u6A21\u578B\u672A\u627E\u5230 (Model Not Found / 404)\u3002\u8BF7\u786E\u8BA4\u60A8\u586B\u5199\u7684\u201C\u6A21\u578B\u540D\u79F0\u201D\u662F\u5426\u5B8C\u5168\u6B63\u786E\uFF0C\u6216\u5F53\u524D\u5BC6\u94A5\u662F\u5426\u88AB\u6388\u6743\u4E86\u6B64\u6A21\u578B\u6743\u9650\u3002";
+        } else if (errorMsg.includes("Failed to fetch") || errorMsg.includes("NetworkError") || errorMsg.includes("timeout") || errorMsg.includes("ENOTFOUND")) {
+          beautified = "\u274C API \u8FDE\u63A5\u5931\u8D25\uFF1A\u7F51\u7EDC\u8D85\u65F6\u6216\u57FA\u7840\u5730\u5740\u4E0D\u53EF\u8FBE\u3002\u8BF7\u68C0\u67E5\u7F51\u7EDC\uFF0C\u6216\u786E\u8BA4\u60A8\u586B\u5199\u7684\u201CAPI \u63A5\u53E3\u5730\u5740 (Base URL)\u201D\u62FC\u5199\u662F\u5426\u6B63\u786E\uFF0C\u6216\u662F\u5426\u9700\u8981\u4EE3\u7406\u73AF\u5883\u3002";
+        }
+        testStatus.textContent = beautified;
+        testStatus.className = "lti-ai-test-status is-error";
+      } finally {
+        testBtn.disabled = false;
+      }
+    });
+    const templatesSection = this.createSectionCard(
+      containerEl,
+      this.plugin.t("aiTemplatesHeading"),
+      this.plugin.t("aiTemplatesDescription")
+    );
+    const templatesContainer = templatesSection.createDiv({ cls: "lti-ai-templates-list" });
+    this.plugin.settings.aiTemplates.forEach((template, index) => {
+      const card = templatesContainer.createDiv({ cls: "lti-ai-template-card" });
+      const nameRow = card.createDiv({ cls: "lti-ai-template-name-row" });
+      nameRow.createSpan({ text: `${this.plugin.t("aiTemplateName")} #${index + 1}:`, cls: "lti-ai-template-label" });
+      const nameInput = nameRow.createEl("input", { cls: "lti-workbench-input lti-ai-template-name-input", type: "text" });
+      nameInput.value = template.name;
+      nameInput.addEventListener("change", async () => {
+        template.name = nameInput.value.trim() || `Template ${index + 1}`;
+        await this.plugin.saveSettings();
+      });
+      const deleteBtn = nameRow.createEl("button", {
+        cls: "lti-workbench-button is-danger lti-ai-template-delete-btn",
+        text: "\u5220\u9664",
+        type: "button"
+      });
+      deleteBtn.addEventListener("click", async () => {
+        this.plugin.settings.aiTemplates.splice(index, 1);
+        await this.plugin.saveSettings();
+        this.display();
+      });
+      const promptArea = card.createDiv({ cls: "lti-ai-template-prompt-area" });
+      promptArea.createSpan({ text: this.plugin.t("aiTemplatePrompt"), cls: "lti-ai-template-label" });
+      const promptTextarea = promptArea.createEl("textarea", { cls: "lti-workbench-input lti-ai-template-textarea" });
+      promptTextarea.value = template.prompt;
+      promptTextarea.rows = 4;
+      promptTextarea.addEventListener("change", async () => {
+        template.prompt = promptTextarea.value;
+        await this.plugin.saveSettings();
+      });
+    });
+    if (this.plugin.settings.aiTemplates.length < 15) {
+      const actionRow = templatesSection.createDiv({ cls: "lti-ai-template-actions" });
+      const addBtn = actionRow.createEl("button", {
+        cls: "lti-workbench-button",
+        text: `+ ${this.plugin.t("aiAddTemplate")}`,
+        type: "button"
+      });
+      addBtn.addEventListener("click", async () => {
+        const newId = `custom-template-${Date.now()}`;
+        this.plugin.settings.aiTemplates.push({
+          id: newId,
+          name: `\u81EA\u5B9A\u4E49\u6A21\u677F ${this.plugin.settings.aiTemplates.length + 1}`,
+          prompt: "\u8BF7\u6574\u7406\u4EE5\u4E0B\u8BED\u97F3\u8F6C\u5F55\u5185\u5BB9\uFF1A\n\n\u5F85\u6574\u7406\u7684\u8F6C\u5F55\u6587\u672C\uFF1A\n{{transcription}}"
+        });
+        await this.plugin.saveSettings();
+        this.display();
+      });
+    } else {
+      templatesSection.createDiv({
+        cls: "lti-ai-template-max-hint",
+        text: this.plugin.t("aiMaxTemplatesReached")
+      });
+    }
+  }
 };
 
 // src/view.ts
-var import_obsidian10 = require("obsidian");
+var import_obsidian11 = require("obsidian");
 
 // src/view-refresh.ts
 var REFRESH_REASON_PRIORITY = {
@@ -6226,6 +6897,7 @@ function shouldHandleViewRefresh(request, dependencyPaths) {
 var LINK_TAG_INTELLIGENCE_VIEW = "link-tag-intelligence-view";
 var SECTION_DEFINITIONS = [
   { id: "current-note", titleKey: "currentNote", defaultExpanded: true, emphasized: true },
+  { id: "ai-transcribe", titleKey: "aiSettingsHeading", defaultExpanded: true, emphasized: true },
   { id: "outgoing-links", titleKey: "outgoingLinks", defaultExpanded: true },
   { id: "backlinks", titleKey: "backlinks", defaultExpanded: false },
   { id: "outgoing-references", titleKey: "outgoingReferences", defaultExpanded: true },
@@ -6245,7 +6917,7 @@ var FILE_REQUIRED_ACTIONS = /* @__PURE__ */ new Set([
 function serializeSnapshot(value) {
   return JSON.stringify(value);
 }
-var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
+var LinkTagIntelligenceView = class extends import_obsidian11.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.sectionState = /* @__PURE__ */ new Map();
@@ -6261,6 +6933,14 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
     this.vuMeterEl = null;
     this.vuMeterBars = [];
     this.vuMeterDbLabel = null;
+    this.aiTargetFile = null;
+    this.aiTemplatesCollapsed = true;
+    this.aiStatusText = "";
+    this.aiStatusType = "idle";
+    this.aiCachedSummary = "";
+    this.aiCachedSummaryFilePath = "";
+    this.debounceSelectionTimeout = null;
+    this.debounceSummaryTimeout = null;
     this.plugin = plugin;
   }
   getViewType() {
@@ -6289,6 +6969,7 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
     this.contentEl.addClass("link-tag-intelligence-view");
     this.containerEl.addClass("link-tag-intelligence-view");
     this.buildShell();
+    this.registerLiveContextListeners();
     await this.performRefresh({ reason: "context", force: true });
   }
   refresh(options = {}) {
@@ -6438,7 +7119,7 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
   async buildSnapshot() {
     const toolbar = this.buildToolbarSnapshot();
     const activeFile = this.plugin.getContextNoteFile();
-    if (!(activeFile instanceof import_obsidian10.TFile)) {
+    if (!(activeFile instanceof import_obsidian11.TFile)) {
       return {
         toolbar,
         hasContext: false,
@@ -6495,6 +7176,7 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
       mentions,
       capture: this.buildCaptureSectionSnapshot(),
       semantic: this.buildSemanticSectionSnapshot(),
+      aiTranscribe: this.buildAiTranscribeSectionSnapshot(),
       dependencyPaths: [...dependencyPaths]
     };
   }
@@ -6700,6 +7382,91 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
       lines
     };
   }
+  buildAiTranscribeSectionSnapshot() {
+    const activeView = this.plugin.getContextMarkdownView();
+    const selection = activeView?.editor?.getSelection() ?? "";
+    return {
+      title: this.plugin.t("aiSettingsHeading"),
+      lines: [
+        `statusType:${this.aiStatusType}`,
+        `statusText:${this.aiStatusText ?? ""}`,
+        `targetFile:${this.aiTargetFile?.path ?? ""}`,
+        `collapsed:${this.aiTemplatesCollapsed}`,
+        `summary:${this.aiCachedSummary ?? ""}`,
+        `selection:${selection.substring(0, 100)}`,
+        `lastTemplate:${this.plugin.settings.aiLastUsedTemplateId}`
+      ]
+    };
+  }
+  registerLiveContextListeners() {
+    this.registerDomEvent(document, "selectionchange", () => {
+      if (this.debounceSelectionTimeout) {
+        window.clearTimeout(this.debounceSelectionTimeout);
+      }
+      this.debounceSelectionTimeout = window.setTimeout(() => {
+        const activeView = this.plugin.getContextMarkdownView();
+        if (!activeView) return;
+        const selectionText = activeView.editor.getSelection() ?? "";
+        const selectionEl = this.containerEl.querySelector(".lti-ai-preview-selection");
+        if (selectionEl) {
+          selectionEl.textContent = selectionText.trim() ? `"${selectionText.trim().substring(0, 50)}${selectionText.trim().length > 50 ? "..." : ""}"` : `(\u672A\u9009\u62E9\u6587\u5B57)`;
+        }
+        void this.updateLivePromptPreview();
+      }, 150);
+    });
+    this.registerEvent(this.app.workspace.on("editor-change", (editor, info) => {
+      const activeFile = this.plugin.getContextNoteFile();
+      if (!activeFile || info.file?.path !== activeFile.path) return;
+      if (this.debounceSummaryTimeout) {
+        window.clearTimeout(this.debounceSummaryTimeout);
+      }
+      this.debounceSummaryTimeout = window.setTimeout(async () => {
+        const content = await this.app.vault.cachedRead(activeFile);
+        let clean = content.replace(/^---[\s\S]*?---/, "");
+        clean = clean.replace(/#+\s+/g, "").replace(/\s+/g, " ").trim();
+        const preview = clean.substring(0, 60);
+        this.aiCachedSummary = preview ? `${preview}${clean.length > 60 ? "..." : ""}` : "(\u7A7A\u7B14\u8BB0)";
+        const summaryEl = this.containerEl.querySelector(".lti-ai-preview-summary");
+        if (summaryEl) {
+          summaryEl.textContent = this.aiCachedSummary;
+        }
+        void this.updateLivePromptPreview();
+      }, 500);
+    }));
+  }
+  async updateLivePromptPreview() {
+    const promptPreviewEl = this.containerEl.querySelector(".lti-ai-compiled-prompt-textarea");
+    if (!promptPreviewEl) return;
+    const templates = this.plugin.settings.aiTemplates;
+    let lastUsed = templates.find((t) => t.id === this.plugin.settings.aiLastUsedTemplateId);
+    if (!lastUsed) lastUsed = templates[0];
+    if (!lastUsed) return;
+    const compiled = await this.compilePromptPreview(lastUsed);
+    promptPreviewEl.value = compiled;
+  }
+  async compilePromptPreview(template) {
+    const activeFile = this.plugin.getContextNoteFile();
+    if (!activeFile) return template.prompt;
+    const activeView = this.plugin.getContextMarkdownView();
+    const selection = activeView?.editor?.getSelection() ?? "";
+    let wholeFileContent = "";
+    try {
+      wholeFileContent = await this.app.vault.cachedRead(activeFile);
+    } catch {
+    }
+    const dateStr = (/* @__PURE__ */ new Date()).toLocaleDateString();
+    const audioPlaceholder = this.aiTargetFile ? `[\u7B49\u5F85\u97F3\u9891 "${this.aiTargetFile.name}" \u7684\u8F6C\u5F55\u6587\u672C...]` : "";
+    let prompt = template.prompt;
+    prompt = prompt.replace(/\{\{selection\}\}/g, selection.trim() || "(\u672A\u9009\u62E9\u6587\u5B57)");
+    prompt = prompt.replace(/\{\{file:whole\}\}/g, wholeFileContent || "(\u7A7A\u7B14\u8BB0)");
+    prompt = prompt.replace(/\{\{date\}\}/g, dateStr);
+    if (prompt.includes("{{transcription}}")) {
+      prompt = prompt.replace(/\{\{transcription\}\}/g, audioPlaceholder || "(\u65E0\u97F3\u9891\u8F6C\u5F55\u8F93\u5165)");
+    } else if (audioPlaceholder) {
+      prompt += "\n\n" + audioPlaceholder;
+    }
+    return prompt;
+  }
   applySnapshot(snapshot, request) {
     this.applyToolbarSnapshot(snapshot.toolbar);
     this.applyContextVisibility(snapshot);
@@ -6716,6 +7483,7 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
     this.updateSection("mentions", snapshot.mentions ?? null);
     this.updateSection("capture", snapshot.capture ?? null);
     this.updateSection("semantic", snapshot.semantic ?? null);
+    this.updateSection("ai-transcribe", snapshot.aiTranscribe ?? null);
     if (request.focusSectionId) {
       const shell = this.sectionShells.get(request.focusSectionId);
       shell?.toggleEl.focus({ preventScroll: true });
@@ -6899,6 +7667,9 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
       case "capture":
       case "semantic":
         this.renderStatusSectionBody(shell.innerEl, snapshot);
+        break;
+      case "ai-transcribe":
+        this.renderAiTranscribeBody(shell.innerEl);
         break;
     }
   }
@@ -7099,10 +7870,276 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
   }
   resolveFileByPath(path) {
     const file = this.app.vault.getAbstractFileByPath(path);
-    return file instanceof import_obsidian10.TFile ? file : null;
+    return file instanceof import_obsidian11.TFile ? file : null;
   }
   getSectionExpanded(id, defaultExpanded) {
     return this.sectionState.get(id) ?? defaultExpanded;
+  }
+  renderAiTranscribeBody(parent) {
+    parent.empty();
+    parent.addClass("lti-ai-transcribe-container");
+    const activeFile = this.plugin.getContextNoteFile();
+    if (!activeFile) {
+      parent.createDiv({ text: this.plugin.t("noActiveNote"), cls: "lti-status-message" });
+      return;
+    }
+    const AUDIO_EXTENSIONS = ["mp3", "wav", "m4a", "webm", "ogg", "3gp", "flac", "aac"];
+    const audioFiles = this.app.vault.getFiles().filter((file) => {
+      const pathLower = file.path.toLowerCase();
+      if (pathLower.includes("node_modules/") || pathLower.includes(".git/") || pathLower.includes(".obsidian/") || pathLower.includes("/node_modules/") || pathLower.startsWith("node_modules/")) {
+        return false;
+      }
+      return AUDIO_EXTENSIONS.includes(file.extension.toLowerCase());
+    });
+    audioFiles.sort((a, b) => b.stat.mtime - a.stat.mtime);
+    const fileRow = parent.createDiv({ cls: "lti-ai-file-row" });
+    const labelRow = fileRow.createDiv({ cls: "lti-ai-label-row", style: "display: flex; justify-content: space-between; align-items: center;" });
+    labelRow.createSpan({ text: this.plugin.t("aiSelectAudioFile") + "\uFF1A", cls: "lti-ai-label" });
+    const importBtn = labelRow.createEl("button", {
+      cls: "lti-workbench-button is-compact lti-ai-import-btn",
+      text: "\u5BFC\u5165\u97F3\u9891...",
+      type: "button",
+      style: "margin: 0; padding: 2px 8px; font-size: 0.75rem;"
+    });
+    importBtn.addEventListener("click", () => {
+      const fileInput = document.createElement("input");
+      fileInput.type = "file";
+      fileInput.accept = "audio/*";
+      fileInput.style.display = "none";
+      document.body.appendChild(fileInput);
+      fileInput.addEventListener("change", async () => {
+        const files = fileInput.files;
+        if (files && files.length > 0) {
+          const file = files[0];
+          const arrayBuffer = await file.arrayBuffer();
+          const activeFile2 = this.plugin.getContextNoteFile();
+          const parentFolder = activeFile2 && activeFile2.parent ? activeFile2.parent.path : "";
+          const targetPath = parentFolder ? `${parentFolder}/${file.name}` : file.name;
+          try {
+            const newFile = await this.app.vault.createBinary(targetPath, arrayBuffer);
+            this.aiTargetFile = newFile;
+            new Notice(`\u5DF2\u6210\u529F\u5BFC\u5165\u5E76\u9009\u4E2D\u97F3\u9891\uFF1A${file.name}`);
+            void this.refresh();
+          } catch (err) {
+            new Notice(`\u5BFC\u5165\u5931\u8D25: ${err.message || err}`);
+          }
+        }
+        document.body.removeChild(fileInput);
+      });
+      fileInput.click();
+    });
+    const dropdownWrapper = fileRow.createDiv({ cls: "lti-custom-dropdown-wrapper" });
+    const triggerBtn = dropdownWrapper.createEl("button", {
+      cls: "lti-custom-dropdown-trigger lti-workbench-select",
+      type: "button"
+    });
+    let triggerLabel = audioFiles.length === 0 ? "-- \u4EC5\u4F7F\u7528\u6587\u672C (\u65E0\u97F3\u9891\u6587\u4EF6) --" : "-- \u4EC5\u4F7F\u7528\u6587\u672C (\u4E0D\u9009\u97F3\u9891) --";
+    if (this.aiTargetFile) {
+      const folder = this.aiTargetFile.parent ? this.aiTargetFile.parent.path : "";
+      if (folder && folder !== "/") {
+        const displayFolder = folder.length > 25 ? "..." + folder.substring(folder.length - 22) : folder;
+        triggerLabel = `${this.aiTargetFile.name} (${displayFolder})`;
+      } else {
+        triggerLabel = this.aiTargetFile.name;
+      }
+    }
+    dropdownWrapper.createSpan({ text: triggerLabel, cls: "lti-custom-dropdown-text" });
+    triggerBtn.appendChild(dropdownWrapper.querySelector(".lti-custom-dropdown-text"));
+    triggerBtn.createSpan({ cls: "lti-custom-dropdown-chevron" });
+    const optionsList = dropdownWrapper.createDiv({ cls: "lti-custom-dropdown-menu" });
+    optionsList.hidden = true;
+    const optTextOnly = optionsList.createEl("button", {
+      cls: `lti-custom-dropdown-item${!this.aiTargetFile ? " is-active" : ""}`,
+      text: audioFiles.length === 0 ? "-- \u4EC5\u4F7F\u7528\u6587\u672C (\u65E0\u97F3\u9891\u6587\u4EF6) --" : "-- \u4EC5\u4F7F\u7528\u6587\u672C (\u4E0D\u9009\u97F3\u9891) --",
+      type: "button"
+    });
+    optTextOnly.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.aiTargetFile = null;
+      optionsList.hidden = true;
+      void this.refresh();
+    });
+    audioFiles.forEach((file) => {
+      const folder = file.parent ? file.parent.path : "";
+      let displayText = file.name;
+      if (folder && folder !== "/") {
+        const displayFolder = folder.length > 25 ? "..." + folder.substring(folder.length - 22) : folder;
+        displayText = `${file.name} (${displayFolder})`;
+      }
+      const opt = optionsList.createEl("button", {
+        cls: `lti-custom-dropdown-item${this.aiTargetFile?.path === file.path ? " is-active" : ""}`,
+        text: displayText,
+        type: "button"
+      });
+      opt.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.aiTargetFile = file;
+        optionsList.hidden = true;
+        void this.refresh();
+      });
+    });
+    const clickOutsideHandler = (event) => {
+      if (!dropdownWrapper.contains(event.target)) {
+        optionsList.hidden = true;
+        document.removeEventListener("click", clickOutsideHandler);
+      }
+    };
+    triggerBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isVisible = !optionsList.hidden;
+      if (isVisible) {
+        optionsList.hidden = true;
+        document.removeEventListener("click", clickOutsideHandler);
+      } else {
+        optionsList.hidden = false;
+        document.addEventListener("click", clickOutsideHandler);
+      }
+    });
+    const templates = this.plugin.settings.aiTemplates;
+    if (templates.length === 0) {
+      parent.createDiv({ text: "\u8BF7\u5728\u8BBE\u7F6E\u4E2D\u914D\u7F6E\u81F3\u5C11\u4E00\u4E2A\u8F6C\u5F55\u6A21\u677F\u3002", cls: "lti-status-message is-error" });
+      return;
+    }
+    let lastUsed = templates.find((t) => t.id === this.plugin.settings.aiLastUsedTemplateId);
+    if (!lastUsed) {
+      lastUsed = templates[0];
+    }
+    const btnRow = parent.createDiv({ cls: "lti-ai-btn-row" });
+    const runBtn = btnRow.createEl("button", {
+      cls: `lti-workbench-button is-primary lti-ai-run-btn${this.aiStatusType === "progress" ? " is-loading" : ""}`,
+      type: "button"
+    });
+    runBtn.createSpan({ cls: "lti-ai-run-icon", text: "\u25B6" });
+    runBtn.createSpan({ text: ` \u8FD0\u884C\uFF1A${lastUsed.name}` });
+    if (this.aiStatusType === "progress") {
+      runBtn.disabled = true;
+    }
+    runBtn.addEventListener("click", () => {
+      if (lastUsed) void this.triggerAiTranscription(lastUsed);
+    });
+    const previewGrid = parent.createDiv({ cls: "lti-ai-preview-grid" });
+    const selCard = previewGrid.createDiv({ cls: "lti-ai-preview-card" });
+    selCard.createDiv({ text: this.plugin.t("aiSelectedTextPreview"), cls: "lti-ai-preview-title" });
+    const activeView = this.plugin.getContextMarkdownView();
+    const selectionText = activeView?.editor?.getSelection() ?? "";
+    const selectionContent = selectionText.trim() ? `"${selectionText.trim().substring(0, 50)}${selectionText.trim().length > 50 ? "..." : ""}"` : `(${this.plugin.t("notSelected")})`;
+    selCard.createDiv({ text: selectionContent, cls: "lti-ai-preview-content lti-ai-preview-selection" });
+    const sumCard = previewGrid.createDiv({ cls: "lti-ai-preview-card" });
+    sumCard.createDiv({ text: this.plugin.t("aiNoteSummaryPreview"), cls: "lti-ai-preview-title" });
+    if (activeFile.path !== this.aiCachedSummaryFilePath) {
+      this.aiCachedSummaryFilePath = activeFile.path;
+      this.aiCachedSummary = "\u52A0\u8F7D\u4E2D...";
+      const cache = this.app.metadataCache.getFileCache(activeFile);
+      if (cache?.frontmatter?.summary) {
+        const sumVal = String(cache.frontmatter.summary);
+        this.aiCachedSummary = sumVal.substring(0, 60) + (sumVal.length > 60 ? "..." : "");
+      } else {
+        void this.app.vault.cachedRead(activeFile).then((content) => {
+          let clean = content.replace(/^---[\s\S]*?---/, "");
+          clean = clean.replace(/#+\s+/g, "").replace(/\s+/g, " ").trim();
+          const preview = clean.substring(0, 60);
+          this.aiCachedSummary = preview ? `${preview}${clean.length > 60 ? "..." : ""}` : "(\u7A7A\u7B14\u8BB0)";
+          void this.refresh();
+        });
+      }
+    }
+    sumCard.createDiv({ text: this.aiCachedSummary, cls: "lti-ai-preview-content lti-ai-preview-summary" });
+    const promptPreviewRow = parent.createDiv({ cls: "lti-ai-prompt-preview-row" });
+    promptPreviewRow.createDiv({ text: "\u{1F4D6} \u63D0\u793A\u8BCD\u9884\u89C8 (\u5305\u542B\u9009\u4E2D\u4E0E\u6B63\u6587) \uFF1A", cls: "lti-ai-label" });
+    const promptArea = promptPreviewRow.createEl("textarea", {
+      cls: "lti-ai-compiled-prompt-textarea lti-workbench-textarea",
+      attr: { readonly: "readonly", rows: "4" }
+    });
+    void this.compilePromptPreview(lastUsed).then((compiled) => {
+      promptArea.value = compiled;
+    });
+    const accordion = parent.createDiv({ cls: "lti-ai-accordion" });
+    const accordionHeader = accordion.createDiv({
+      cls: `lti-ai-accordion-header${this.aiTemplatesCollapsed ? " is-collapsed" : ""}`
+    });
+    accordionHeader.createSpan({
+      text: this.aiTemplatesCollapsed ? "\u25B6 \u9009\u62E9\u5176\u4ED6\u6A21\u677F..." : "\u25BC \u9009\u62E9\u5176\u4ED6\u6A21\u677F...",
+      cls: "lti-ai-accordion-title"
+    });
+    accordionHeader.addEventListener("click", () => {
+      this.aiTemplatesCollapsed = !this.aiTemplatesCollapsed;
+      void this.refresh();
+    });
+    if (!this.aiTemplatesCollapsed) {
+      const accordionBody = accordion.createDiv({ cls: "lti-ai-accordion-body" });
+      const grid = accordionBody.createDiv({ cls: "lti-ai-templates-grid" });
+      templates.forEach((tpl) => {
+        const tplBtn = grid.createEl("button", {
+          cls: `lti-ai-grid-template-btn${tpl.id === lastUsed.id ? " is-active" : ""}`,
+          text: tpl.name,
+          type: "button"
+        });
+        if (this.aiStatusType === "progress") {
+          tplBtn.disabled = true;
+        }
+        tplBtn.addEventListener("click", async () => {
+          this.plugin.settings.aiLastUsedTemplateId = tpl.id;
+          await this.plugin.saveSettings();
+          void this.refresh();
+        });
+      });
+    }
+    if (this.aiStatusText) {
+      const statusClass = `lti-ai-status is-${this.aiStatusType}`;
+      const statusDiv = parent.createDiv({ cls: statusClass });
+      if (this.aiStatusType === "progress") {
+        statusDiv.createSpan({ cls: "lti-ai-spinner" });
+      }
+      statusDiv.createSpan({ text: ` ${this.aiStatusText}` });
+    }
+  }
+  async triggerAiTranscription(template) {
+    const activeFile = this.plugin.getContextNoteFile();
+    if (!activeFile) {
+      this.aiStatusType = "error";
+      this.aiStatusText = "\u672A\u6253\u5F00\u6709\u6548\u7B14\u8BB0\u3002";
+      void this.refresh();
+      return;
+    }
+    const activeView = this.plugin.getContextMarkdownView();
+    if (!activeView) {
+      this.aiStatusType = "error";
+      this.aiStatusText = "\u8BF7\u6253\u5F00 Markdown \u7F16\u8F91\u5668\u3002";
+      void this.refresh();
+      return;
+    }
+    this.aiStatusType = "progress";
+    this.aiStatusText = this.aiTargetFile ? this.plugin.t("aiStatusDecoding") : this.plugin.t("aiStatusRefining");
+    void this.refresh();
+    try {
+      const selection = activeView.editor.getSelection();
+      const wholeFileContent = await this.app.vault.read(activeFile);
+      const service = new AIService(this.app, this.plugin.settings);
+      const resultText = await service.processTranscription(
+        this.aiTargetFile,
+        template,
+        selection,
+        wholeFileContent,
+        (statusKey, detail) => {
+          this.aiStatusText = this.plugin.t(statusKey) + (detail ? ` (${detail})` : "");
+          void this.refresh();
+        }
+      );
+      if (selection) {
+        activeView.editor.replaceSelection(resultText);
+      } else {
+        const cursor = activeView.editor.getCursor();
+        activeView.editor.replaceRange(resultText, cursor);
+      }
+      this.aiStatusType = "success";
+      this.aiStatusText = this.plugin.t("aiStatusSuccess");
+    } catch (err) {
+      console.error("[lti-ai-transcribe]", err);
+      this.aiStatusType = "error";
+      this.aiStatusText = `${this.plugin.t("aiStatusError")}${err.message}`;
+    } finally {
+      void this.refresh();
+    }
   }
   onClose() {
     if (this.refreshFrame !== null) {
@@ -7123,7 +8160,7 @@ var LinkTagIntelligenceView = class extends import_obsidian10.ItemView {
 };
 
 // src/speech-recorder.ts
-var import_obsidian11 = require("obsidian");
+var import_obsidian12 = require("obsidian");
 
 // src/speech-capture.ts
 var WORKLET_CODE = `
@@ -7257,6 +8294,12 @@ var SpeechRecorder = class {
     this.settingsAutoPunctuate = true;
     this.settingsDecodingMethod = "greedy_search";
     this.settingsMaxUtteranceSec = 20;
+    this.speechModelChoice = "zipformer";
+    this.speechAutoHotwords = true;
+    this.speechConfusionMapText = "";
+    this.accumulatedAudio = [];
+    this.silenceDurationMs = 0;
+    this.preRollBuffer = [];
     /** Callback set by main.ts to receive ASR results. */
     this.onAsrResult = null;
     this.hotwordsPath = null;
@@ -7312,6 +8355,10 @@ var SpeechRecorder = class {
   async start(t) {
     this.phase = "initializing";
     this.asrInitError = null;
+    this.accumulatedAudio = [];
+    this.silenceDurationMs = 0;
+    this.preRollBuffer = [];
+    void this.generateAutoHotwordsFile();
     try {
       this.capture = await startCapture((chunk) => {
         const rms = calculateRMS(chunk);
@@ -7326,7 +8373,7 @@ var SpeechRecorder = class {
       this.registerDeviceChangeHandler(t);
       if (!this.asrProcess) {
         const adapter = this.appRef?.vault.adapter;
-        const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
+        const basePath = adapter instanceof import_obsidian12.FileSystemAdapter ? adapter.getBasePath() : "";
         const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence";
         const workerPath = pluginDir + "/asr-worker.js";
         try {
@@ -7409,7 +8456,7 @@ var SpeechRecorder = class {
       if (hotwordsFile) {
         try {
           const adapter = this.appRef?.vault.adapter;
-          const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
+          const basePath = adapter instanceof import_obsidian12.FileSystemAdapter ? adapter.getBasePath() : "";
           const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
           const pathModule = require("path");
           hotwordsFile = pathModule.relative(pluginDir, hotwordsFile);
@@ -7419,11 +8466,13 @@ var SpeechRecorder = class {
       const initMsg = JSON.stringify({
         type: "init",
         modelDir: this.getModelDir(),
+        modelType: this.speechModelChoice,
         language: this.settingsLanguage,
         vadSensitivity: this.settingsVadSensitivity,
         speechAutoPunctuate: this.settingsAutoPunctuate,
         decodingMethod: this.settingsDecodingMethod,
         speechMaxUtteranceSec: this.settingsMaxUtteranceSec,
+        confusionMap: this.getConfusionMap(),
         ...hotwordsFile ? { hotwordsFile } : {}
       }) + "\n";
       this.asrStdin?.write(initMsg);
@@ -7480,6 +8529,10 @@ var SpeechRecorder = class {
     this.phase = "processing";
     this.removeDeviceChangeHandler();
     this.cleanupCapture();
+    if (this.speechModelChoice === "sensevoice") {
+      this.sendSensevoiceSegment(true);
+      await new Promise((r) => setTimeout(r, 650));
+    }
     this.destroyAsrProcess();
     this.phase = "idle";
     return null;
@@ -7492,11 +8545,52 @@ var SpeechRecorder = class {
       this.asrBackpressure = true;
       return;
     }
-    const b64 = Buffer.from(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength)).toString("base64");
-    const accepted = this.asrStdin.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");
-    if (!accepted) {
-      this.asrBackpressure = true;
+    if (this.speechModelChoice === "zipformer") {
+      const b64 = Buffer.from(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength)).toString("base64");
+      const accepted = this.asrStdin.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");
+      if (!accepted) {
+        this.asrBackpressure = true;
+      }
+    } else {
+      const rms = calculateRMS(chunk);
+      for (let i = 0; i < chunk.length; i++) {
+        this.accumulatedAudio.push(chunk[i]);
+      }
+      const chunkDurationMs = chunk.length / 16e3 * 1e3;
+      const silenceThreshold = 0.02;
+      if (rms < silenceThreshold) {
+        this.silenceDurationMs += chunkDurationMs;
+      } else {
+        this.silenceDurationMs = 0;
+      }
+      const accumulatedSec = this.accumulatedAudio.length / 16e3;
+      const hitSilencePause = this.silenceDurationMs >= 800 && accumulatedSec >= 2.5;
+      const hitSafetyLimit = accumulatedSec >= 15;
+      if (hitSilencePause || hitSafetyLimit) {
+        this.sendSensevoiceSegment(false);
+      }
     }
+  }
+  sendSensevoiceSegment(isFinal = false) {
+    if (this.accumulatedAudio.length === 0) return;
+    let samplesToSend = [...this.accumulatedAudio];
+    if (this.preRollBuffer.length > 0 && !isFinal) {
+      samplesToSend = [...this.preRollBuffer, ...samplesToSend];
+    }
+    const floatArray = new Float32Array(samplesToSend);
+    const b64 = Buffer.from(floatArray.buffer, floatArray.byteOffset, floatArray.byteLength).toString("base64");
+    if (!isFinal && this.accumulatedAudio.length > 3200) {
+      this.preRollBuffer = this.accumulatedAudio.slice(this.accumulatedAudio.length - 3200);
+    } else {
+      this.preRollBuffer = [];
+    }
+    this.asrStdin?.write(JSON.stringify({
+      type: "segment",
+      bufferB64: b64,
+      isFinal
+    }) + "\n");
+    this.accumulatedAudio = [];
+    this.silenceDurationMs = 0;
   }
   cleanupCapture() {
     if (this.throttleTimer) {
@@ -7526,7 +8620,7 @@ var SpeechRecorder = class {
           this.errorKey = "speechMicDisconnected";
           this.cleanupCapture();
           this.removeDeviceChangeHandler();
-          new import_obsidian11.Notice(t("speechMicDisconnected"));
+          new import_obsidian12.Notice(t("speechMicDisconnected"));
         }
       } catch {
         if (this.phase === "recording") {
@@ -7534,7 +8628,7 @@ var SpeechRecorder = class {
           this.errorKey = "speechMicDisconnected";
           this.cleanupCapture();
           this.removeDeviceChangeHandler();
-          new import_obsidian11.Notice(t("speechMicDisconnected"));
+          new import_obsidian12.Notice(t("speechMicDisconnected"));
         }
       }
     };
@@ -7551,10 +8645,12 @@ var SpeechRecorder = class {
   setApp(app) {
     this.appRef = app;
   }
-  /** Resolve the relative model directory path (relative to the pluginDir CWD). */
   getModelDir() {
     const lang = this.pendingLanguage ?? "zh";
-    return "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
+    if (lang === "zh") {
+      return "models/" + (this.speechModelChoice === "sensevoice" ? "sensevoice" : "zh-2025") + "/";
+    }
+    return "models/en/";
   }
   destroyAsrProcess() {
     if (!this.asrProcess) return;
@@ -7632,6 +8728,35 @@ var SpeechRecorder = class {
       this.destroyAsrProcess();
     }
   }
+  setSpeechModelChoice(choice) {
+    if (choice === this.speechModelChoice) return;
+    this.speechModelChoice = choice;
+    if (!this.isActive && this.asrProcess) {
+      this.destroyAsrProcess();
+    }
+  }
+  setSpeechAutoHotwords(autoHotwords) {
+    this.speechAutoHotwords = autoHotwords;
+  }
+  setSpeechConfusionMapText(text) {
+    this.speechConfusionMapText = text;
+  }
+  getConfusionMap() {
+    const map = {};
+    if (!this.speechConfusionMapText) return map;
+    const lines = this.speechConfusionMapText.split("\n");
+    for (const line of lines) {
+      const idx = line.indexOf(":");
+      if (idx > 0) {
+        const wrong = line.slice(0, idx).trim();
+        const correct = line.slice(idx + 1).trim();
+        if (wrong && correct) {
+          map[wrong] = correct;
+        }
+      }
+    }
+    return map;
+  }
   setHotwordsFile(path) {
     this.hotwordsPath = path || null;
   }
@@ -7639,7 +8764,7 @@ var SpeechRecorder = class {
   getHotwordsPath() {
     let path = null;
     const adapter = this.appRef?.vault.adapter;
-    const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
+    const basePath = adapter instanceof import_obsidian12.FileSystemAdapter ? adapter.getBasePath() : "";
     if (this.hotwordsPath) {
       try {
         const pathModule = require("path");
@@ -7672,9 +8797,48 @@ var SpeechRecorder = class {
   getModelDirInternal(language) {
     const lang = language ?? this.settingsLanguage;
     const adapter = this.appRef?.vault.adapter;
-    const basePath = adapter instanceof import_obsidian11.FileSystemAdapter ? adapter.getBasePath() : "";
+    const basePath = adapter instanceof import_obsidian12.FileSystemAdapter ? adapter.getBasePath() : "";
     const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
-    return pluginDir + "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
+    if (lang === "zh") {
+      return pluginDir + "models/" + (this.speechModelChoice === "sensevoice" ? "sensevoice" : "zh-2025") + "/";
+    }
+    return pluginDir + "models/en/";
+  }
+  async generateAutoHotwordsFile() {
+    if (!this.appRef || !this.speechAutoHotwords) return;
+    try {
+      const adapter = this.appRef.vault.adapter;
+      if (!(adapter instanceof import_obsidian12.FileSystemAdapter)) return;
+      const basePath = adapter.getBasePath();
+      const pathModule = require("path");
+      const fs = require("fs");
+      const hotwordsPath = this.getHotwordsPath() || pathModule.join(basePath, ".obsidian", "plugins", "link-tag-intelligence", "models", "hotwords.txt");
+      const dir = pathModule.dirname(hotwordsPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      const fileNames = this.appRef.vault.getMarkdownFiles().map((f) => f.basename.trim());
+      const tags = Object.keys(this.appRef.metadataCache.getTags() || {}).map((t) => t.replace(/^#/, "").trim());
+      const uniqueWords = /* @__PURE__ */ new Set();
+      const filterAndAdd = (word) => {
+        const clean = word.replace(/[\[\]\(\)#\*_\?]/g, "").trim();
+        if (clean.length >= 2 && clean.length <= 15 && /^[\u4e00-\u9fa5a-zA-Z0-9\s-]+$/.test(clean)) {
+          uniqueWords.add(clean);
+        }
+      };
+      fileNames.forEach(filterAndAdd);
+      tags.forEach(filterAndAdd);
+      const lines = Array.from(uniqueWords).map((word) => `${word} :3.0`);
+      fs.writeFileSync(hotwordsPath, lines.join("\n"), "utf8");
+      debugLog(this.appRef, "speech-recorder.auto-hotwords-generated", {
+        path: hotwordsPath,
+        count: uniqueWords.size
+      });
+    } catch (e) {
+      if (this.appRef) {
+        console.error("[lti-speech] Failed to generate auto hotwords:", e);
+      }
+    }
   }
 };
 
@@ -7824,7 +8988,7 @@ var SentenceManager = class {
     this.partialText = "";
   }
 };
-var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
+var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
   constructor() {
     super(...arguments);
     this.settings = DEFAULT_SETTINGS;
@@ -7850,6 +9014,9 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     this.speechRecorder.setSettingsAutoPunctuate(this.settings.speechAutoPunctuate);
     this.speechRecorder.setSettingsDecodingMethod(this.settings.speechDecodingMethod);
     this.speechRecorder.setSettingsMaxUtteranceSec(this.settings.speechMaxUtteranceSec);
+    this.speechRecorder.setSpeechModelChoice(this.settings.speechModelChoice);
+    this.speechRecorder.setSpeechAutoHotwords(this.settings.speechAutoHotwords);
+    this.speechRecorder.setSpeechConfusionMapText(this.settings.speechConfusionMapText);
     const debugLogPath = await resetDebugLog(this.app);
     debugLog(this.app, "plugin.onload", {
       version: this.manifest.version,
@@ -7954,7 +9121,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       name: this.t("suggestTags"),
       checkCallback: (checking) => {
         const activeFile2 = this.getContextNoteFile();
-        if (!(activeFile2 instanceof import_obsidian12.TFile)) {
+        if (!(activeFile2 instanceof import_obsidian13.TFile)) {
           return false;
         }
         if (!checking) {
@@ -8005,11 +9172,11 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       debugLog(this.app, "file-open", {
         file: file?.path ?? null,
         isSupported: isSupportedNoteFile(file),
-        isExcalidraw: file instanceof import_obsidian12.TFile ? isExcalidrawFile(file) : false,
+        isExcalidraw: file instanceof import_obsidian13.TFile ? isExcalidrawFile(file) : false,
         lastSupportedFilePath: this.lastSupportedFilePath,
         lastExcalidrawFilePath: this.lastExcalidrawFilePath
       });
-      if (file instanceof import_obsidian12.TFile && isSupportedNoteFile(file)) {
+      if (file instanceof import_obsidian13.TFile && isSupportedNoteFile(file)) {
         this.captureSupportedFileContext(file);
         this.lastSupportedFilePath = file.path;
         if (isExcalidrawFile(file)) {
@@ -8019,12 +9186,12 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       this.refreshAllViews({
         reason: "context",
         force: true,
-        changedPaths: file instanceof import_obsidian12.TFile ? [file.path] : void 0
+        changedPaths: file instanceof import_obsidian13.TFile ? [file.path] : void 0
       });
     }));
     this.registerEvent(this.app.metadataCache.on("changed", (file) => {
       const currentFile = this.getContextNoteFile();
-      if (!(file instanceof import_obsidian12.TFile) || !(currentFile instanceof import_obsidian12.TFile) || file.path !== currentFile.path) {
+      if (!(file instanceof import_obsidian13.TFile) || !(currentFile instanceof import_obsidian13.TFile) || file.path !== currentFile.path) {
         return;
       }
       if (this.speechRecorder.isActive && file.path === currentFile.path) {
@@ -8040,16 +9207,16 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
         const view = leaf?.view;
         let leafFile = null;
         let isExcalidrawViewReady = false;
-        if (view instanceof import_obsidian12.FileView) {
+        if (view instanceof import_obsidian13.FileView) {
           leafFile = view.file;
           const isExcalidraw = view.getViewType() === "excalidraw";
           if (isExcalidraw) {
-            if (leafFile instanceof import_obsidian12.TFile) {
+            if (leafFile instanceof import_obsidian13.TFile) {
               this.lastExcalidrawFilePath = leafFile.path;
               isExcalidrawViewReady = true;
             } else if (this.lastExcalidrawFilePath) {
               const lastFile = this.app.vault.getAbstractFileByPath(this.lastExcalidrawFilePath);
-              if (lastFile instanceof import_obsidian12.TFile && isSupportedNoteFile(lastFile)) {
+              if (lastFile instanceof import_obsidian13.TFile && isSupportedNoteFile(lastFile)) {
                 leafFile = lastFile;
                 isExcalidrawViewReady = true;
               }
@@ -8062,13 +9229,13 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
           this.refreshAllViews({
             reason: "context",
             force: true,
-            changedPaths: leafFile instanceof import_obsidian12.TFile ? [leafFile.path] : void 0
+            changedPaths: leafFile instanceof import_obsidian13.TFile ? [leafFile.path] : void 0
           });
         }
       }, 0);
     }));
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
-      if (!(file instanceof import_obsidian12.TFile)) {
+      if (!(file instanceof import_obsidian13.TFile)) {
         return;
       }
       this.refreshAllViews({
@@ -8108,6 +9275,9 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     this.speechRecorder.setSettingsAutoPunctuate(this.settings.speechAutoPunctuate);
     this.speechRecorder.setSettingsDecodingMethod(this.settings.speechDecodingMethod);
     this.speechRecorder.setSettingsMaxUtteranceSec(this.settings.speechMaxUtteranceSec);
+    this.speechRecorder.setSpeechModelChoice(this.settings.speechModelChoice);
+    this.speechRecorder.setSpeechAutoHotwords(this.settings.speechAutoHotwords);
+    this.speechRecorder.setSpeechConfusionMapText(this.settings.speechConfusionMapText);
     await this.saveData(this.settings);
     return;
     if (!this.speechRecorder.isActive) {
@@ -8131,30 +9301,30 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       await applyCompanionPresetToVault(this.app, companionId, state.profile);
     }
     this.refreshAllViews();
-    new import_obsidian12.Notice(this.t("settingsWorkbenchPresetApplied"));
+    new import_obsidian13.Notice(this.t("settingsWorkbenchPresetApplied"));
   }
   async applyCompanionPreset(id) {
     if (id === "semantic-bridge") {
       await this.saveSettings();
       this.refreshAllViews();
-      new import_obsidian12.Notice(this.t("settingsWorkbenchCompanionApplied", { name: "Semantic bridge" }));
+      new import_obsidian13.Notice(this.t("settingsWorkbenchCompanionApplied", { name: "Semantic bridge" }));
       return true;
     }
     const state = await this.getResearchWorkbenchState();
     const status = state.companions.find((item) => item.id === id);
     if (!status?.installed) {
-      new import_obsidian12.Notice(this.t("settingsWorkbenchPluginMissing"));
+      new import_obsidian13.Notice(this.t("settingsWorkbenchPluginMissing"));
       return false;
     }
     await applyCompanionPresetToVault(this.app, id, state.profile);
     this.refreshAllViews();
-    new import_obsidian12.Notice(this.t("settingsWorkbenchCompanionApplied", { name: this.getCompanionDisplayName(id) }));
+    new import_obsidian13.Notice(this.t("settingsWorkbenchCompanionApplied", { name: this.getCompanionDisplayName(id) }));
     return true;
   }
   openCompanionSettings(id) {
     const settingApi = this.app.setting;
     if (!settingApi?.open || !settingApi.openTabById) {
-      new import_obsidian12.Notice(this.t("settingsWorkbenchSettingsUnavailable"));
+      new import_obsidian13.Notice(this.t("settingsWorkbenchSettingsUnavailable"));
       return false;
     }
     settingApi.open();
@@ -8190,7 +9360,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       return parseTagAliasMap(this.settings.tagAliasMapText);
     } catch (error) {
       console.warn(error);
-      new import_obsidian12.Notice(this.t("invalidAliasMap"));
+      new import_obsidian13.Notice(this.t("invalidAliasMap"));
       return /* @__PURE__ */ new Map();
     }
   }
@@ -8200,7 +9370,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     } catch (error) {
       console.warn(error);
       if (!options.suppressNotice) {
-        new import_obsidian12.Notice(this.t("invalidFacetMap"));
+        new import_obsidian13.Notice(this.t("invalidFacetMap"));
       }
       return /* @__PURE__ */ new Map();
     }
@@ -8256,8 +9426,8 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     return isSupportedNoteFile(activeFile) ? activeFile : null;
   }
   getActiveEditorLeaf() {
-    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian12.MarkdownView);
-    if (!(activeView?.file instanceof import_obsidian12.TFile) || !isSupportedNoteFile(activeView.file)) {
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian13.MarkdownView);
+    if (!(activeView?.file instanceof import_obsidian13.TFile) || !isSupportedNoteFile(activeView.file)) {
       return null;
     }
     return activeView.leaf;
@@ -8272,7 +9442,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
   }
   captureEditorContext(leaf) {
     const view = leaf?.view;
-    if (!(view instanceof import_obsidian12.MarkdownView) || !(view.file instanceof import_obsidian12.TFile) || !isSupportedNoteFile(view.file)) {
+    if (!(view instanceof import_obsidian13.MarkdownView) || !(view.file instanceof import_obsidian13.TFile) || !isSupportedNoteFile(view.file)) {
       return false;
     }
     const editorChanged = this.lastEditorLeaf !== leaf || this.lastEditorFilePath !== view.file.path;
@@ -8282,8 +9452,8 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     return editorChanged || fileChanged;
   }
   getContextEditorView() {
-    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian12.MarkdownView);
-    if (activeView?.file instanceof import_obsidian12.TFile && isSupportedNoteFile(activeView.file)) {
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian13.MarkdownView);
+    if (activeView?.file instanceof import_obsidian13.TFile && isSupportedNoteFile(activeView.file)) {
       this.captureEditorContext(activeView.leaf);
       return activeView;
     }
@@ -8292,13 +9462,13 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       return null;
     }
     const rememberedView = this.lastEditorLeaf?.view;
-    if (rememberedView instanceof import_obsidian12.MarkdownView && rememberedView.file instanceof import_obsidian12.TFile && isSupportedNoteFile(rememberedView.file)) {
+    if (rememberedView instanceof import_obsidian13.MarkdownView && rememberedView.file instanceof import_obsidian13.TFile && isSupportedNoteFile(rememberedView.file)) {
       this.lastEditorFilePath = rememberedView.file.path;
       return rememberedView;
     }
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
       const view = leaf.view;
-      if (!(view instanceof import_obsidian12.MarkdownView) || !(view.file instanceof import_obsidian12.TFile) || !isSupportedNoteFile(view.file)) {
+      if (!(view instanceof import_obsidian13.MarkdownView) || !(view.file instanceof import_obsidian13.TFile) || !isSupportedNoteFile(view.file)) {
         continue;
       }
       if (!this.lastEditorFilePath || view.file.path === this.lastEditorFilePath) {
@@ -8313,9 +9483,9 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
   }
   getContextNoteFile() {
     const activeFile = this.app.workspace.getActiveFile();
-    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian12.FileView);
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian13.FileView);
     const leafViewFile = activeView?.file ?? null;
-    if (activeFile instanceof import_obsidian12.TFile) {
+    if (activeFile instanceof import_obsidian13.TFile) {
       if (isSupportedNoteFile(activeFile)) {
         this.captureSupportedFileContext(activeFile);
         return activeFile;
@@ -8323,7 +9493,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     }
     if (activeView) {
       const leafFile = activeView.file;
-      if (leafFile instanceof import_obsidian12.TFile && isSupportedNoteFile(leafFile)) {
+      if (leafFile instanceof import_obsidian13.TFile && isSupportedNoteFile(leafFile)) {
         this.captureSupportedFileContext(leafFile);
         if (isExcalidrawFile(leafFile)) {
           this.lastExcalidrawFilePath = leafFile.path;
@@ -8332,20 +9502,20 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       }
       if (!leafFile && activeView.getViewType() === "excalidraw" && this.lastExcalidrawFilePath) {
         const lastFile = this.app.vault.getAbstractFileByPath(this.lastExcalidrawFilePath);
-        if (lastFile instanceof import_obsidian12.TFile && isSupportedNoteFile(lastFile)) {
+        if (lastFile instanceof import_obsidian13.TFile && isSupportedNoteFile(lastFile)) {
           return lastFile;
         }
       }
     }
     const view = this.getContextEditorView();
-    if (view?.file instanceof import_obsidian12.TFile && isSupportedNoteFile(view.file)) {
+    if (view?.file instanceof import_obsidian13.TFile && isSupportedNoteFile(view.file)) {
       return view.file;
     }
     if (!this.lastSupportedFilePath) {
       return null;
     }
     const file = this.app.vault.getAbstractFileByPath(this.lastSupportedFilePath);
-    return file instanceof import_obsidian12.TFile && isSupportedNoteFile(file) ? file : null;
+    return file instanceof import_obsidian13.TFile && isSupportedNoteFile(file) ? file : null;
   }
   getContextMarkdownFile() {
     return this.getContextNoteFile();
@@ -8358,7 +9528,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     const activeFile = this.getActiveSupportedFile();
     if (mostRecentLeaf && activeFile) {
       this.captureSupportedFileContext(activeFile);
-      if (mostRecentLeaf.view instanceof import_obsidian12.MarkdownView) {
+      if (mostRecentLeaf.view instanceof import_obsidian13.MarkdownView) {
         this.captureEditorContext(mostRecentLeaf);
         return mostRecentLeaf;
       }
@@ -8424,14 +9594,14 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     }
     const file = this.getContextNoteFile();
     if (!file) {
-      new import_obsidian12.Notice(this.t("noActiveNote"));
+      new import_obsidian13.Notice(this.t("noActiveNote"));
       return false;
     }
     await this.app.vault.process(
       file,
       (content) => appendTextToMarkdownSection(content, text, isExcalidrawFile(file))
     );
-    new import_obsidian12.Notice(this.t("appendedToFile", { title: file.basename }));
+    new import_obsidian13.Notice(this.t("appendedToFile", { title: file.basename }));
     this.refreshAllViews();
     return true;
   }
@@ -8469,14 +9639,14 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
         ea.addEmbeddable(100, 100, 200, 50, void 0, file, void 0);
         await ea.addElementsToView(true, true);
         this.pushRecentTarget(file.path);
-        new import_obsidian12.Notice(this.t("insertedLink", { title: file.basename }));
+        new import_obsidian13.Notice(this.t("insertedLink", { title: file.basename }));
         this.refreshAllViews();
         return;
       }
     }
     if (await this.insertTextIntoFile(linkText)) {
       this.pushRecentTarget(file.path);
-      new import_obsidian12.Notice(this.t("insertedLink", { title: file.basename }));
+      new import_obsidian13.Notice(this.t("insertedLink", { title: file.basename }));
     }
   }
   async insertBlockReferenceIntoEditor(file, startLine, endLine) {
@@ -8485,7 +9655,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     const text = formatLegacyBlockReference(target, startLine, endLine);
     if (await this.insertTextIntoFile(text)) {
       this.pushRecentTarget(file.path);
-      new import_obsidian12.Notice(this.t("blockRefInserted", { title: file.basename }));
+      new import_obsidian13.Notice(this.t("blockRefInserted", { title: file.basename }));
     }
   }
   async insertLineReferenceIntoEditor(file, startLine, endLine) {
@@ -8494,7 +9664,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     const text = formatLegacyLineReference(target, startLine, endLine);
     if (await this.insertTextIntoFile(text)) {
       this.pushRecentTarget(file.path);
-      new import_obsidian12.Notice(this.t("lineRefInserted", { title: file.basename }));
+      new import_obsidian13.Notice(this.t("lineRefInserted", { title: file.basename }));
     }
   }
   async getReferenceTooltip(options) {
@@ -8621,7 +9791,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
   }
   openRelationFlow() {
     const currentFile = this.getContextNoteFile();
-    if (!(currentFile instanceof import_obsidian12.TFile)) {
+    if (!(currentFile instanceof import_obsidian13.TFile)) {
       return;
     }
     new RelationKeyModal(this, (relationKey) => {
@@ -8632,7 +9802,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
           frontmatter[relationKey] = next;
         });
         this.pushRecentTarget(candidate.file.path);
-        new import_obsidian12.Notice(this.t("savedRelation", { relation: this.relationLabel(relationKey) }));
+        new import_obsidian13.Notice(this.t("savedRelation", { relation: this.relationLabel(relationKey) }));
         this.refreshAllViews();
       }).open();
     }).open();
@@ -8642,7 +9812,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
   }
   openTagSuggestion() {
     const currentFile = this.getContextNoteFile();
-    if (!(currentFile instanceof import_obsidian12.TFile)) {
+    if (!(currentFile instanceof import_obsidian13.TFile)) {
       return;
     }
     new TagSuggestionModal(this, currentFile).open();
@@ -8669,7 +9839,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     const fs = this.getFs();
     if (!fs) return false;
     const adapter = this.app.vault.adapter;
-    const basePath = adapter instanceof import_obsidian12.FileSystemAdapter ? adapter.getBasePath() : "";
+    const basePath = adapter instanceof import_obsidian13.FileSystemAdapter ? adapter.getBasePath() : "";
     const puncDir = basePath + "/.obsidian/plugins/link-tag-intelligence/models/punc-zh-2024/";
     const modelFile = puncDir + "model.onnx";
     if (fs.existsSync(modelFile)) {
@@ -8682,7 +9852,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     if (!fs.existsSync(puncDir)) {
       fs.mkdirSync(puncDir, { recursive: true });
     }
-    const notice = new import_obsidian12.Notice("\u6B63\u5728\u540E\u53F0\u4E0B\u8F7D\u79BB\u7EBF\u4E2D\u6587\u6807\u70B9\u9884\u6D4B\u6A21\u578B (~40MB)...", 0);
+    const notice = new import_obsidian13.Notice("\u6B63\u5728\u540E\u53F0\u4E0B\u8F7D\u79BB\u7EBF\u4E2D\u6587\u6807\u70B9\u9884\u6D4B\u6A21\u578B (~40MB)...", 0);
     try {
       const url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/punctuation-models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12.tar.bz2";
       const archiveName = "sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12.tar.bz2";
@@ -8707,11 +9877,11 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
         }
       }
       notice.hide();
-      new import_obsidian12.Notice("\u79BB\u7EBF\u6807\u70B9\u7B26\u53F7\u9884\u6D4B\u6A21\u578B\u5C31\u7EEA\u3002");
+      new import_obsidian13.Notice("\u79BB\u7EBF\u6807\u70B9\u7B26\u53F7\u9884\u6D4B\u6A21\u578B\u5C31\u7EEA\u3002");
       return true;
     } catch (e) {
       notice.hide();
-      new import_obsidian12.Notice("\u6807\u70B9\u6A21\u578B\u79BB\u7EBF\u4E0B\u8F7D\u5931\u8D25: " + String(e), 8e3);
+      new import_obsidian13.Notice("\u6807\u70B9\u6A21\u578B\u79BB\u7EBF\u4E0B\u8F7D\u5931\u8D25: " + String(e), 8e3);
       return false;
     }
   }
@@ -8719,9 +9889,10 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     const fs = this.getFs();
     const modelDir = this.speechRecorder.getModelDirInternal();
     const lang = this.settings.speechLanguage;
-    const fileList = getModelFileList(lang);
+    const isSenseVoice = lang === "zh" && this.settings.speechModelChoice === "sensevoice";
+    const fileList = isSenseVoice ? ["model.int8.onnx", "tokens.txt"] : getModelFileList(lang);
     if (!fs) {
-      new import_obsidian12.Notice(this.t("speechModelNotFound"));
+      new import_obsidian13.Notice(this.t("speechModelNotFound"));
       return false;
     }
     let allExist = true;
@@ -8734,13 +9905,13 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       }
     }
     if (allExist) {
-      if (lang === "zh" && this.settings.speechAutoPunctuate) {
+      if (lang === "zh" && this.settings.speechAutoPunctuate && !isSenseVoice) {
         return this.ensurePunctuationModel();
       }
       return true;
     }
     if (!anyExist) {
-      new import_obsidian12.Notice(
+      new import_obsidian13.Notice(
         this.t("speechModelFirstRunTitle") + "\n\n" + this.t("speechModelFirstRunGuide", {
           modelDir,
           zhSize: "~167 MB",
@@ -8750,19 +9921,20 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       );
     }
     const asrReady = await this.downloadSpeechModel();
-    if (asrReady && lang === "zh" && this.settings.speechAutoPunctuate) {
+    if (asrReady && lang === "zh" && this.settings.speechAutoPunctuate && !isSenseVoice) {
       return this.ensurePunctuationModel();
     }
     return asrReady;
   }
   async downloadZhArchive(modelDir) {
-    const url = getModelRepo("zh");
-    const archiveName = "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2";
+    const isSenseVoice = this.settings.speechModelChoice === "sensevoice";
+    const archiveName = isSenseVoice ? "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2" : "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2";
+    const url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/" + archiveName;
     const archivePath = modelDir + archiveName;
-    const notice = new import_obsidian12.Notice(this.t("speechModelDownloadStart", { lang: "\u4E2D\u6587" }), 0);
+    const notice = new import_obsidian13.Notice(this.t("speechModelDownloadStart", { lang: isSenseVoice ? "SenseVoice" : "\u4E2D\u6587" }), 0);
     try {
       const cp = require("child_process");
-      notice.setMessage("Downloading bilingual zh-en model (~80MB)...");
+      notice.setMessage(isSenseVoice ? "Downloading SenseVoice-Small (~75MB)..." : "Downloading bilingual zh-en model (~80MB)...");
       cp.execSync(
         `curl -L -o "${archivePath}" "${url}" --progress-bar 2>&1`,
         { maxBuffer: 1024 * 1024 }
@@ -8772,17 +9944,18 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       child_process2.execSync(`tar -xjf "${archiveName}" --strip-components=1`, { cwd: modelDir, maxBuffer: 1024 * 1024 });
       const fs2 = require("fs");
       const { join } = require("path");
-      const keepInt8 = [
-        "encoder-epoch-99-avg-1.int8.onnx",
-        "decoder-epoch-99-avg-1.int8.onnx",
-        "joiner-epoch-99-avg-1.int8.onnx",
+      const keepFiles = isSenseVoice ? ["model.int8.onnx", "tokens.txt"] : [
+        "encoder.int8.onnx",
+        "decoder.onnx",
+        "joiner.int8.onnx",
         "tokens.txt",
+        "bpe.vocab",
         "bpe.model"
       ];
       for (const f of fs2.readdirSync(modelDir)) {
         const p = join(modelDir, f);
         const st = fs2.statSync(p);
-        if (st.isFile() && !keepInt8.includes(f)) {
+        if (st.isFile() && !keepFiles.includes(f) && f !== archiveName) {
           fs2.unlinkSync(p);
         }
       }
@@ -8791,11 +9964,11 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       } catch {
       }
       notice.hide();
-      new import_obsidian12.Notice("\u4E2D\u6587\u8BED\u97F3\u6A21\u578B\u5C31\u7EEA (~80 MB)\u3002\u73B0\u5728\u53EF\u4EE5\u5F00\u59CB\u5F55\u97F3\u3002");
+      new import_obsidian13.Notice(isSenseVoice ? "SenseVoice \u8BED\u97F3\u6A21\u578B\u5C31\u7EEA (~75 MB)\u3002" : "\u4E2D\u6587\u8BED\u97F3\u6A21\u578B\u5C31\u7EEA (~80 MB)\u3002\u73B0\u5728\u53EF\u4EE5\u5F00\u59CB\u5F55\u97F3\u3002");
       return true;
     } catch (e) {
       notice.hide();
-      new import_obsidian12.Notice("\u6A21\u578B\u4E0B\u8F7D\u5931\u8D25: " + String(e), 8e3);
+      new import_obsidian13.Notice("\u6A21\u578B\u4E0B\u8F7D\u5931\u8D25: " + String(e), 8e3);
       return false;
     }
   }
@@ -8804,14 +9977,14 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     const lang = this.settings.speechLanguage;
     const modelDir = this.speechRecorder.getModelDirInternal();
     if (!fs) {
-      new import_obsidian12.Notice(this.t("speechModelNotFound"));
+      new import_obsidian13.Notice(this.t("speechModelNotFound"));
       return false;
     }
     fs.mkdirSync(modelDir, { recursive: true });
     if (isArchiveDownload(lang)) {
       return this.downloadZhArchive(modelDir);
     }
-    const progressNotice = new import_obsidian12.Notice(
+    const progressNotice = new import_obsidian13.Notice(
       this.t("speechModelDownloadStart", { lang: lang === "zh" ? "\u4E2D\u6587" : "English" }),
       0
     );
@@ -8840,7 +10013,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     const failed = results.filter((r) => !r.success);
     progressNotice.hide();
     if (failed.length === 0) {
-      new import_obsidian12.Notice(this.t("speechModelDownloadComplete", { lang: lang === "zh" ? "\u4E2D\u6587" : "English" }));
+      new import_obsidian13.Notice(this.t("speechModelDownloadComplete", { lang: lang === "zh" ? "\u4E2D\u6587" : "English" }));
       return true;
     }
     this.showManualDownloadGuide(lang, failed.map((r) => r.filename));
@@ -8858,7 +10031,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       baseUrl,
       files: failedFiles.join(", ")
     });
-    new import_obsidian12.Notice(message, 15e3);
+    new import_obsidian13.Notice(message, 15e3);
   }
   async runResearchIngestion(request) {
     const result = await runIngestionCommand(
@@ -8876,7 +10049,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
         this.openFile(importedFile);
       }
     }
-    new import_obsidian12.Notice(
+    new import_obsidian13.Notice(
       result.warnings.length > 0 ? this.t("ingestionCreatedWithWarnings", { title: result.title, count: result.warnings.length }) : this.t("ingestionCreated", { title: result.title })
     );
     return result;
@@ -8885,7 +10058,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     const startedAt = Date.now();
     while (Date.now() - startedAt <= timeoutMs) {
       const file = this.app.vault.getAbstractFileByPath(path);
-      if (file instanceof import_obsidian12.TFile) {
+      if (file instanceof import_obsidian13.TFile) {
         return file;
       }
       await new Promise((resolve) => window.setTimeout(resolve, 150));
@@ -8953,7 +10126,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       this.captureSupportedFileContext(file);
       this.captureEditorContext(leaf);
       const view = leaf.view;
-      if (view instanceof import_obsidian12.MarkdownView) {
+      if (view instanceof import_obsidian13.MarkdownView) {
         const editor = view.editor;
         const start = Math.max(0, startLine - 1);
         const safeEndLine = Math.max(start, (endLine ?? startLine) - 1);
@@ -8971,9 +10144,9 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       this.captureSupportedFileContext(file);
       this.captureEditorContext(leaf);
       const view = leaf.view;
-      if (view instanceof import_obsidian12.MarkdownView) {
+      if (view instanceof import_obsidian13.MarkdownView) {
         const cache = this.app.metadataCache.getFileCache(file);
-        const resolved = cache ? (0, import_obsidian12.resolveSubpath)(cache, `#^${blockId}`) : null;
+        const resolved = cache ? (0, import_obsidian13.resolveSubpath)(cache, `#^${blockId}`) : null;
         if (resolved?.type === "block") {
           const editor = view.editor;
           const start = Math.max(0, resolved.start.line);
@@ -8992,7 +10165,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       this.openFile(file);
       return;
     }
-    new import_obsidian12.Notice(path);
+    new import_obsidian13.Notice(path);
   }
   openResolvedLineReference(target, sourcePath, startLine, endLine) {
     const file = resolveNoteTarget(this.app, target, sourcePath);
@@ -9000,7 +10173,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       this.openFileAtLine(file, startLine, endLine);
       return;
     }
-    new import_obsidian12.Notice(target);
+    new import_obsidian13.Notice(target);
   }
   openResolvedBlockReference(target, sourcePath, blockId) {
     const file = resolveNoteTarget(this.app, target, sourcePath);
@@ -9008,7 +10181,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
       this.openFileAtBlock(file, blockId);
       return;
     }
-    new import_obsidian12.Notice(target);
+    new import_obsidian13.Notice(target);
   }
   async insertLinkFromPath(path) {
     const file = resolveNoteTarget(this.app, path);
@@ -9019,7 +10192,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
   }
   async addSuggestedTags(tags) {
     const currentFile = this.getContextNoteFile();
-    if (!(currentFile instanceof import_obsidian12.TFile)) {
+    if (!(currentFile instanceof import_obsidian13.TFile)) {
       return;
     }
     await appendTagsToFrontmatter(this.app, currentFile, tags);
@@ -9055,12 +10228,12 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     const commandIds = commandRegistry ? Object.keys(commandRegistry) : [];
     const resolved = candidates.find((candidate) => commandIds.includes(candidate)) ?? candidates.map((candidate) => commandIds.find((commandId) => commandId.endsWith(`:${candidate}`) || commandId.includes(candidate))).find(Boolean);
     if (!resolved || typeof commands?.executeCommandById !== "function") {
-      new import_obsidian12.Notice(this.t("settingsWorkbenchCommandUnavailable"));
+      new import_obsidian13.Notice(this.t("settingsWorkbenchCommandUnavailable"));
       return false;
     }
     const result = await commands.executeCommandById(resolved);
     if (result === false) {
-      new import_obsidian12.Notice(this.t("settingsWorkbenchCommandUnavailable"));
+      new import_obsidian13.Notice(this.t("settingsWorkbenchCommandUnavailable"));
       return false;
     }
     return true;
@@ -9099,7 +10272,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
     const wasRecording = recorder.getSnapshot().phase === "recording";
     const errorKey = await recorder.toggle((key, vars) => this.t(key, vars));
     if (errorKey) {
-      new import_obsidian12.Notice(this.t(errorKey));
+      new import_obsidian13.Notice(this.t(errorKey));
       this._sentenceManager?.reset();
       this.refreshAllViews();
       return;
@@ -9157,7 +10330,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian12.Plugin {
         this.speechRecorder.forceStop();
         this.cancelAutoStopTimer();
         this.refreshAllViews();
-        new import_obsidian12.Notice(this.t("speechAutoStopTimeoutReached"));
+        new import_obsidian13.Notice(this.t("speechAutoStopTimeoutReached"));
         return;
       }
       this.refreshAllViews();

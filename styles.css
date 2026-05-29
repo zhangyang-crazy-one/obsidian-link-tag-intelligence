@@ -4,25 +4,25 @@
 }
 
 .link-tag-intelligence-view {
-  --lti-accent: color-mix(in srgb, var(--interactive-accent) 90%, #6aa9ff);
-  --lti-accent-hover: color-mix(in srgb, var(--interactive-accent-hover, var(--interactive-accent)) 80%, #9fc1ff);
-  --lti-accent-soft: color-mix(in srgb, var(--lti-accent) 15%, transparent);
-  --lti-accent-softer: color-mix(in srgb, var(--lti-accent) 8%, transparent);
-  --lti-surface: color-mix(in srgb, var(--background-primary) 94%, #0c1117);
-  --lti-surface-raised: color-mix(in srgb, var(--background-secondary) 84%, #111923);
-  --lti-surface-muted: color-mix(in srgb, var(--background-secondary) 62%, #151e28);
-  --lti-surface-tint: color-mix(in srgb, var(--lti-accent) 6%, var(--lti-surface));
-  --lti-border: color-mix(in srgb, var(--background-modifier-border) 86%, #334152);
-  --lti-border-hover: color-mix(in srgb, var(--background-modifier-border-hover, var(--lti-accent)) 84%, #5e84b8);
+  --lti-accent: color-mix(in srgb, var(--interactive-accent) 92%, #569aff);
+  --lti-accent-hover: color-mix(in srgb, var(--interactive-accent-hover, var(--interactive-accent)) 84%, #8bb5ff);
+  --lti-accent-soft: color-mix(in srgb, var(--lti-accent) 12%, transparent);
+  --lti-accent-softer: color-mix(in srgb, var(--lti-accent) 6%, transparent);
+  --lti-surface: color-mix(in srgb, var(--background-primary) 96%, #090c13);
+  --lti-surface-raised: color-mix(in srgb, var(--background-secondary) 88%, #0f131a);
+  --lti-surface-muted: color-mix(in srgb, var(--background-secondary) 66%, #121821);
+  --lti-surface-tint: color-mix(in srgb, var(--lti-accent) 4%, var(--lti-surface));
+  --lti-border: color-mix(in srgb, var(--background-modifier-border) 80%, #293445);
+  --lti-border-hover: color-mix(in srgb, var(--background-modifier-border-hover, var(--lti-accent)) 80%, #4a638b);
   --lti-text-soft: var(--text-muted);
   --lti-text-faint: var(--text-faint, var(--text-muted));
-  --lti-transition: 200ms ease-in-out;
-  --lti-transition-fast: 80ms ease;
-  --lti-shadow-soft: 0 18px 40px -30px color-mix(in srgb, var(--lti-accent) 26%, transparent);
+  --lti-transition: 240ms cubic-bezier(0.4, 0, 0.2, 1);
+  --lti-transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  --lti-shadow-soft: 0 16px 36px -24px color-mix(in srgb, var(--lti-accent) 20%, transparent);
   --lti-shadow-panel:
-    0 18px 36px -30px color-mix(in srgb, #02060d 68%, transparent),
-    0 6px 16px -14px color-mix(in srgb, var(--lti-accent) 18%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #ffffff 4%, transparent);
+    0 16px 36px -24px rgba(0, 0, 0, 0.5),
+    0 6px 16px -12px color-mix(in srgb, var(--lti-accent) 15%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
   container-type: inline-size;
   display: flex;
   flex-direction: column;
@@ -31,8 +31,8 @@
   min-height: auto;
   padding: 0.72rem 0.72rem 0.92rem;
   background:
-    radial-gradient(circle at top, color-mix(in srgb, var(--lti-accent) 10%, transparent), transparent 34%),
-    linear-gradient(180deg, color-mix(in srgb, var(--lti-accent) 3%, transparent), transparent 16%),
+    radial-gradient(circle at top, color-mix(in srgb, var(--lti-accent) 8%, transparent), transparent 30%),
+    linear-gradient(180deg, color-mix(in srgb, var(--lti-accent) 3%, transparent), transparent 12%),
     var(--lti-surface);
 }
 
@@ -72,12 +72,25 @@
 .lti-suggestion-card {
   position: relative;
   min-width: 0;
-  border: 1px solid var(--lti-border);
+  border: 1px solid color-mix(in srgb, var(--lti-border) 90%, rgba(255, 255, 255, 0.03));
   border-radius: 16px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--background-secondary) 48%, transparent), transparent 32%),
+    linear-gradient(180deg, color-mix(in srgb, var(--background-secondary) 80%, transparent), transparent 100%),
     var(--lti-surface);
   box-shadow: var(--lti-shadow-panel);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: transform var(--lti-transition), border-color var(--lti-transition), box-shadow var(--lti-transition);
+}
+
+.lti-speech-panel:hover,
+.lti-toolbar:hover,
+.lti-section:hover,
+.lti-result-card:hover,
+.lti-suggestion-card:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--interactive-accent) 15%, var(--lti-border-hover));
+  box-shadow: var(--lti-shadow-panel), 0 8px 24px -12px rgba(0, 0, 0, 0.4);
 }
 
 .lti-speech-panel {
@@ -402,18 +415,14 @@
   border-radius: 13px 13px 0 0;
 }
 
-.link-tag-intelligence-view .lti-section-toggle::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 0.56rem;
-  width: 0.28rem;
-  height: 0.28rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--interactive-accent) 40%, transparent);
-  transform: translateY(-50%);
-  opacity: 0.72;
-  pointer-events: none;
+.link-tag-intelligence-view .lti-section-toggle::before,
+.link-tag-intelligence-view .lti-section-toggle::after,
+.link-tag-intelligence-view .lti-section-header::before,
+.link-tag-intelligence-view .lti-section-header::after,
+.link-tag-intelligence-view .lti-section-chevron::before,
+.link-tag-intelligence-view .lti-section-chevron::after {
+  content: none !important;
+  display: none !important;
 }
 
 .link-tag-intelligence-view .lti-section-toggle:hover {
@@ -532,48 +541,65 @@
 }
 
 .lti-current-note-card {
-  gap: 0.26rem;
-  padding: 0.7rem 0.72rem;
-  border-radius: 13px;
-  border-color: color-mix(in srgb, var(--lti-accent) 14%, var(--lti-border));
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.5rem !important;
+  padding: 0.72rem 0.78rem !important;
+  border-radius: 13px !important;
+  border: 1px solid color-mix(in srgb, var(--lti-accent) 14%, var(--lti-border)) !important;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--lti-accent) 6%, transparent), transparent 100%),
-    var(--lti-surface-muted);
+    var(--lti-surface-muted) !important;
+  box-sizing: border-box !important;
 }
 
 .lti-current-note-card .lti-item-topline {
-  align-items: center;
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 .lti-current-note-card .lti-note-link.lti-note-title {
-  display: block;
-  width: 100%;
-  max-width: 100%;
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
   padding: 0 !important;
+  margin: 0 !important;
   border: 0 !important;
   border-radius: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
-  color: var(--text-normal);
-  font-size: 0.98rem;
-  font-weight: 760;
-  line-height: 1.28;
-  text-decoration: none;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  color: var(--text-normal) !important;
+  font-size: 0.95rem !important;
+  font-weight: 760 !important;
+  line-height: 1.38 !important;
+  text-decoration: none !important;
+  text-align: left !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
 }
 
 .lti-current-note-card .lti-note-link.lti-note-title:hover {
-  color: var(--text-accent);
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--interactive-accent) 34%, transparent);
+  color: var(--text-accent) !important;
+  text-decoration: underline !important;
+  text-decoration-color: color-mix(in srgb, var(--interactive-accent) 34%, transparent) !important;
 }
 
 .lti-current-note-card .lti-item-path {
-  margin-top: 0.02rem;
-  font-size: 0.72rem;
-  line-height: 1.4;
+  margin-top: 0.52rem !important;
+  padding-top: 0.52rem !important;
+  border-top: 1px dashed color-mix(in srgb, var(--lti-border) 45%, transparent) !important;
+  font-size: 0.72rem !important;
+  color: var(--text-muted) !important;
+  opacity: 0.72 !important;
+  line-height: 1.45 !important;
+  word-break: break-all !important;
+  overflow-wrap: anywhere !important;
+  white-space: pre-wrap !important;
+  display: block !important;
 }
 
 .lti-empty {
@@ -1947,20 +1973,20 @@
 }
 
 .lti-settings-root {
-  --lti-settings-border: color-mix(in srgb, var(--background-modifier-border) 84%, #344255);
-  --lti-settings-border-strong: color-mix(in srgb, var(--interactive-accent) 20%, #4b6693);
+  --lti-settings-border: color-mix(in srgb, var(--background-modifier-border) 80%, #283344);
+  --lti-settings-border-strong: color-mix(in srgb, var(--interactive-accent) 25%, #3c5478);
   --lti-settings-surface:
-    linear-gradient(180deg, color-mix(in srgb, var(--interactive-accent) 4%, transparent), transparent 100%),
-    color-mix(in srgb, var(--background-secondary) 76%, #111923);
+    linear-gradient(180deg, color-mix(in srgb, var(--interactive-accent) 2%, transparent), transparent 100%),
+    color-mix(in srgb, var(--background-secondary) 82%, #0e141c);
   --lti-settings-surface-raised:
-    linear-gradient(180deg, color-mix(in srgb, #ffffff 4%, transparent), transparent 100%),
-    color-mix(in srgb, var(--background-secondary) 84%, #131c26);
+    linear-gradient(180deg, color-mix(in srgb, #ffffff 3%, transparent), transparent 100%),
+    color-mix(in srgb, var(--background-secondary) 88%, #101720);
   --lti-settings-shadow:
-    0 22px 48px -34px rgba(0, 0, 0, 0.78),
-    0 10px 24px -22px color-mix(in srgb, var(--interactive-accent) 18%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #ffffff 4%, transparent);
-  --lti-settings-radius: 20px;
-  --lti-settings-radius-sm: 15px;
+    0 24px 50px -30px rgba(0, 0, 0, 0.7),
+    0 8px 24px -20px color-mix(in srgb, var(--interactive-accent) 20%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --lti-settings-radius: 16px;
+  --lti-settings-radius-sm: 10px;
 }
 
 .lti-workbench {
@@ -1983,10 +2009,23 @@
 .lti-workbench-config-card,
 .lti-workbench-companion-card,
 .lti-workbench-advanced-panel {
-  border: 1px solid var(--lti-settings-border);
+  border: 1px solid color-mix(in srgb, var(--lti-settings-border) 90%, rgba(255, 255, 255, 0.04));
   border-radius: var(--lti-settings-radius);
-  background: var(--lti-settings-surface);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--interactive-accent) 1%, transparent), transparent 100%), var(--lti-settings-surface);
   box-shadow: var(--lti-settings-shadow);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: transform var(--lti-transition), border-color var(--lti-transition), box-shadow var(--lti-transition);
+}
+
+.lti-workbench-hero:hover,
+.lti-workbench-section-card:hover,
+.lti-workbench-config-card:hover,
+.lti-workbench-companion-card:hover,
+.lti-workbench-advanced-panel:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--interactive-accent) 20%, var(--lti-settings-border-strong));
+  box-shadow: var(--lti-settings-shadow), 0 16px 36px -16px rgba(0, 0, 0, 0.52);
 }
 
 .lti-workbench-hero {
@@ -2042,9 +2081,17 @@
   gap: 0.18rem;
   min-width: 0;
   padding: 0.72rem 0.78rem;
-  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--lti-settings-border) 80%, rgba(255, 255, 255, 0.02)) !important;
   border-radius: 16px;
   background: var(--lti-settings-surface-raised);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  cursor: default;
+}
+
+.lti-workbench-stat:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--interactive-accent) 22%, var(--lti-settings-border-strong)) !important;
+  box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
 }
 
 .lti-workbench-stat-label {
@@ -2667,22 +2714,33 @@ details.lti-workbench-guide-details[open] summary.lti-workbench-guide-summary .l
 }
 
 .lti-workbench-select {
-  appearance: auto;
+  appearance: none !important;
+  -webkit-appearance: none !important;
   max-width: 100%;
   overflow: visible;
-  height: auto;
-  min-height: 2.2rem;
-  padding-top: 0;
-  padding-bottom: 0;
-  line-height: normal;
+  height: 38px !important;
+  min-height: 38px !important;
+  padding: 0.46rem 2.2rem 0.46rem 0.78rem !important;
+  line-height: 1.4 !important;
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>') !important;
+  background-repeat: no-repeat !important;
+  background-position: right 0.78rem center !important;
+  background-size: 0.95rem !important;
+  cursor: pointer !important;
+  border-radius: 8px !important;
+  border: 1px solid var(--lti-border) !important;
+  background-color: var(--background-modifier-form-field) !important;
+  color: var(--text-normal) !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease !important;
 }
 
 .lti-workbench-input:focus,
 .lti-workbench-textarea:focus,
 .lti-workbench-select:focus {
-  border-color: color-mix(in srgb, var(--interactive-accent) 30%, var(--background-modifier-border));
-  outline: 2px solid color-mix(in srgb, var(--interactive-accent) 24%, transparent);
-  outline-offset: 2px;
+  border-color: var(--interactive-accent) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 18%, transparent) !important;
+  outline: none !important;
+  background-color: var(--background-primary) !important;
 }
 
 .lti-workbench-switch-row {
@@ -3489,13 +3547,13 @@ details.lti-workbench-guide-details[open] summary.lti-workbench-guide-summary .l
 
 .lti-settings-root .lti-workbench-page-nav {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 0.35rem;
   padding: 0.35rem;
   border: 1px solid var(--lti-settings-border);
   border-radius: 14px;
-  background: color-mix(in srgb, var(--background-secondary) 84%, var(--background-primary-alt));
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15);
+  background: color-mix(in srgb, var(--background-secondary) 75%, #0d121a);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(255, 255, 255, 0.03);
 }
 
 .lti-settings-root .lti-workbench-page-tab {
@@ -3508,34 +3566,31 @@ details.lti-workbench-guide-details[open] summary.lti-workbench-guide-summary .l
   overflow: hidden;
   text-overflow: ellipsis;
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
   font-weight: 650;
   color: var(--text-muted);
   cursor: pointer;
-  transition:
-    background-color 0.22s cubic-bezier(0.4, 0, 0.2, 1),
-    color 0.22s cubic-bezier(0.4, 0, 0.2, 1),
-    box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1),
-    transform 0.1s ease;
+  transition: all 0.24s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .lti-settings-root .lti-workbench-page-tab:hover {
   color: var(--text-normal);
-  background-color: color-mix(in srgb, var(--background-primary) 34%, transparent);
+  background-color: color-mix(in srgb, var(--background-primary) 50%, transparent);
 }
 
 .lti-settings-root .lti-workbench-page-tab:active {
-  transform: scale(0.97);
+  transform: scale(0.96);
 }
 
 .lti-settings-root .lti-workbench-page-tab.is-active {
-  background: var(--background-primary);
-  color: var(--text-accent);
-  font-weight: 750;
+  background: linear-gradient(135deg, var(--background-primary) 0%, color-mix(in srgb, var(--background-primary) 94%, #121822) 100%) !important;
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 34%, var(--lti-settings-border)) !important;
+  color: var(--text-accent) !important;
+  font-weight: 780 !important;
   box-shadow:
-    0 2px 4px rgba(0, 0, 0, 0.15),
-    0 1px 2px rgba(0, 0, 0, 0.1),
-    inset 0 1px 0 color-mix(in srgb, #ffffff 10%, transparent);
+    0 4px 14px -3px rgba(0, 0, 0, 0.4),
+    0 1px 3px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
 }
 
 .lti-settings-root .lti-workbench-page {
@@ -3711,7 +3766,7 @@ details.lti-workbench-guide-details[open] summary.lti-workbench-guide-summary .l
 
 @container (max-width: 62rem) {
   .lti-settings-root .lti-workbench-page-nav {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .lti-settings-root .lti-workbench-settings-grid {
@@ -3728,7 +3783,10 @@ details.lti-workbench-guide-details[open] summary.lti-workbench-guide-summary .l
 }
 
 @container (max-width: 46rem) {
-  .lti-settings-root .lti-workbench-page-nav,
+  .lti-settings-root .lti-workbench-page-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .lti-settings-root .lti-workbench-action-group-grid,
   .lti-settings-root .lti-workbench-module-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -5327,3 +5385,626 @@ button[lvl="primary"]:hover {
   color: var(--text-normal);
 }
 .lti-voice-dir-input { display: none; }
+
+/* ── AI Transcription Section Styles ── */
+.lti-ai-transcribe-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.25rem 0;
+}
+
+.lti-ai-file-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.lti-ai-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.lti-ai-file-select {
+  width: 100%;
+  max-width: 100%;
+  border-radius: 8px;
+  background-color: var(--background-modifier-form-field);
+  border: 1px solid var(--lti-border);
+  padding: 6px 10px !important;
+  color: var(--text-normal);
+  font-size: 0.85rem;
+  height: 36px !important;
+  min-height: 36px !important;
+  line-height: 24px !important;
+  box-sizing: border-box;
+}
+
+.lti-ai-no-files {
+  font-style: italic;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.lti-ai-btn-row {
+  margin: 0.25rem 0;
+}
+
+.lti-ai-run-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.lti-ai-run-icon {
+  font-size: 0.75rem;
+}
+
+/* Premium live status cards grid */
+.lti-ai-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+  margin-top: 0.2rem;
+}
+
+.lti-ai-preview-card {
+  padding: 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--lti-border);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--lti-accent) 2%, transparent), transparent 100%), var(--lti-surface-raised);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}
+
+.lti-ai-preview-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 0.25rem;
+  letter-spacing: 0.03em;
+}
+
+.lti-ai-preview-content {
+  font-size: 0.78rem;
+  color: var(--text-normal);
+  line-height: 1.4;
+  height: 2.8em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-all;
+}
+
+.lti-ai-preview-selection {
+  font-family: var(--font-monospace);
+  color: var(--text-accent);
+}
+
+.lti-ai-preview-summary {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+/* Accordion */
+.lti-ai-accordion {
+  border: 1px solid var(--lti-border) !important;
+  border-radius: 12px !important;
+  background-color: var(--lti-surface-raised) !important;
+  overflow: hidden;
+  margin-top: 0.25rem;
+  box-shadow: var(--lti-shadow-panel);
+}
+
+.lti-ai-accordion-header {
+  padding: 8px 12px;
+  background-color: var(--lti-surface-raised) !important;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.lti-ai-accordion-header:hover {
+  background-color: var(--background-modifier-hover) !important;
+}
+
+.lti-ai-accordion-title {
+  font-size: 0.8rem;
+  font-weight: 680;
+  color: var(--text-muted);
+}
+
+.lti-ai-accordion-body {
+  padding: 8px;
+  border-top: 1px solid var(--lti-border) !important;
+  background-color: var(--lti-surface) !important;
+}
+
+.lti-ai-templates-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr));
+  gap: 0.4rem;
+}
+
+.lti-ai-grid-template-btn {
+  background-color: var(--lti-surface-raised) !important;
+  border: 1px solid var(--lti-border) !important;
+  color: var(--text-normal) !important;
+  border-radius: 8px !important;
+  padding: 6px 8px;
+  font-size: 0.78rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+  line-height: 1.35 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 2.2rem !important;
+}
+
+.lti-ai-grid-template-btn:hover {
+  background-color: var(--background-modifier-hover) !important;
+  border-color: var(--lti-border-hover) !important;
+  transform: translateY(-1px);
+}
+
+.lti-ai-grid-template-btn.is-active {
+  background-color: var(--lti-accent-soft) !important;
+  color: var(--text-accent) !important;
+  border-color: var(--interactive-accent) !important;
+  font-weight: 680 !important;
+}
+
+/* Prompt Preview Box styling */
+.lti-ai-prompt-preview-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.2rem;
+}
+
+.lti-ai-compiled-prompt-textarea {
+  font-family: var(--font-body) !important;
+  font-size: 0.78rem !important;
+  line-height: 1.45 !important;
+  background-color: var(--lti-surface-muted) !important;
+  border: 1px solid var(--lti-border) !important;
+  color: var(--text-normal) !important;
+  border-radius: 8px !important;
+  padding: 8px 10px !important;
+  resize: none !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2) !important;
+}
+
+.theme-dark .lti-ai-compiled-prompt-textarea {
+  background-color: #07080a !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: inset 0 1.5px 3px rgba(0, 0, 0, 0.45) !important;
+  color: #d0d6e0 !important;
+}
+
+/* Status display */
+.lti-ai-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  margin-top: 0.4rem;
+  border: 1px solid transparent;
+}
+
+.lti-ai-status.is-progress {
+  background-color: color-mix(in srgb, var(--text-accent) 8%, transparent);
+  border-color: color-mix(in srgb, var(--text-accent) 20%, transparent);
+  color: var(--text-accent);
+}
+
+.lti-ai-status.is-success {
+  background-color: color-mix(in srgb, var(--text-success) 8%, transparent);
+  border-color: color-mix(in srgb, var(--text-success) 20%, transparent);
+  color: var(--text-success);
+}
+
+.lti-ai-status.is-error {
+  background-color: color-mix(in srgb, var(--text-error) 8%, transparent);
+  border-color: color-mix(in srgb, var(--text-error) 20%, transparent);
+  color: var(--text-error);
+}
+
+.lti-ai-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: lti-spin 0.8s linear infinite;
+  display: inline-block;
+}
+
+@keyframes lti-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* AI Settings Section Styles */
+.lti-ai-templates-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.lti-ai-template-card {
+  padding: 1rem;
+  border: 1px solid var(--lti-border) !important;
+  border-radius: 12px !important;
+  background-color: var(--lti-surface-raised) !important;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  box-shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.3) !important;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.lti-ai-template-card:hover {
+  border-color: var(--lti-border-hover) !important;
+  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.42), 0 2px 6px -4px color-mix(in srgb, var(--interactive-accent) 15%, transparent) !important;
+}
+
+.lti-ai-template-name-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lti-ai-template-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  min-width: 80px;
+}
+
+.lti-ai-template-name-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.lti-ai-template-delete-btn {
+  flex-shrink: 0;
+}
+
+.lti-ai-template-prompt-area {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.lti-ai-template-textarea {
+  width: 100%;
+  font-family: var(--font-monospace);
+  font-size: 0.82rem;
+  resize: vertical;
+  line-height: 1.4;
+  padding: 8px;
+}
+
+.lti-ai-template-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 0.5rem;
+}
+
+.lti-ai-template-max-hint {
+  font-style: italic;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* API Connection Test row & status */
+.lti-ai-test-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.72rem;
+  margin-top: 0.95rem;
+  padding-top: 0.85rem;
+  border-top: 1px dashed var(--background-modifier-border);
+}
+
+.lti-ai-test-btn {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.lti-ai-test-btn:hover {
+  background-color: var(--interactive-accent-hover);
+}
+
+.lti-ai-test-status {
+  font-size: 0.82rem;
+  font-weight: 550;
+  line-height: 1.45;
+  padding: 0.62rem 0.85rem;
+  border-radius: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  display: none;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.lti-ai-test-status:not(:empty) {
+  display: inline-block;
+}
+
+.lti-ai-test-status.is-success {
+  color: var(--text-success);
+  background-color: color-mix(in srgb, var(--text-success) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text-success) 20%, transparent);
+}
+
+.lti-ai-test-status.is-pending {
+  color: var(--text-accent);
+  background-color: color-mix(in srgb, var(--text-accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text-accent) 20%, transparent);
+}
+
+.lti-ai-test-status.is-error {
+  color: var(--text-error);
+  background-color: color-mix(in srgb, var(--text-error) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text-error) 20%, transparent);
+}
+
+/* Audio Import button in sidebar */
+.lti-ai-import-btn {
+  margin-top: 0.25rem;
+  font-size: 0.8rem !important;
+  padding: 4px 8px !important;
+  align-self: flex-start;
+  border: 1px solid var(--background-modifier-border);
+  background-color: transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.lti-ai-import-btn:hover {
+  background-color: var(--background-modifier-hover);
+  border-color: var(--text-muted);
+}
+
+
+/* ── Premium Vercel-like Aesthetic Refinements ── */
+
+/* 1. Universal Transition and 3D Card lift */
+.lti-workbench-section-card,
+.lti-workbench-companion-card,
+.lti-workbench-module-card,
+.lti-workbench-action-tile {
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.lti-workbench-section-card:hover,
+.lti-workbench-companion-card:hover,
+.lti-workbench-module-card:hover,
+.lti-workbench-action-tile:hover {
+  transform: translateY(-2px);
+  border-color: var(--lti-settings-border-strong) !important;
+  box-shadow: 
+    0 16px 36px -12px rgba(0, 0, 0, 0.45),
+    0 4px 12px -4px color-mix(in srgb, var(--interactive-accent) 20%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 6%, transparent) !important;
+}
+
+/* 2. Premium active page tab navigation glow */
+.lti-settings-root .lti-workbench-page-tab {
+  transition: all 0.24s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.lti-settings-root .lti-workbench-page-tab.is-active {
+  background: linear-gradient(135deg, var(--interactive-accent) 0%, color-mix(in srgb, var(--interactive-accent) 80%, #6ba9ff) 100%) !important;
+  color: #ffffff !important;
+  font-weight: 780 !important;
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 45%, var(--lti-settings-border)) !important;
+  box-shadow: 
+    0 6px 18px -4px color-mix(in srgb, var(--interactive-accent) 45%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
+}
+
+/* 3. Inputs, selects, and textareas focus rings */
+.lti-workbench-input,
+.lti-workbench-textarea,
+.lti-workbench-select,
+.lti-settings-root input[type="text"],
+.lti-settings-root input[type="password"],
+.lti-settings-root textarea,
+.lti-settings-root select,
+.lti-ai-template-textarea,
+.link-tag-intelligence-view select,
+.link-tag-intelligence-view textarea {
+  transition: all 0.24s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  border-radius: 8px !important;
+}
+
+.lti-workbench-input:focus,
+.lti-workbench-textarea:focus,
+.lti-workbench-select:focus,
+.lti-settings-root input[type="text"]:focus,
+.lti-settings-root input[type="password"]:focus,
+.lti-settings-root textarea:focus,
+.lti-settings-root select:focus,
+.lti-ai-template-textarea:focus,
+.link-tag-intelligence-view select:focus,
+.link-tag-intelligence-view textarea:focus {
+  border-color: var(--interactive-accent) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 18%, transparent) !important;
+  outline: none !important;
+  background-color: var(--background-primary) !important;
+}
+
+/* 4. Sidebar previews premium glassmorphic feel */
+.lti-ai-preview-card {
+  background-color: var(--lti-surface-raised) !important;
+  border: 1px solid var(--lti-border) !important;
+  border-radius: 12px !important;
+  padding: 0.72rem 0.78rem !important;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.lti-ai-preview-card:hover {
+  border-color: var(--lti-border-hover) !important;
+  background-color: var(--lti-surface-tint) !important;
+  box-shadow: var(--lti-shadow-panel) !important;
+}
+
+/* 5. Custom premium slide-in entrance animations */
+@keyframes ltiSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.lti-workbench-page,
+.lti-sidebar-sections {
+  animation: ltiSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* 6. Smooth pulse loading and active actions animations */
+@keyframes ltiPulseGlow {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--interactive-accent) 45%, transparent); }
+  70% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--interactive-accent) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--interactive-accent) 0%, transparent); }
+}
+
+.lti-ai-run-btn.is-loading,
+.lti-workbench-button.is-loading {
+  animation: ltiPulseGlow 1.6s infinite ease-in-out !important;
+}
+
+/* ── Custom Dropdown Menu Redesign ── */
+.lti-custom-dropdown-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.lti-custom-dropdown-trigger {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  width: 100% !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  padding: 0.46rem 0.78rem !important;
+  text-align: left !important;
+  cursor: pointer !important;
+  box-sizing: border-box !important;
+}
+
+.lti-custom-dropdown-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem !important;
+  color: var(--text-normal) !important;
+}
+
+.lti-custom-dropdown-chevron {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  margin-left: 0.5rem;
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>');
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  opacity: 0.7;
+}
+
+.lti-custom-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 100%;
+  max-height: 250px;
+  overflow-y: auto;
+  z-index: 9999;
+  background-color: var(--background-primary) !important;
+  border: 1px solid var(--lti-border) !important;
+  border-radius: 10px !important;
+  box-shadow: 
+    0 10px 30px -10px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+  padding: 0.35rem !important;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  box-sizing: border-box !important;
+  animation: ltiDropdownFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes ltiDropdownFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.lti-custom-dropdown-menu[hidden] {
+  display: none !important;
+}
+
+.lti-custom-dropdown-item {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  border: 0 !important;
+  background: transparent !important;
+  width: 100% !important;
+  padding: 0.52rem 0.65rem !important;
+  border-radius: 6px !important;
+  color: var(--text-normal) !important;
+  font-size: 0.82rem !important;
+  text-align: left !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  box-sizing: border-box !important;
+  transition: background-color 0.15s ease, color 0.15s ease !important;
+}
+
+.lti-custom-dropdown-item:hover {
+  background-color: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-modifier-hover)) !important;
+  color: var(--text-accent) !important;
+}
+
+.lti-custom-dropdown-item.is-active {
+  background-color: var(--interactive-accent) !important;
+  color: var(--text-on-accent) !important;
+  font-weight: 600 !important;
+}
+
+

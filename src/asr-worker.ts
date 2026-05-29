@@ -41,10 +41,14 @@ const CONFUSION_MAP: Record<string, string> = {
   "在显": "在险",
 };
 
+let activeConfusionMap: Record<string, string> = { ...CONFUSION_MAP };
+
 function applyEndpointCorrections(text: string): string {
   let result = text;
-  for (const [wrong, correct] of Object.entries(CONFUSION_MAP)) {
-    if (result.includes(wrong)) result = result.replace(new RegExp(wrong, "g"), correct);
+  for (const [wrong, correct] of Object.entries(activeConfusionMap)) {
+    if (result.includes(wrong)) {
+      result = result.replace(new RegExp(wrong, "g"), correct);
+    }
   }
   return result;
 }
@@ -63,13 +67,28 @@ function restorePunctuation(rawText: string): string {
 // ---- ASR engine ----
 
 let recognizer: Recognizer | null = null;
+let offlineRecognizer: any = null;
 let stream: Stream | null = null;
 let prevWasEndpoint = false;
 let punctuation: any = null;
 
 const rl = require("readline").createInterface({ input: process.stdin });
 rl.on("line", (raw: string) => {
-  let msg: { type: string; modelDir?: string; language?: string; vadSensitivity?: number; bufferB64?: string; lexicon?: string; ruleFsts?: string; speechAutoPunctuate?: boolean; hotwordsFile?: string; decodingMethod?: string; speechMaxUtteranceSec?: number };
+  let msg: {
+    type: string;
+    modelDir?: string;
+    modelType?: "zipformer" | "sensevoice";
+    language?: string;
+    vadSensitivity?: number;
+    bufferB64?: string;
+    lexicon?: string;
+    ruleFsts?: string;
+    speechAutoPunctuate?: boolean;
+    hotwordsFile?: string;
+    decodingMethod?: string;
+    speechMaxUtteranceSec?: number;
+    confusionMap?: Record<string, string>;
+  };
   try { msg = JSON.parse(raw); } catch { return; }
 
   try {
@@ -77,47 +96,15 @@ rl.on("line", (raw: string) => {
       case "init": {
         if (!msg.modelDir || !msg.language) { process.stdout.write(JSON.stringify({ type: "ready", ok: false }) + "\n"); break; }
         if (msg.modelDir.split("/").some((p) => p === "..")) { process.stdout.write(JSON.stringify({ type: "ready", ok: false }) + "\n"); break; }
-        try {
-          const hrConfig = (msg.lexicon && msg.ruleFsts) ? {
-            hr: { lexicon: msg.lexicon, ruleFsts: msg.ruleFsts, dictDir: "" },
-          } : {};
-          const method = msg.decodingMethod ?? "greedy_search";
-          const hotwordsConfig = (method === "modified_beam_search" && msg.hotwordsFile) ? {
-            hotwordsFile: msg.hotwordsFile,
-            hotwordsScore: 3.0,
-            decodingMethod: "modified_beam_search",
-            maxActivePaths: 4,
-          } : {
-            decodingMethod: method,
-            ...(method === "modified_beam_search" ? { maxActivePaths: 4 } : {}),
-          };
-          recognizer = sherpaOnnx.createOnlineRecognizer({
-            modelConfig: {
-              transducer: {
-                encoder: msg.modelDir + "encoder.int8.onnx",
-                decoder: msg.modelDir + "decoder.onnx",
-                joiner: msg.modelDir + "joiner.int8.onnx",
-              },
-              tokens: msg.modelDir + "tokens.txt",
-              modelingUnit: "bpe",
-              bpeVocab: msg.modelDir + "bpe.vocab",
-              numThreads: Math.min(4, Math.max(1, Math.floor(require("os").cpus().length / 2))), provider: "cpu", debug: 0,
-            },
-            featConfig: { sampleRate: 16000, featureDim: 80, dither: 0.00003 },
-            blankPenalty: 1.5,
-            enableEndpoint: 1,
-            rule1MinTrailingSilence: mapVadToRule1(msg.vadSensitivity ?? 2),
-            rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
-            rule3MinUtteranceLength: msg.speechMaxUtteranceSec ?? 20.0,
-            ...hrConfig,
-            ...hotwordsConfig,
-          });
-          stream = recognizer ? recognizer.createStream() : null;
-          prevWasEndpoint = false;
 
-          // Initialize offline punctuation if requested and Chinese language
+        activeConfusionMap = { ...CONFUSION_MAP };
+        if (msg.confusionMap) {
+          activeConfusionMap = { ...activeConfusionMap, ...msg.confusionMap };
+        }
+
+        try {
           punctuation = null;
-          if (msg.speechAutoPunctuate && msg.language === "zh") {
+          if (msg.speechAutoPunctuate && msg.language === "zh" && msg.modelType !== "sensevoice") {
             const path = require("path");
             const puncModelPath = path.join(msg.modelDir, "..", "punc-zh-2024", "model.onnx");
             if (fs.existsSync(puncModelPath)) {
@@ -132,7 +119,64 @@ rl.on("line", (raw: string) => {
             }
           }
 
-          process.stdout.write(JSON.stringify({ type: "ready", ok: !!recognizer }) + "\n");
+          if (msg.modelType === "sensevoice") {
+            offlineRecognizer = sherpaOnnx.createOfflineRecognizer({
+              modelConfig: {
+                senseVoice: {
+                  model: msg.modelDir + "model.int8.onnx",
+                  language: "", // auto-detect
+                  useInverseTextNormalization: 1,
+                },
+                tokens: msg.modelDir + "tokens.txt",
+                numThreads: Math.min(4, Math.max(1, Math.floor(require("os").cpus().length / 2))),
+                provider: "cpu",
+                debug: 0,
+              },
+              decodingMethod: "greedy_search",
+            });
+            recognizer = null;
+            stream = null;
+            process.stdout.write(JSON.stringify({ type: "ready", ok: !!offlineRecognizer }) + "\n");
+          } else {
+            const hrConfig = (msg.lexicon && msg.ruleFsts) ? {
+              hr: { lexicon: msg.lexicon, ruleFsts: msg.ruleFsts, dictDir: "" },
+            } : {};
+            const method = msg.decodingMethod ?? "greedy_search";
+            const hotwordsConfig = (method === "modified_beam_search" && msg.hotwordsFile) ? {
+              hotwordsFile: msg.hotwordsFile,
+              hotwordsScore: 3.0,
+              decodingMethod: "modified_beam_search",
+              maxActivePaths: 4,
+            } : {
+              decodingMethod: method,
+              ...(method === "modified_beam_search" ? { maxActivePaths: 4 } : {}),
+            };
+            recognizer = sherpaOnnx.createOnlineRecognizer({
+              modelConfig: {
+                transducer: {
+                  encoder: msg.modelDir + "encoder.int8.onnx",
+                  decoder: msg.modelDir + "decoder.onnx",
+                  joiner: msg.modelDir + "joiner.int8.onnx",
+                },
+                tokens: msg.modelDir + "tokens.txt",
+                modelingUnit: "bpe",
+                bpeVocab: msg.modelDir + "bpe.vocab",
+                numThreads: Math.min(4, Math.max(1, Math.floor(require("os").cpus().length / 2))), provider: "cpu", debug: 0,
+              },
+              featConfig: { sampleRate: 16000, featureDim: 80, dither: 0.00003 },
+              blankPenalty: 1.5,
+              enableEndpoint: 1,
+              rule1MinTrailingSilence: mapVadToRule1(msg.vadSensitivity ?? 2),
+              rule2MinTrailingSilence: mapVadToRule2(msg.vadSensitivity ?? 2),
+              rule3MinUtteranceLength: msg.speechMaxUtteranceSec ?? 20.0,
+              ...hrConfig,
+              ...hotwordsConfig,
+            });
+            offlineRecognizer = null;
+            stream = recognizer ? recognizer.createStream() : null;
+            prevWasEndpoint = false;
+            process.stdout.write(JSON.stringify({ type: "ready", ok: !!recognizer }) + "\n");
+          }
         } catch (e) {
           process.stdout.write(JSON.stringify({ type: "ready", ok: false, error: String(e) }) + "\n");
         }
@@ -163,10 +207,30 @@ rl.on("line", (raw: string) => {
         }
         break;
       }
+      case "segment": {
+        if (!offlineRecognizer || !msg.bufferB64) break;
+        const buf = Buffer.from(msg.bufferB64, "base64");
+        const samples = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
+
+        const s = offlineRecognizer.createStream();
+        s.acceptWaveform(16000, samples);
+        offlineRecognizer.decode(s);
+        const r = offlineRecognizer.getResult(s);
+        let text = r.text || "";
+        s.free();
+
+        if (text) {
+          text = applyEndpointCorrections(text);
+          text = restorePunctuation(text);
+          process.stdout.write(JSON.stringify({ type: "result", text, isEndpoint: true }) + "\n");
+        }
+        break;
+      }
       case "reset": if (recognizer && stream) recognizer.reset(stream); break;
       case "destroy": {
         if (stream) { stream.free(); stream = null; }
         if (recognizer) { recognizer.free(); recognizer = null; }
+        if (offlineRecognizer) { offlineRecognizer.free(); offlineRecognizer = null; }
         if (punctuation) { punctuation.free(); punctuation = null; }
         process.stdout.write(JSON.stringify({ type: "destroyed" }) + "\n");
         process.exit(0);
@@ -176,3 +240,4 @@ rl.on("line", (raw: string) => {
     process.stdout.write(JSON.stringify({ type: "error", error: String(e) }) + "\n");
   }
 });
+

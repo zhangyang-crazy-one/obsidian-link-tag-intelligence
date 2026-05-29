@@ -107,6 +107,9 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     this.speechRecorder.setSettingsAutoPunctuate(this.settings.speechAutoPunctuate);
     this.speechRecorder.setSettingsDecodingMethod(this.settings.speechDecodingMethod);
     this.speechRecorder.setSettingsMaxUtteranceSec(this.settings.speechMaxUtteranceSec);
+    this.speechRecorder.setSpeechModelChoice(this.settings.speechModelChoice);
+    this.speechRecorder.setSpeechAutoHotwords(this.settings.speechAutoHotwords);
+    this.speechRecorder.setSpeechConfusionMapText(this.settings.speechConfusionMapText);
     const debugLogPath = await resetDebugLog(this.app);
     debugLog(this.app, "plugin.onload", {
       version: this.manifest.version,
@@ -391,6 +394,9 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     this.speechRecorder.setSettingsAutoPunctuate(this.settings.speechAutoPunctuate);
     this.speechRecorder.setSettingsDecodingMethod(this.settings.speechDecodingMethod);
     this.speechRecorder.setSettingsMaxUtteranceSec(this.settings.speechMaxUtteranceSec);
+    this.speechRecorder.setSpeechModelChoice(this.settings.speechModelChoice);
+    this.speechRecorder.setSpeechAutoHotwords(this.settings.speechAutoHotwords);
+    this.speechRecorder.setSpeechConfusionMapText(this.settings.speechConfusionMapText);
     await this.saveData(this.settings);
     return;
 
@@ -1175,7 +1181,10 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     const fs = this.getFs();
     const modelDir = this.speechRecorder.getModelDirInternal();
     const lang = this.settings.speechLanguage;
-    const fileList = getModelFileList(lang);
+    const isSenseVoice = lang === "zh" && this.settings.speechModelChoice === "sensevoice";
+    const fileList = isSenseVoice
+      ? ["model.int8.onnx", "tokens.txt"]
+      : getModelFileList(lang);
 
     if (!fs) {
       new Notice(this.t("speechModelNotFound"));
@@ -1193,7 +1202,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     }
 
     if (allExist) {
-      if (lang === "zh" && this.settings.speechAutoPunctuate) {
+      if (lang === "zh" && this.settings.speechAutoPunctuate && !isSenseVoice) {
         return this.ensurePunctuationModel();
       }
       return true;
@@ -1212,24 +1221,27 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     }
 
     const asrReady = await this.downloadSpeechModel();
-    if (asrReady && lang === "zh" && this.settings.speechAutoPunctuate) {
+    if (asrReady && lang === "zh" && this.settings.speechAutoPunctuate && !isSenseVoice) {
       return this.ensurePunctuationModel();
     }
     return asrReady;
   }
 
   private async downloadZhArchive(modelDir: string): Promise<boolean> {
-    const url = getModelRepo("zh");
-    const archiveName = "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2";
+    const isSenseVoice = this.settings.speechModelChoice === "sensevoice";
+    const archiveName = isSenseVoice
+      ? "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2"
+      : "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2";
+    const url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/" + archiveName;
     const archivePath = modelDir + archiveName;
 
-    const notice = new Notice(this.t("speechModelDownloadStart", { lang: "中文" }), 0);
+    const notice = new Notice(this.t("speechModelDownloadStart", { lang: isSenseVoice ? "SenseVoice" : "中文" }), 0);
 
     try {
       // Use curl via child_process to respect system proxy settings.
       // Node.js https.get() bypasses socks/http proxy; curl handles it natively.
       const cp = require("child_process") as { execSync: (c: string, o?: { maxBuffer?: number }) => Buffer };
-      notice.setMessage("Downloading bilingual zh-en model (~80MB)...");
+      notice.setMessage(isSenseVoice ? "Downloading SenseVoice-Small (~75MB)..." : "Downloading bilingual zh-en model (~80MB)...");
       cp.execSync(
         `curl -L -o "${archivePath}" "${url}" --progress-bar 2>&1`,
         { maxBuffer: 1024 * 1024 }
@@ -1240,20 +1252,23 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       const child_process2 = require("child_process") as { execSync: (c: string, o?: { cwd?: string; maxBuffer?: number }) => Buffer };
       child_process2.execSync(`tar -xjf "${archiveName}" --strip-components=1`, { cwd: modelDir, maxBuffer: 1024 * 1024 });
 
-      // Delete FP32 files (keep only INT8 — saves ~330MB)
+      // Delete unused files
       const fs2 = require("fs") as typeof import("fs");
       const { join } = require("path") as { join: (...p: string[]) => string };
-      const keepInt8 = [
-        "encoder-epoch-99-avg-1.int8.onnx",
-        "decoder-epoch-99-avg-1.int8.onnx",
-        "joiner-epoch-99-avg-1.int8.onnx",
-        "tokens.txt",
-        "bpe.model",
-      ];
+      const keepFiles = isSenseVoice
+        ? ["model.int8.onnx", "tokens.txt"]
+        : [
+            "encoder.int8.onnx",
+            "decoder.onnx",
+            "joiner.int8.onnx",
+            "tokens.txt",
+            "bpe.vocab",
+            "bpe.model",
+          ];
       for (const f of fs2.readdirSync(modelDir)) {
         const p = join(modelDir, f);
         const st = fs2.statSync(p);
-        if (st.isFile() && !keepInt8.includes(f)) {
+        if (st.isFile() && !keepFiles.includes(f) && f !== archiveName) {
           fs2.unlinkSync(p);
         }
       }
@@ -1261,7 +1276,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       // Clean up archive file
       try { fs2.unlinkSync(archivePath); } catch { /* ok */ }
       notice.hide();
-      new Notice("中文语音模型就绪 (~80 MB)。现在可以开始录音。");
+      new Notice(isSenseVoice ? "SenseVoice 语音模型就绪 (~75 MB)。" : "中文语音模型就绪 (~80 MB)。现在可以开始录音。");
       return true;
     } catch (e) {
       notice.hide();

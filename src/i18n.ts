@@ -291,6 +291,41 @@ type TranslationKey =
   | "speechToggleCommand"
   | "speechVadSensitivity"
   | "speechVadSensitivityDescription"
+  | "settingsWorkbenchPageAI"
+  | "aiSettingsHeading"
+  | "aiSettingsDescription"
+  | "aiProvider"
+  | "aiProviderDescription"
+  | "aiModel"
+  | "aiModelDescription"
+  | "aiApiKey"
+  | "aiApiKeyDescription"
+  | "aiBaseUrl"
+  | "aiBaseUrlDescription"
+  | "aiAsrSource"
+  | "aiAsrSourceDescription"
+  | "aiAsrSourceLocal"
+  | "aiAsrSourceCloud"
+  | "aiTemplatesHeading"
+  | "aiTemplatesDescription"
+  | "aiTemplateName"
+  | "aiTemplatePrompt"
+  | "aiAddTemplate"
+  | "aiMaxTemplatesReached"
+  | "aiLastUsedTemplate"
+  | "aiChooseTemplate"
+  | "aiRunTranscription"
+  | "aiSelectAudioFile"
+  | "aiNoAudioFiles"
+  | "aiSelectedTextPreview"
+  | "aiNoteSummaryPreview"
+  | "aiStatusIdle"
+  | "aiStatusDecoding"
+  | "aiStatusAsr"
+  | "aiStatusRefining"
+  | "aiStatusInserting"
+  | "aiStatusSuccess"
+  | "aiStatusError"
   | "mentionsExplanation"
   | "selected"
   | "notSelected"
@@ -364,6 +399,14 @@ type TranslationKey =
   | "speechAutoStopTimeoutReached"
   | "speechHotwordsFile"
   | "speechHotwordsFileDescription"
+  | "speechModelChoice"
+  | "speechModelChoiceDescription"
+  | "speechModelChoiceZipformer"
+  | "speechModelChoiceSensevoice"
+  | "speechAutoHotwords"
+  | "speechAutoHotwordsDescription"
+  | "speechConfusionMapText"
+  | "speechConfusionMapTextDescription"
   | "speechModelDownloadStart"
   | "speechModelDownloadProgress"
   | "speechModelDownloadComplete"
@@ -666,6 +709,41 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     speechToggleCommand: "Toggle voice input",
     speechVadSensitivity: "VAD sensitivity",
     speechVadSensitivityDescription: "0=Lecture (2.4s pause)  1=Slow (1.8s)  2=Normal (1.5s)  3=Fast (0.8s). Higher = shorter sentence breaks.",
+    settingsWorkbenchPageAI: "AI Helper",
+    aiSettingsHeading: "AI Transcription & Refinement",
+    aiSettingsDescription: "Configure API access for OpenAI-compatible, Anthropic, DeepSeek, or MiniMax providers. Setup prompt templates to automatically transcribe and polish audio files.",
+    aiProvider: "AI Provider",
+    aiProviderDescription: "Choose the API provider for Chat and LLM-based post-processing.",
+    aiModel: "Model Name",
+    aiModelDescription: "Model name for chat completions (e.g., gpt-4o-mini, deepseek-chat, claude-3-5-sonnet-20241022).",
+    aiApiKey: "API Key",
+    aiApiKeyDescription: "API secret key for authorization. Handled securely.",
+    aiBaseUrl: "API Base URL",
+    aiBaseUrlDescription: "Base URL for the provider API endpoint (e.g., https://api.openai.com/v1, https://api.deepseek.com).",
+    aiAsrSource: "ASR Transcription Source",
+    aiAsrSourceDescription: "Choose where the audio-to-text phase is processed (Local offline engine or Cloud API).",
+    aiAsrSourceLocal: "Local (sherpa-onnx)",
+    aiAsrSourceCloud: "Cloud (OpenAI Whisper / MiniMax ASR)",
+    aiTemplatesHeading: "Prompt Templates",
+    aiTemplatesDescription: "Configure prompt templates. Placeholders: {{selection}} for selected text, {{file:whole}} for entire note, {{transcription}} for raw transcript, {{date}} for YYYY-MM-DD. Max 15 templates.",
+    aiTemplateName: "Template Name",
+    aiTemplatePrompt: "Prompt Template",
+    aiAddTemplate: "Add Template",
+    aiMaxTemplatesReached: "Maximum of 15 templates reached.",
+    aiLastUsedTemplate: "Last Used",
+    aiChooseTemplate: "Choose Template",
+    aiRunTranscription: "Run AI Transcription",
+    aiSelectAudioFile: "Target Audio File",
+    aiNoAudioFiles: "No audio files found in vault",
+    aiSelectedTextPreview: "Selected text (preview)",
+    aiNoteSummaryPreview: "Note summary (preview)",
+    aiStatusIdle: "Idle",
+    aiStatusDecoding: "Decoding audio data...",
+    aiStatusAsr: "Transcribing audio...",
+    aiStatusRefining: "Refining with AI...",
+    aiStatusInserting: "Inserting result...",
+    aiStatusSuccess: "Transcription and refinement successful!",
+    aiStatusError: "Error: ",
     mentionsExplanation: "Notes that mention this note title or aliases without already linking to it.",
     selected: "Selected",
     notSelected: "Not selected",
@@ -739,6 +817,14 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     speechAutoStopTimeoutReached: "Auto-stop: recording stopped after silence timeout.",
     speechHotwordsFile: "Hotwords file",
     speechHotwordsFileDescription: "Path to domain-specific vocabulary file (one term per line, optional :score). Improves recognition of specialized terminology. Default: models/hotwords.txt",
+    speechModelChoice: "Speech recognizer model",
+    speechModelChoiceDescription: "Choose between online streaming Zipformer (real-time typing) or offline non-autoregressive SenseVoice-Small (high precision, pause-to-type).",
+    speechModelChoiceZipformer: "Zipformer (Online Streaming)",
+    speechModelChoiceSensevoice: "SenseVoice-Small (Offline High-Precision)",
+    speechAutoHotwords: "Auto-extract notes & tags as hotwords",
+    speechAutoHotwordsDescription: "Automatically index all note basenames and active tags as hotwords to boost double-link and custom term recognition.",
+    speechConfusionMapText: "Custom homophone corrections",
+    speechConfusionMapTextDescription: "Replace common ASR homophone errors based on your accent. Format: incorrectWord:correctWord (one mapping per line).",
     speechModelDownloadStart: "Downloading {lang} speech model files...",
     speechModelDownloadProgress: "{filename} ({percent}%, {loadedMB}/{totalMB} MB) [{current}/{total}]",
     speechModelDownloadComplete: "{lang} speech model ready. You can now start recording.",
@@ -1040,6 +1126,41 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     speechToggleCommand: "切换语音输入",
     speechVadSensitivity: "VAD 灵敏度",
     speechVadSensitivityDescription: "0=课程讲座(2.4s停顿)  1=慢速(1.8s)  2=正常(1.5s)  3=快速(0.8s)。越高断句越频繁。",
+    settingsWorkbenchPageAI: "AI 助手",
+    aiSettingsHeading: "AI 智能转录与润色",
+    aiSettingsDescription: "配置 OpenAI 兼容、Anthropic、DeepSeek 或 MiniMax API。设置提示词模板，自动进行语音转录与大模型整理。",
+    aiProvider: "AI 服务商",
+    aiProviderDescription: "选择用于文本润色和 Chat Completions 的 API 服务商。",
+    aiModel: "模型名称",
+    aiModelDescription: "大模型名称（例如 gpt-4o-mini, deepseek-chat, claude-3-5-sonnet-20241022）。",
+    aiApiKey: "API 密钥 (API Key)",
+    aiApiKeyDescription: "用于访问接口 of API Key，输入后将安全掩码显示。",
+    aiBaseUrl: "API 接口地址 (Base URL)",
+    aiBaseUrlDescription: "接口基础地址（例如 https://api.openai.com/v1, https://api.deepseek.com）。",
+    aiAsrSource: "语音转文字 (ASR) 来源",
+    aiAsrSourceDescription: "选择语音转录阶段的运行位置（本地离线 ASR 引擎或云端 API 接口）。",
+    aiAsrSourceLocal: "本地离线 (sherpa-onnx)",
+    aiAsrSourceCloud: "云端接口 (OpenAI Whisper / MiniMax ASR)",
+    aiTemplatesHeading: "智能 Prompt 模板",
+    aiTemplatesDescription: "配置转录模板。可用占位符：{{selection}} (选中文本), {{file:whole}} (整篇笔记), {{transcription}} (原始转录文本), {{date}} (当前日期)。最多可添加 15 个模板。",
+    aiTemplateName: "模板名称",
+    aiTemplatePrompt: "提示词模板内容",
+    aiAddTemplate: "新增模板",
+    aiMaxTemplatesReached: "已达到最多 15 个模板的上限。",
+    aiLastUsedTemplate: "上次使用",
+    aiChooseTemplate: "选择转录模板",
+    aiRunTranscription: "开始 AI 智能转录",
+    aiSelectAudioFile: "选择音频文件",
+    aiNoAudioFiles: "Vault 中未找到音频文件",
+    aiSelectedTextPreview: "所选文本 (卡片预览)",
+    aiNoteSummaryPreview: "全文摘要 (卡片预览)",
+    aiStatusIdle: "空闲",
+    aiStatusDecoding: "正在解码音频数据...",
+    aiStatusAsr: "正在进行语音识别...",
+    aiStatusRefining: "正在进行 AI 智能润色...",
+    aiStatusInserting: "正在插入笔记...",
+    aiStatusSuccess: "AI 转录与智能整理成功！",
+    aiStatusError: "运行出错：",
     mentionsExplanation: "列出提及当前笔记标题或别名、但尚未建立链接的笔记。",
     selected: "已选",
     notSelected: "未选",
@@ -1113,6 +1234,14 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     speechAutoStopTimeoutReached: "自动停止：静音超时，录音已停止。",
     speechHotwordsFile: "热词文件路径",
     speechHotwordsFileDescription: "领域词汇文件路径（每行一个词，可选 :分数 后缀）。可提升专业术语识别率。默认位置：models/hotwords.txt",
+    speechModelChoice: "端侧语音识别模型",
+    speechModelChoiceDescription: "选择流式 Zipformer 模型（实时打字机上屏）或离线非自回归 SenseVoice-Small 模型（超高精度，呼吸式停顿自然上屏）。",
+    speechModelChoiceZipformer: "Zipformer (实时流式打字)",
+    speechModelChoiceSensevoice: "SenseVoice-Small (离线高精度)",
+    speechAutoHotwords: "自动提取笔记与标签为热词",
+    speechAutoHotwordsDescription: "自动扫描您的所有笔记文件名（双链候选）与标签并注入热词库，大幅提升专业名词转写精度。",
+    speechConfusionMapText: "自定义同音字纠错映射",
+    speechConfusionMapTextDescription: "根据您的口音纠正特定的同音字错误。格式为 错别字:正确字（每行一组，例如：在显:在险）。",
     speechModelDownloadStart: "正在下载{lang}语音模型文件...",
     speechModelDownloadProgress: "{filename} ({percent}%, {loadedMB}/{totalMB} MB) [{current}/{total}]",
     speechModelDownloadComplete: "{lang}语音模型就绪。现在可以开始录音。",

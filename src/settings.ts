@@ -8,6 +8,7 @@ import {
 } from "./companion-plugins";
 import type { LanguageSetting, UILanguage } from "./i18n";
 import type LinkTagIntelligencePlugin from "./main";
+import { AIService } from "./ai-service";
 
 export type WorkflowMode = "general" | "researcher";
 
@@ -51,7 +52,12 @@ export function getSpeechModelDir(app: App, language: "zh" | "en"): string {
   const adapter = app.vault.adapter;
   const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
   const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
-  return pluginDir + "models/" + (language === "zh" ? "zh-14M/" : "en/");
+  const plugin = (app as any).plugins?.plugins?.["link-tag-intelligence"];
+  const choice = plugin?.settings?.speechModelChoice ?? "zipformer";
+  if (language === "zh") {
+    return pluginDir + "models/" + (choice === "sensevoice" ? "sensevoice/" : "zh-2025/");
+  }
+  return pluginDir + "models/en/";
 }
 
 function normalizeConfigDir(configDir: string): string {
@@ -117,6 +123,55 @@ export const DEFAULT_TAG_FACET_MAP_TEXT = JSON.stringify(
   2
 );
 
+export interface AITemplate {
+  id: string;
+  name: string;
+  prompt: string;
+}
+
+export const DEFAULT_AI_TEMPLATES: AITemplate[] = [
+  {
+    id: "standard-markdown",
+    name: "标准 Markdown 渲染",
+    prompt: "请将以下语音转录内容整理成一篇结构清晰、排版美观的 Markdown 笔记。\n要求：\n- 使用适当的标题（H1, H2, H3）划分结构\n- 使用列表（无序或有序）整理要点\n- 对关键术语或核心结论使用粗体进行强调\n- 纠正口语化的词汇、语气词和识别错误\n- 保持原文的语义和信息完整性\n\n上下文笔记内容：\n{{file:whole}}\n\n当前选中的内容：\n{{selection}}\n\n待整理的转录文本：\n{{transcription}}"
+  },
+  {
+    id: "visual-table",
+    name: "可视化数据表格",
+    prompt: "请分析以下语音转录内容，将其中的数据、对比信息或结构化信息整理成一个标准的 Markdown 表格。\n要求：\n- 使用第一行作为表头，并用 `|---|---|` 格式分隔\n- 行列对齐，确保表格在 Markdown 中可正常解析\n- 如果有无法放入表格的补充信息，在表格下方以简短列表形式写出\n- 纠正识别错误\n\n上下文笔记内容：\n{{file:whole}}\n\n当前选中的内容：\n{{selection}}\n\n待整理的转录文本：\n{{transcription}}"
+  },
+  {
+    id: "canvas-card",
+    name: "Canvas 卡片节点",
+    prompt: "请将以下语音转录内容转化为 Obsidian Canvas 卡片节点的 JSON 数据格式。请只返回 JSON 对象，不要包含 markdown 代码块包裹，以便能够直接复制使用。\n格式示例：\n{\n  \"nodes\": [\n    {\"id\": \"n1\", \"type\": \"text\", \"text\": \"核心主题...\", \"x\": 0, \"y\": 0, \"width\": 300, \"height\": 200},\n    {\"id\": \"n2\", \"type\": \"text\", \"text\": \"分支要点...\", \"x\": 400, \"y\": 0, \"width\": 300, \"height\": 200}\n  ],\n  \"edges\": [\n    {\"id\": \"e1\", \"fromNode\": \"n1\", \"fromSide\": \"right\", \"toNode\": \"n2\", \"toSide\": \"left\"}\n  ]\n}\n请根据转录文本的内容设计卡片节点和它们的关系，分配合理的坐标(x, y)以防重叠。\n\n上下文笔记内容：\n{{file:whole}}\n\n当前选中的内容：\n{{selection}}\n\n待整理的转录文本：\n{{transcription}}"
+  },
+  {
+    id: "callout-summary",
+    name: "Callout 重点摘要",
+    prompt: "请为以下语音转录内容生成一个 Obsidian Callout 格式的精简摘要。\n要求：\n- 使用 `>[!summary] 语音转录摘要` 作为开头\n- 内部使用列表整理出核心观点（Key Takeaways）\n- 随后使用 `>[!todo] 待办事项` 列出语音中提到的行动项\n\n上下文笔记内容：\n{{file:whole}}\n\n当前选中的内容：\n{{selection}}\n\n待整理的转录文本：\n{{transcription}}"
+  },
+  {
+    id: "action-items",
+    name: "任务与行动清单",
+    prompt: "请从以下语音转录内容中提取所有明确或隐含的待办事项、任务和行动项。\n要求：\n- 使用 Obsidian 待办事项语法 `- [ ] 任务内容` 格式化\n- 如果提及了截止时间或责任人，请在任务后面用括号标注，例如 `- [ ] 撰写报告 (截止: 周五) (@张三)`\n- 按优先级或时间先后顺序进行排序\n\n上下文笔记内容：\n{{file:whole}}\n\n当前选中的内容：\n{{selection}}\n\n待整理的转录文本：\n{{transcription}}"
+  },
+  {
+    id: "mindmap-outline",
+    name: "思维导图大纲",
+    prompt: "请将以下语音转录内容整理成一个层次分明的多级缩进 Markdown 大纲列表。\n要求：\n- 最多使用 3 级缩进（- 节点，四个空格缩进 - 子节点）\n- 逻辑层级清晰，父节点为核心概念，子节点为缩进说明或具体细节\n- 适合直接转换为思维导图（Mindmap）\n\n上下文笔记内容：\n{{file:whole}}\n\n当前选中的内容：\n{{selection}}\n\n待整理的转录文本：\n{{transcription}}"
+  },
+  {
+    id: "note-properties",
+    name: "带属性 YAML 笔记",
+    prompt: "请为以下转录内容生成一个符合 Obsidian 属性（Properties）标准的 YAML 前脑以及整理好的正文。\n格式要求：\n---\ntags:\n  - 语音转录\n  - 自动生成\nsummary: \"简短的一句话摘要\"\ndate: {{date}}\n---\n\n# 转录详细整理\n[在此写入整理后的正文]\n\n待整理的转录文本：\n{{transcription}}"
+  },
+  {
+    id: "bilingual-translation",
+    name: "中英双语对照",
+    prompt: "请将以下语音转录内容进行校对，并翻译为中英双语对照格式。\n要求：\n- 对口语化表述进行精炼\n- 每一段先给出中文校对后的文本，随后给出对应的英文翻译\n- 确保翻译符合专业学术/行业术语规范\n\n上下文笔记内容：\n{{file:whole}}\n\n当前选中的内容：\n{{selection}}\n\n待整理的转录文本：\n{{transcription}}"
+  }
+];
+
 export interface LinkTagIntelligenceSettings {
   language: LanguageSetting;
   workflowMode: WorkflowMode;
@@ -145,6 +200,17 @@ export interface LinkTagIntelligenceSettings {
   speechAutoPunctuate: boolean;
   speechDecodingMethod: "greedy_search" | "modified_beam_search";
   speechMaxUtteranceSec: number;
+  speechModelChoice: "zipformer" | "sensevoice";
+  speechAutoHotwords: boolean;
+  speechConfusionMapText: string;
+  // AI Settings
+  aiProvider: "openai" | "anthropic" | "deepseek" | "minimax";
+  aiModel: string;
+  aiApiKey: string;
+  aiBaseUrl: string;
+  aiAsrSource: "local" | "cloud";
+  aiLastUsedTemplateId: string;
+  aiTemplates: AITemplate[];
 }
 
 export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSettings {
@@ -187,7 +253,18 @@ export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSetting
     speechAutoStopSec: 0,
     speechAutoPunctuate: true,
     speechDecodingMethod: "greedy_search",
-    speechMaxUtteranceSec: 20
+    speechMaxUtteranceSec: 20,
+    speechModelChoice: "zipformer",
+    speechAutoHotwords: true,
+    speechConfusionMapText: "在显价值:在险价值\n风险穗:风险矩阵\n富力业:傅里叶",
+    // AI Settings defaults
+    aiProvider: "openai",
+    aiModel: "gpt-4o-mini",
+    aiApiKey: "",
+    aiBaseUrl: "https://api.openai.com/v1",
+    aiAsrSource: "local",
+    aiLastUsedTemplateId: "standard-markdown",
+    aiTemplates: [...DEFAULT_AI_TEMPLATES]
   };
 }
 
@@ -369,11 +446,40 @@ export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagI
   normalized.speechMaxUtteranceSec = Number.isFinite(normalized.speechMaxUtteranceSec) && normalized.speechMaxUtteranceSec >= 1 && normalized.speechMaxUtteranceSec <= 60
     ? Math.round(normalized.speechMaxUtteranceSec)
     : defaults.speechMaxUtteranceSec;
+  normalized.speechModelChoice = (normalized.speechModelChoice === "sensevoice") ? "sensevoice" : "zipformer";
+  normalized.speechAutoHotwords = typeof normalized.speechAutoHotwords === "boolean" ? normalized.speechAutoHotwords : defaults.speechAutoHotwords;
+  normalized.speechConfusionMapText = typeof normalized.speechConfusionMapText === "string" ? normalized.speechConfusionMapText : defaults.speechConfusionMapText;
+
+  // AI settings normalization
+  normalized.aiProvider = (normalized.aiProvider === "anthropic" || normalized.aiProvider === "deepseek" || normalized.aiProvider === "minimax")
+    ? normalized.aiProvider
+    : "openai";
+  normalized.aiModel = typeof normalized.aiModel === "string" && normalized.aiModel.trim() ? normalized.aiModel.trim() : defaults.aiModel;
+  normalized.aiApiKey = typeof normalized.aiApiKey === "string" ? normalized.aiApiKey : "";
+  normalized.aiBaseUrl = typeof normalized.aiBaseUrl === "string" && normalized.aiBaseUrl.trim() ? normalized.aiBaseUrl.trim() : defaults.aiBaseUrl;
+  normalized.aiAsrSource = normalized.aiAsrSource === "cloud" ? "cloud" : "local";
+  normalized.aiLastUsedTemplateId = typeof normalized.aiLastUsedTemplateId === "string" ? normalized.aiLastUsedTemplateId : defaults.aiLastUsedTemplateId;
+
+  if (Array.isArray(normalized.aiTemplates)) {
+    const validated: AITemplate[] = [];
+    for (const t of normalized.aiTemplates) {
+      if (t && typeof t === "object" && typeof t.id === "string" && typeof t.name === "string" && typeof t.prompt === "string") {
+        validated.push({
+          id: t.id.trim(),
+          name: t.name.trim(),
+          prompt: t.prompt
+        });
+      }
+    }
+    normalized.aiTemplates = validated.length > 0 ? validated.slice(0, 15) : [...DEFAULT_AI_TEMPLATES];
+  } else {
+    normalized.aiTemplates = [...DEFAULT_AI_TEMPLATES];
+  }
 
   return normalized;
 }
 
-type WorkbenchPage = "overview" | "workflow" | "plugins" | "taxonomy" | "speech";
+type WorkbenchPage = "overview" | "workflow" | "plugins" | "taxonomy" | "speech" | "ai";
 
 export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
   plugin: LinkTagIntelligencePlugin;
@@ -414,6 +520,7 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     this.createPageTab(nav, "plugins", this.plugin.t("settingsWorkbenchPagePlugins"));
     this.createPageTab(nav, "taxonomy", this.plugin.t("settingsWorkbenchPageTaxonomy"));
     this.createPageTab(nav, "speech", this.plugin.t("settingsWorkbenchPageSpeech"));
+    this.createPageTab(nav, "ai", this.plugin.t("settingsWorkbenchPageAI"));
 
     const page = containerEl.createDiv({ cls: "lti-workbench-page" });
     switch (this.activePage) {
@@ -431,6 +538,9 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
         break;
       case "speech":
         this.renderVoiceSection(page);
+        break;
+      case "ai":
+        this.renderAiSection(page);
         break;
     }
   }
@@ -1639,6 +1749,52 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
       this.plugin.t("speechSettingsDescription")
     );
 
+    // Speech Model Choice setting
+    this.createSelectField(
+      section,
+      this.plugin.t("speechModelChoice"),
+      this.plugin.t("speechModelChoiceDescription"),
+      [
+        { value: "zipformer", label: this.plugin.t("speechModelChoiceZipformer") },
+        { value: "sensevoice", label: this.plugin.t("speechModelChoiceSensevoice") }
+      ],
+      this.plugin.settings.speechModelChoice,
+      async (value) => {
+        this.plugin.settings.speechModelChoice = value as "zipformer" | "sensevoice";
+        await this.plugin.saveSettings();
+      }
+    );
+
+    // Auto Hotwords toggle setting
+    this.createToggleField(
+      section,
+      this.plugin.t("speechAutoHotwords"),
+      this.plugin.t("speechAutoHotwordsDescription"),
+      this.plugin.settings.speechAutoHotwords,
+      async (value) => {
+        this.plugin.settings.speechAutoHotwords = value;
+        await this.plugin.saveSettings();
+      }
+    );
+
+    // Confusion map text setting
+    const confusionRow = section.createDiv({ cls: "lti-voice-field-row" });
+    const confusionField = this.createFieldShell(
+      confusionRow,
+      this.plugin.t("speechConfusionMapText"),
+      this.plugin.t("speechConfusionMapTextDescription")
+    );
+    const confusionInput = confusionField.createEl("textarea", {
+      cls: "lti-workbench-textarea lti-voice-confusion-input",
+      value: this.plugin.settings.speechConfusionMapText
+    });
+    confusionInput.rows = 4;
+    confusionInput.placeholder = "在显价值:在险价值\n风险穗:风险矩阵";
+    confusionInput.addEventListener("change", () => {
+      this.plugin.settings.speechConfusionMapText = confusionInput.value;
+      void this.plugin.saveSettings();
+    });
+
     // Model file path — text input + Browse button (D-15)
     const modelRow = section.createDiv({ cls: "lti-voice-field-row" });
     const modelField = this.createFieldShell(modelRow, this.plugin.t("speechModelPath"), this.plugin.t("speechModelPathDescription"));
@@ -1803,5 +1959,214 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
       }
     );
+  }
+
+  private renderAiSection(containerEl: HTMLElement): void {
+    const section = this.createSectionCard(
+      containerEl,
+      this.plugin.t("aiSettingsHeading"),
+      this.plugin.t("aiSettingsDescription")
+    );
+
+    // AI Provider Select
+    this.createSelectField(
+      section,
+      this.plugin.t("aiProvider"),
+      this.plugin.t("aiProviderDescription"),
+      [
+        { value: "openai", label: "OpenAI" },
+        { value: "anthropic", label: "Anthropic" },
+        { value: "deepseek", label: "DeepSeek" },
+        { value: "minimax", label: "MiniMax" }
+      ],
+      this.plugin.settings.aiProvider,
+      async (value) => {
+        this.plugin.settings.aiProvider = value as "openai" | "anthropic" | "deepseek" | "minimax";
+        // Auto-configure default Base URL & Model for convenience if switching
+        if (value === "deepseek") {
+          this.plugin.settings.aiBaseUrl = "https://api.deepseek.com";
+          this.plugin.settings.aiModel = "deepseek-chat";
+        } else if (value === "minimax") {
+          this.plugin.settings.aiBaseUrl = "https://api.minimax.chat/v1";
+          this.plugin.settings.aiModel = "abab6.5g-chat";
+        } else if (value === "openai") {
+          this.plugin.settings.aiBaseUrl = "https://api.openai.com/v1";
+          this.plugin.settings.aiModel = "gpt-4o-mini";
+        } else if (value === "anthropic") {
+          this.plugin.settings.aiBaseUrl = "https://api.anthropic.com/v1";
+          this.plugin.settings.aiModel = "claude-3-5-sonnet-20241022";
+        }
+        await this.plugin.saveSettings();
+        this.display(); // re-render to update default text inputs
+      }
+    );
+
+    // API Base URL Input
+    const urlField = this.createFieldShell(section, this.plugin.t("aiBaseUrl"), this.plugin.t("aiBaseUrlDescription"));
+    const urlInput = urlField.createEl("input", { cls: "lti-workbench-input", type: "text" });
+    urlInput.value = this.plugin.settings.aiBaseUrl;
+    urlInput.addEventListener("change", async () => {
+      this.plugin.settings.aiBaseUrl = urlInput.value.trim();
+      await this.plugin.saveSettings();
+    });
+
+    // API Key Input (masked password)
+    const keyField = this.createFieldShell(section, this.plugin.t("aiApiKey"), this.plugin.t("aiApiKeyDescription"));
+    const keyInput = keyField.createEl("input", { cls: "lti-workbench-input", type: "password" });
+    keyInput.value = this.plugin.settings.aiApiKey;
+    keyInput.placeholder = "sk-........................";
+    keyInput.addEventListener("change", async () => {
+      this.plugin.settings.aiApiKey = keyInput.value.trim();
+      await this.plugin.saveSettings();
+    });
+
+    // AI Model Name Input
+    const modelField = this.createFieldShell(section, this.plugin.t("aiModel"), this.plugin.t("aiModelDescription"));
+    const modelInput = modelField.createEl("input", { cls: "lti-workbench-input", type: "text" });
+    modelInput.value = this.plugin.settings.aiModel;
+    modelInput.addEventListener("change", async () => {
+      this.plugin.settings.aiModel = modelInput.value.trim();
+      await this.plugin.saveSettings();
+    });
+
+    // ASR Source Select
+    this.createSelectField(
+      section,
+      this.plugin.t("aiAsrSource"),
+      this.plugin.t("aiAsrSourceDescription"),
+      [
+        { value: "local", label: this.plugin.t("aiAsrSourceLocal") },
+        { value: "cloud", label: this.plugin.t("aiAsrSourceCloud") }
+      ],
+      this.plugin.settings.aiAsrSource,
+      async (value) => {
+        this.plugin.settings.aiAsrSource = value as "local" | "cloud";
+        await this.plugin.saveSettings();
+      }
+    );
+
+    // Test Connection Button Row
+    const testRow = section.createDiv({ cls: "lti-ai-test-row" });
+    const testBtn = testRow.createEl("button", {
+      cls: "lti-workbench-button lti-ai-test-btn",
+      text: "测试 API 连接",
+      type: "button"
+    });
+    const testStatus = testRow.createSpan({ cls: "lti-ai-test-status" });
+
+    testBtn.addEventListener("click", async () => {
+      if (!this.plugin.settings.aiApiKey.trim()) {
+        testStatus.textContent = "❌ 请先填写 API Key！";
+        testStatus.className = "lti-ai-test-status is-error";
+        return;
+      }
+
+      testBtn.disabled = true;
+      testStatus.textContent = "⏳ 正在测试连接中...";
+      testStatus.className = "lti-ai-test-status is-pending";
+
+      try {
+        const service = new AIService(this.app, this.plugin.settings);
+        const reply = await service.runRefinement("Please respond only with the word 'Success'.");
+        if (reply.trim()) {
+          testStatus.textContent = `✅ 连接成功！模型回复: ${reply.trim().substring(0, 30)}${reply.trim().length > 30 ? "..." : ""}`;
+          testStatus.className = "lti-ai-test-status is-success";
+        } else {
+          testStatus.textContent = "❌ 连接失败：接口返回了空文本。";
+          testStatus.className = "lti-ai-test-status is-error";
+        }
+      } catch (err: any) {
+        const errorMsg = String(err.message || err);
+        let beautified = `❌ API 连接失败: ${errorMsg}`;
+        
+        if (errorMsg.includes("Insufficient Balance") || errorMsg.includes("402") || errorMsg.includes("insufficient_funds")) {
+          beautified = "❌ API 连接失败：您的账户余额不足 (Insufficient Balance / 402)。您的 API 密钥及接口配置均正确，但需要登录您的 AI 服务商后台进行充值或绑定账单。";
+        } else if (errorMsg.includes("401") || errorMsg.includes("Incorrect API key") || errorMsg.includes("invalid_api_key") || errorMsg.includes("Unauthorized")) {
+          beautified = "❌ API 连接失败：API 密钥 (API Key) 无效 (401 / Unauthorized)。请检查您的 API Key 是否复制正确，或前往控制台生成新的密钥。";
+        } else if (errorMsg.includes("404") || errorMsg.includes("model_not_found")) {
+          beautified = "❌ API 连接失败：模型未找到 (Model Not Found / 404)。请确认您填写的“模型名称”是否完全正确，或当前密钥是否被授权了此模型权限。";
+        } else if (errorMsg.includes("Failed to fetch") || errorMsg.includes("NetworkError") || errorMsg.includes("timeout") || errorMsg.includes("ENOTFOUND")) {
+          beautified = "❌ API 连接失败：网络超时或基础地址不可达。请检查网络，或确认您填写的“API 接口地址 (Base URL)”拼写是否正确，或是否需要代理环境。";
+        }
+        
+        testStatus.textContent = beautified;
+        testStatus.className = "lti-ai-test-status is-error";
+      } finally {
+        testBtn.disabled = false;
+      }
+    });
+
+    // Prompt Templates Section
+    const templatesSection = this.createSectionCard(
+      containerEl,
+      this.plugin.t("aiTemplatesHeading"),
+      this.plugin.t("aiTemplatesDescription")
+    );
+
+    const templatesContainer = templatesSection.createDiv({ cls: "lti-ai-templates-list" });
+
+    // Render each template
+    this.plugin.settings.aiTemplates.forEach((template, index) => {
+      const card = templatesContainer.createDiv({ cls: "lti-ai-template-card" });
+      
+      // Template Name row
+      const nameRow = card.createDiv({ cls: "lti-ai-template-name-row" });
+      nameRow.createSpan({ text: `${this.plugin.t("aiTemplateName")} #${index + 1}:`, cls: "lti-ai-template-label" });
+      
+      const nameInput = nameRow.createEl("input", { cls: "lti-workbench-input lti-ai-template-name-input", type: "text" });
+      nameInput.value = template.name;
+      nameInput.addEventListener("change", async () => {
+        template.name = nameInput.value.trim() || `Template ${index + 1}`;
+        await this.plugin.saveSettings();
+      });
+
+      // Delete Button
+      const deleteBtn = nameRow.createEl("button", {
+        cls: "lti-workbench-button is-danger lti-ai-template-delete-btn",
+        text: "删除",
+        type: "button"
+      });
+      deleteBtn.addEventListener("click", async () => {
+        this.plugin.settings.aiTemplates.splice(index, 1);
+        await this.plugin.saveSettings();
+        this.display(); // Refresh settings tab
+      });
+
+      // Prompt Content Area
+      const promptArea = card.createDiv({ cls: "lti-ai-template-prompt-area" });
+      promptArea.createSpan({ text: this.plugin.t("aiTemplatePrompt"), cls: "lti-ai-template-label" });
+      const promptTextarea = promptArea.createEl("textarea", { cls: "lti-workbench-input lti-ai-template-textarea" });
+      promptTextarea.value = template.prompt;
+      promptTextarea.rows = 4;
+      promptTextarea.addEventListener("change", async () => {
+        template.prompt = promptTextarea.value;
+        await this.plugin.saveSettings();
+      });
+    });
+
+    // Add Template Button (if under 15)
+    if (this.plugin.settings.aiTemplates.length < 15) {
+      const actionRow = templatesSection.createDiv({ cls: "lti-ai-template-actions" });
+      const addBtn = actionRow.createEl("button", {
+        cls: "lti-workbench-button",
+        text: `+ ${this.plugin.t("aiAddTemplate")}`,
+        type: "button"
+      });
+      addBtn.addEventListener("click", async () => {
+        const newId = `custom-template-${Date.now()}`;
+        this.plugin.settings.aiTemplates.push({
+          id: newId,
+          name: `自定义模板 ${this.plugin.settings.aiTemplates.length + 1}`,
+          prompt: "请整理以下语音转录内容：\n\n待整理的转录文本：\n{{transcription}}"
+        });
+        await this.plugin.saveSettings();
+        this.display(); // Refresh settings tab
+      });
+    } else {
+      templatesSection.createDiv({
+        cls: "lti-ai-template-max-hint",
+        text: this.plugin.t("aiMaxTemplatesReached")
+      });
+    }
   }
 }

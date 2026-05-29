@@ -33,6 +33,12 @@ export class SpeechRecorder {
   private settingsAutoPunctuate = true;
   private settingsDecodingMethod: "greedy_search" | "modified_beam_search" = "greedy_search";
   private settingsMaxUtteranceSec = 20;
+  private speechModelChoice: "zipformer" | "sensevoice" = "zipformer";
+  private speechAutoHotwords = true;
+  private speechConfusionMapText = "";
+  private accumulatedAudio: number[] = [];
+  private silenceDurationMs = 0;
+  private preRollBuffer: number[] = [];
 
   /** Callback set by main.ts to receive ASR results. */
   onAsrResult: ((text: string, isEndpoint: boolean) => void) | null = null;
@@ -95,6 +101,10 @@ export class SpeechRecorder {
   private async start(t: (key: string, vars?: Record<string, string | number>) => string): Promise<string | null> {
     this.phase = "initializing";
     this.asrInitError = null;
+    this.accumulatedAudio = [];
+    this.silenceDurationMs = 0;
+    this.preRollBuffer = [];
+    void this.generateAutoHotwordsFile();
 
     try {
       this.capture = await startCapture((chunk) => {
@@ -229,11 +239,13 @@ export class SpeechRecorder {
       const initMsg = JSON.stringify({
         type: "init",
         modelDir: this.getModelDir(),
+        modelType: this.speechModelChoice,
         language: this.settingsLanguage,
         vadSensitivity: this.settingsVadSensitivity,
         speechAutoPunctuate: this.settingsAutoPunctuate,
         decodingMethod: this.settingsDecodingMethod,
         speechMaxUtteranceSec: this.settingsMaxUtteranceSec,
+        confusionMap: this.getConfusionMap(),
         ...(hotwordsFile ? { hotwordsFile } : {}),
       }) + "\n";
       this.asrStdin?.write(initMsg);
@@ -289,8 +301,14 @@ export class SpeechRecorder {
     this.phase = "processing";
 
     this.removeDeviceChangeHandler();
-
     this.cleanupCapture();
+
+    if (this.speechModelChoice === "sensevoice") {
+      this.sendSensevoiceSegment(true);
+      // Wait for offline recognizer to finish processing and push text before killing process
+      await new Promise(r => setTimeout(r, 650));
+    }
+
     this.destroyAsrProcess();
     this.phase = "idle";
     return null;
@@ -306,11 +324,61 @@ export class SpeechRecorder {
       return;
     }
 
-    const b64 = Buffer.from(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength)).toString("base64");
-    const accepted = this.asrStdin.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");
-    if (!accepted) {
-      this.asrBackpressure = true;
+    if (this.speechModelChoice === "zipformer") {
+      const b64 = Buffer.from(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength)).toString("base64");
+      const accepted = this.asrStdin.write(JSON.stringify({ type: "audio", bufferB64: b64 }) + "\n");
+      if (!accepted) {
+        this.asrBackpressure = true;
+      }
+    } else {
+      const rms = calculateRMS(chunk);
+      for (let i = 0; i < chunk.length; i++) {
+        this.accumulatedAudio.push(chunk[i]);
+      }
+
+      const chunkDurationMs = (chunk.length / 16000) * 1000;
+      const silenceThreshold = 0.02;
+      if (rms < silenceThreshold) {
+        this.silenceDurationMs += chunkDurationMs;
+      } else {
+        this.silenceDurationMs = 0;
+      }
+
+      const accumulatedSec = this.accumulatedAudio.length / 16000;
+      const hitSilencePause = this.silenceDurationMs >= 800 && accumulatedSec >= 2.5;
+      const hitSafetyLimit = accumulatedSec >= 15.0;
+
+      if (hitSilencePause || hitSafetyLimit) {
+        this.sendSensevoiceSegment(false);
+      }
     }
+  }
+
+  private sendSensevoiceSegment(isFinal = false): void {
+    if (this.accumulatedAudio.length === 0) return;
+
+    let samplesToSend = [...this.accumulatedAudio];
+    if (this.preRollBuffer.length > 0 && !isFinal) {
+      samplesToSend = [...this.preRollBuffer, ...samplesToSend];
+    }
+
+    const floatArray = new Float32Array(samplesToSend);
+    const b64 = Buffer.from(floatArray.buffer, floatArray.byteOffset, floatArray.byteLength).toString("base64");
+
+    if (!isFinal && this.accumulatedAudio.length > 3200) {
+      this.preRollBuffer = this.accumulatedAudio.slice(this.accumulatedAudio.length - 3200);
+    } else {
+      this.preRollBuffer = [];
+    }
+
+    this.asrStdin?.write(JSON.stringify({
+      type: "segment",
+      bufferB64: b64,
+      isFinal
+    }) + "\n");
+
+    this.accumulatedAudio = [];
+    this.silenceDurationMs = 0;
   }
 
   private cleanupCapture(): void {
@@ -376,10 +444,12 @@ export class SpeechRecorder {
     this.appRef = app;
   }
 
-  /** Resolve the relative model directory path (relative to the pluginDir CWD). */
   private getModelDir(): string {
     const lang = this.pendingLanguage ?? "zh";
-    return "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
+    if (lang === "zh") {
+      return "models/" + (this.speechModelChoice === "sensevoice" ? "sensevoice" : "zh-2025") + "/";
+    }
+    return "models/en/";
   }
 
   private destroyAsrProcess(): void {
@@ -461,6 +531,39 @@ export class SpeechRecorder {
     }
   }
 
+  setSpeechModelChoice(choice: "zipformer" | "sensevoice"): void {
+    if (choice === this.speechModelChoice) return;
+    this.speechModelChoice = choice;
+    if (!this.isActive && this.asrProcess) {
+      this.destroyAsrProcess();
+    }
+  }
+
+  setSpeechAutoHotwords(autoHotwords: boolean): void {
+    this.speechAutoHotwords = autoHotwords;
+  }
+
+  setSpeechConfusionMapText(text: string): void {
+    this.speechConfusionMapText = text;
+  }
+
+  private getConfusionMap(): Record<string, string> {
+    const map: Record<string, string> = {};
+    if (!this.speechConfusionMapText) return map;
+    const lines = this.speechConfusionMapText.split("\n");
+    for (const line of lines) {
+      const idx = line.indexOf(":");
+      if (idx > 0) {
+        const wrong = line.slice(0, idx).trim();
+        const correct = line.slice(idx + 1).trim();
+        if (wrong && correct) {
+          map[wrong] = correct;
+        }
+      }
+    }
+    return map;
+  }
+
   private hotwordsPath: string | null = null;
   setHotwordsFile(path: string): void {
     this.hotwordsPath = path || null;
@@ -508,6 +611,52 @@ export class SpeechRecorder {
     const adapter = this.appRef?.vault.adapter;
     const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
     const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
-    return pluginDir + "models/" + (lang === "zh" ? "zh-2025" : "en") + "/";
+    if (lang === "zh") {
+      return pluginDir + "models/" + (this.speechModelChoice === "sensevoice" ? "sensevoice" : "zh-2025") + "/";
+    }
+    return pluginDir + "models/en/";
+  }
+
+  async generateAutoHotwordsFile(): Promise<void> {
+    if (!this.appRef || !this.speechAutoHotwords) return;
+    try {
+      const adapter = this.appRef.vault.adapter;
+      if (!(adapter instanceof FileSystemAdapter)) return;
+      const basePath = adapter.getBasePath();
+      const pathModule = require("path") as typeof import("path");
+      const fs = require("fs") as typeof import("fs");
+
+      const hotwordsPath = this.getHotwordsPath() || pathModule.join(basePath, ".obsidian", "plugins", "link-tag-intelligence", "models", "hotwords.txt");
+      const dir = pathModule.dirname(hotwordsPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+
+      const fileNames = this.appRef.vault.getMarkdownFiles().map(f => f.basename.trim());
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tags = Object.keys((this.appRef.metadataCache as any).getTags() || {}).map(t => t.replace(/^#/, "").trim());
+
+      const uniqueWords = new Set<string>();
+      const filterAndAdd = (word: string) => {
+        const clean = word.replace(/[\[\]\(\)#\*_\?]/g, "").trim();
+        if (clean.length >= 2 && clean.length <= 15 && /^[\u4e00-\u9fa5a-zA-Z0-9\s-]+$/.test(clean)) {
+          uniqueWords.add(clean);
+        }
+      };
+
+      fileNames.forEach(filterAndAdd);
+      tags.forEach(filterAndAdd);
+
+      const lines = Array.from(uniqueWords).map(word => `${word} :3.0`);
+      fs.writeFileSync(hotwordsPath, lines.join("\n"), "utf8");
+      debugLog(this.appRef, "speech-recorder.auto-hotwords-generated", {
+        path: hotwordsPath,
+        count: uniqueWords.size
+      });
+    } catch (e) {
+      if (this.appRef) {
+        console.error("[lti-speech] Failed to generate auto hotwords:", e);
+      }
+    }
   }
 }

@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.2.8] - 2026-05-29
+
+### Added / 新特性
+- **Self-Contained Punctuation Bypass for SenseVoice / SenseVoice 智能免除冗余标点模型**:
+  - Implemented smart conditional branches in both the main process and the background ASR worker to skip downloading, verifying, and initializing the 280MB CT-transformer punctuation model when SenseVoice is active (which natively yields high-quality punctuation).
+  - Saves approximately 280MB of active runtime memory and accelerates worker process initialization time to near-zero (instantaneous startup).
+  - 引入前后端双侧条件分支，当使用自带标点的 SenseVoice 语音模型时，完全跳过外置 280MB 标点模型 (`punc-zh-2024`) 的自检、下载、加载与推理逻辑。
+  - 大幅提升了后台语音工作进程的初始化启动速度（实现接近 0ms 瞬间秒开），并节省了约 280MB 的白白消耗的运行内存。
+
+### Fixed / 修复与优化
+- **SenseVoice Model Archive Filename / 修复 SenseVoice 模型自动下载 404 错误**:
+  - Corrected a typo in the download package name from `sense-voice-small-...` to `sherpa-onnx-sense-voice-...` matching the actual release asset in sherpa-onnx releases, resolving the automated download failure.
+  - 修正了 SenseVoice 自动下载流中的压缩包文件名拼写错误，对应官方发布资产文件名，解决首次启用自动下载时报 404 错误的问题。
+
+---
+
+## [0.2.7] - 2026-05-28
+
+### Added / 新特性
+- **Custom-Rendered Selection Dropdown / 全新 CSS 高颜值自定义下拉菜单**:
+  - Replaced the native HTML select element in the sidebar ASR view with an elegant, absolute-positioned custom dropdown menu popup.
+  - Features custom Vercel-like animations, rounded corners, clean border-radii, and dynamic, stroke-color-inheriting SVG chevrons (`stroke="currentColor"`) that automatically align with light and dark themes.
+  - 将侧边栏原本的原生 select 下拉菜单彻底替换为纯 CSS 自定义的高颜值绝对定位悬浮菜单组件。
+  - 支持 Vercel 式精致阴影、平滑淡入动效、自定义圆角、以及动态继承主色调（使用 `stroke="currentColor"`）的悬浮高亮与激活状态，彻底告别各操作系统原生 option 选项框的简陋外观。
+
+### Fixed / 修复与优化
+- **Current Note Card Squeezing & Height Collapsing / 修复当前笔记卡片重叠与文字高度塌陷**:
+  - Restructured the current note card and item headers to vertical block flow positioning, ensuring note title buttons wrap naturally over multiple lines without text overlapping.
+  - Placed the file path neatly below the title using a dashed line separator and spacious padding.
+  - 将当前笔记卡片及标题头部容器重构为标准垂直块级流式布局，完美支持长标题自然多行折行并计算出真实高度，彻底解决路径与标题文本重叠塌陷的 Bug。
+- **Rotated Chevron bullet indicator Clutter / 修复旋转箭头与圆点重叠杂乱**:
+  - Suppressed all list-item or menu pseudo-element indicator bullets on collapsible header toggles to keep layouts clean and professional.
+  - 对折叠菜单的 toggle 及其旋转箭头元素强制屏蔽了所有可能被外部主题样式继承注入的 `::before` / `::after` 伪元素小圆点，彻底解决 `●v` 重叠的视觉污染。
+
+---
+
 ## [0.2.6] - 2026-05-28
 
 ### Added / 新特性
