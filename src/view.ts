@@ -1708,7 +1708,7 @@ export class LinkTagIntelligenceView extends ItemView {
         }
       );
 
-      // Special handling for Canvas Card template: copy to clipboard & auto-inject into active Canvas
+      // Restored side-by-side Live Canvas Injection + Clipboard Auto-copy with clear usage instructions
       let insertText = resultText;
       const isCanvasCard = template.id === "canvas-card" || (resultText.trim().startsWith("{") && resultText.includes('"nodes"'));
       
@@ -1717,12 +1717,11 @@ export class LinkTagIntelligenceView extends ItemView {
         try {
           // 1. Write to clipboard
           await navigator.clipboard.writeText(resultText.trim());
-          new Notice("✨ Canvas 卡片已生成并自动复制到剪贴板！可直接在 Canvas 中按下 Ctrl+V 粘贴。");
           
           // 2. Direct injection into active Canvas if open
           const canvasLeaves = this.app.workspace.getLeavesOfType("canvas");
+          let injected = false;
           if (canvasLeaves.length > 0) {
-            let injected = false;
             for (const leaf of canvasLeaves) {
               const canvasView = leaf.view as any;
               if (canvasView && canvasView.canvas) {
@@ -1737,9 +1736,16 @@ export class LinkTagIntelligenceView extends ItemView {
                 }
               }
             }
-            if (injected) {
-              new Notice("🎉 已直接追加插入到您当前打开的 Canvas 白板中！");
-            }
+          }
+
+          if (injected) {
+            new Notice("🎉 [左右分屏联动] 已直接追加并自动渲染至您右侧打开的 Canvas 画板中！");
+          } else {
+            new Notice(
+              "✨ Canvas 卡片数据已自动复制到剪贴板！\n\n" +
+              "💡 极客提示：建议在右侧【左右分屏】打开任意 Canvas 画板，AI 将会直接实时渲染卡片飞入，无需手动粘贴！",
+              8000
+            );
           }
         } catch (clipErr) {
           console.error("Clipboard / Canvas automation failed:", clipErr);

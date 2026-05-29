@@ -8131,10 +8131,9 @@ var LinkTagIntelligenceView = class extends import_obsidian11.ItemView {
         insertText = "```json\n" + resultText.trim() + "\n```";
         try {
           await navigator.clipboard.writeText(resultText.trim());
-          new Notice("\u2728 Canvas \u5361\u7247\u5DF2\u751F\u6210\u5E76\u81EA\u52A8\u590D\u5236\u5230\u526A\u8D34\u677F\uFF01\u53EF\u76F4\u63A5\u5728 Canvas \u4E2D\u6309\u4E0B Ctrl+V \u7C98\u8D34\u3002");
           const canvasLeaves = this.app.workspace.getLeavesOfType("canvas");
+          let injected = false;
           if (canvasLeaves.length > 0) {
-            let injected = false;
             for (const leaf of canvasLeaves) {
               const canvasView = leaf.view;
               if (canvasView && canvasView.canvas) {
@@ -8149,9 +8148,14 @@ var LinkTagIntelligenceView = class extends import_obsidian11.ItemView {
                 }
               }
             }
-            if (injected) {
-              new Notice("\u{1F389} \u5DF2\u76F4\u63A5\u8FFD\u52A0\u63D2\u5165\u5230\u60A8\u5F53\u524D\u6253\u5F00\u7684 Canvas \u767D\u677F\u4E2D\uFF01");
-            }
+          }
+          if (injected) {
+            new Notice("\u{1F389} [\u5DE6\u53F3\u5206\u5C4F\u8054\u52A8] \u5DF2\u76F4\u63A5\u8FFD\u52A0\u5E76\u81EA\u52A8\u6E32\u67D3\u81F3\u60A8\u53F3\u4FA7\u6253\u5F00\u7684 Canvas \u753B\u677F\u4E2D\uFF01");
+          } else {
+            new Notice(
+              "\u2728 Canvas \u5361\u7247\u6570\u636E\u5DF2\u81EA\u52A8\u590D\u5236\u5230\u526A\u8D34\u677F\uFF01\n\n\u{1F4A1} \u6781\u5BA2\u63D0\u793A\uFF1A\u5EFA\u8BAE\u5728\u53F3\u4FA7\u3010\u5DE6\u53F3\u5206\u5C4F\u3011\u6253\u5F00\u4EFB\u610F Canvas \u753B\u677F\uFF0CAI \u5C06\u4F1A\u76F4\u63A5\u5B9E\u65F6\u6E32\u67D3\u5361\u7247\u98DE\u5165\uFF0C\u65E0\u9700\u624B\u52A8\u7C98\u8D34\uFF01",
+              8e3
+            );
           }
         } catch (clipErr) {
           console.error("Clipboard / Canvas automation failed:", clipErr);
