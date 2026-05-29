@@ -7393,6 +7393,7 @@ var LinkTagIntelligenceView = class extends import_obsidian11.ItemView {
         `statusText:${this.aiStatusText ?? ""}`,
         `targetFile:${this.aiTargetFile?.path ?? ""}`,
         `collapsed:${this.aiTemplatesCollapsed}`,
+        `promptCollapsed:${this.aiPromptCollapsed}`,
         `summary:${this.aiCachedSummary ?? ""}`,
         `selection:${selection.substring(0, 100)}`,
         `lastTemplate:${this.plugin.settings.aiLastUsedTemplateId}`
