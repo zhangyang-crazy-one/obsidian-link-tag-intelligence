@@ -1752,12 +1752,14 @@ export class LinkTagIntelligenceView extends ItemView {
         }
       }
 
-      // Insert at cursor or replace selection
-      if (selection) {
-        activeView.editor.replaceSelection(insertText);
-      } else {
-        const cursor = activeView.editor.getCursor();
-        activeView.editor.replaceRange(insertText, cursor);
+      // Insert at cursor or replace selection (only if NOT Canvas Card template)
+      if (!isCanvasCard) {
+        if (selection) {
+          activeView.editor.replaceSelection(insertText);
+        } else {
+          const cursor = activeView.editor.getCursor();
+          activeView.editor.replaceRange(insertText, cursor);
+        }
       }
 
       this.aiStatusType = "success";

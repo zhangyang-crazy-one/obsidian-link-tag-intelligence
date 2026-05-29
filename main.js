@@ -8161,11 +8161,13 @@ var LinkTagIntelligenceView = class extends import_obsidian11.ItemView {
           console.error("Clipboard / Canvas automation failed:", clipErr);
         }
       }
-      if (selection) {
-        activeView.editor.replaceSelection(insertText);
-      } else {
-        const cursor = activeView.editor.getCursor();
-        activeView.editor.replaceRange(insertText, cursor);
+      if (!isCanvasCard) {
+        if (selection) {
+          activeView.editor.replaceSelection(insertText);
+        } else {
+          const cursor = activeView.editor.getCursor();
+          activeView.editor.replaceRange(insertText, cursor);
+        }
       }
       this.aiStatusType = "success";
       this.aiStatusText = this.plugin.t("aiStatusSuccess");
