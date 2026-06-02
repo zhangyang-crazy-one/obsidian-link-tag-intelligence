@@ -62,7 +62,7 @@ describe("VisionDiagnostics.runDiagnostics — happy path", () => {
   it("reports overallOk=true when every model file is present", () => {
     const { set, sizes, onnxContents } = fullyEquipped();
     const fs = makeFsMock({ existing: set, sizes, onnxDirContents: onnxContents });
-    const diag = new VisionDiagnostics(PLUGIN_DIR, {}, { fs, path: realPath });
+    const diag = new VisionDiagnostics(PLUGIN_DIR, {}, { fs, path: realPath, tier: "mobile" });
     const r = diag.runDiagnostics();
     expect(r.overallOk).toBe(true);
     expect(r.paddleOcr.present).toBe(true);
@@ -81,7 +81,7 @@ describe("VisionDiagnostics.runDiagnostics — partial / total failure", () => {
     set.delete(realPath.join(PADDLE_DIR, "rec", "inference.onnx"));
     set.delete(realPath.join(PADDLE_DIR, "dict", "ppocr_keys_v5.txt"));
     const fs = makeFsMock({ existing: set, sizes, onnxDirContents: onnxContents });
-    const diag = new VisionDiagnostics(PLUGIN_DIR, {}, { fs, path: realPath });
+    const diag = new VisionDiagnostics(PLUGIN_DIR, {}, { fs, path: realPath, tier: "mobile" });
     const r = diag.runDiagnostics();
     expect(r.overallOk).toBe(false);
     expect(r.paddleOcr.present).toBe(false);
@@ -97,7 +97,7 @@ describe("VisionDiagnostics.runDiagnostics — partial / total failure", () => {
     const { set, sizes } = fullyEquipped();
     set.delete(realPath.join(QWEN_DIR, "onnx"));
     const fs = makeFsMock({ existing: set, sizes, onnxDirContents: [] });
-    const diag = new VisionDiagnostics(PLUGIN_DIR, {}, { fs, path: realPath });
+    const diag = new VisionDiagnostics(PLUGIN_DIR, {}, { fs, path: realPath, tier: "mobile" });
     const r = diag.runDiagnostics();
     expect(r.overallOk).toBe(false);
     expect(r.qwenVl.present).toBe(false);
@@ -108,7 +108,7 @@ describe("VisionDiagnostics.runDiagnostics — partial / total failure", () => {
     const { set, sizes } = fullyEquipped();
     // Keep the dir present, but return [] from readdirSync
     const fs = makeFsMock({ existing: set, sizes, onnxDirContents: [] });
-    const diag = new VisionDiagnostics(PLUGIN_DIR, {}, { fs, path: realPath });
+    const diag = new VisionDiagnostics(PLUGIN_DIR, {}, { fs, path: realPath, tier: "mobile" });
     const r = diag.runDiagnostics();
     expect(r.qwenVl.present).toBe(false);
     expect(r.qwenVl.missing[0]).toMatch(/empty/);
@@ -118,7 +118,7 @@ describe("VisionDiagnostics.runDiagnostics — partial / total failure", () => {
     const { set, sizes, onnxContents } = fullyEquipped();
     set.delete(VISION_WORKER);
     const fs = makeFsMock({ existing: set, sizes, onnxDirContents: onnxContents });
-    const diag = new VisionDiagnostics(PLUGIN_DIR, {}, { fs, path: realPath });
+    const diag = new VisionDiagnostics(PLUGIN_DIR, {}, { fs, path: realPath, tier: "mobile" });
     const r = diag.runDiagnostics();
     expect(r.overallOk).toBe(false);
     expect(r.visionWorkerJs.present).toBe(false);
@@ -126,7 +126,7 @@ describe("VisionDiagnostics.runDiagnostics — partial / total failure", () => {
 
   it("reports every engine broken when nothing exists", () => {
     const fs = makeFsMock({ existing: new Set(), sizes: new Map(), onnxDirContents: [] });
-    const diag = new VisionDiagnostics(PLUGIN_DIR, {}, { fs, path: realPath });
+    const diag = new VisionDiagnostics(PLUGIN_DIR, {}, { fs, path: realPath, tier: "mobile" });
     const r = diag.runDiagnostics();
     expect(r.overallOk).toBe(false);
     expect(r.paddleOcr.present).toBe(false);
@@ -182,7 +182,7 @@ describe("VisionDiagnostics.formatReport", () => {
   it("renders an OK report with a green checkmark and engine summaries", () => {
     const { set, sizes, onnxContents } = fullyEquipped();
     const fs = makeFsMock({ existing: set, sizes, onnxDirContents: onnxContents });
-    const diag = new VisionDiagnostics(PLUGIN_DIR, {}, { fs, path: realPath });
+    const diag = new VisionDiagnostics(PLUGIN_DIR, {}, { fs, path: realPath, tier: "mobile" });
     const report = diag.formatReport(diag.runDiagnostics());
     expect(report).toMatch(/✅ 视觉模型完整性检查通过/);
     expect(report).toMatch(/PaddleOCR \(主 OCR 引擎\)/);
@@ -194,7 +194,7 @@ describe("VisionDiagnostics.formatReport", () => {
 
   it("renders a fail report listing missing items", () => {
     const fs = makeFsMock({ existing: new Set(), sizes: new Map(), onnxDirContents: [] });
-    const diag = new VisionDiagnostics(PLUGIN_DIR, {}, { fs, path: realPath });
+    const diag = new VisionDiagnostics(PLUGIN_DIR, {}, { fs, path: realPath, tier: "mobile" });
     const report = diag.formatReport(diag.runDiagnostics());
     expect(report).toMatch(/❌ 视觉模型完整性检查未通过/);
     expect(report).toMatch(/缺失: 3 项/);  // PaddleOCR required (det, rec, dict)

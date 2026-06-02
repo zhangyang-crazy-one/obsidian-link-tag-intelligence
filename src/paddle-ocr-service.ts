@@ -12,7 +12,9 @@ import {
   PADDLE_DET_DEFAULTS,
   PADDLE_MODEL_FILES,
   PADDLE_MODEL_SUBDIRS,
+  PADDLE_TIER_SPECS,
   type PaddleDetConfig,
+  type PaddleOcrModelTier,
 } from "./paddle-ocr-types";
 
 // Minimal InferenceSession shape we rely on. Avoids `any` on the public surface.
@@ -70,6 +72,10 @@ export class PaddleOcrService {
   /** Aspect ratio (long side / short side) above which a box is rejected. */
   private static readonly DET_ASPECT_RATIO_THRESH = 100;
 
+  // Tier selector — affects file layout and (eventually) session shapes.
+  // Defaults to "mobile" for back-compat with the legacy single-tier code path.
+  private readonly tier: PaddleOcrModelTier;
+
   constructor(
     modelDir: string,
     deps?: {
@@ -79,6 +85,15 @@ export class PaddleOcrService {
       sharp?: SharpLike;
       /** Override detection hyperparameters. Falls back to PaddleOCR defaults. */
       detConfig?: Partial<PaddleDetConfig>;
+      /**
+       * Which PP-OCRv5 tier the files in `modelDir` belong to. Affects
+       * which file paths checkModelFiles() probes, which yml file holds
+       * the embedded dictionary, and (eventually) any tier-specific ONNX
+       * session shapes. Currently mobile / server / hybrid use the same
+       * det+rec input shapes, so the only behavioral difference is
+       * dictionary loading.
+       */
+      tier?: PaddleOcrModelTier;
     }
   ) {
     this.modelDir = modelDir;
@@ -87,6 +102,7 @@ export class PaddleOcrService {
     this.ort = deps?.ort ?? null;
     this.sharp = deps?.sharp ?? null;
     this.detConfig = { ...PADDLE_DET_DEFAULTS, ...(deps?.detConfig ?? {}) };
+    this.tier = deps?.tier ?? "mobile";
   }
 
   /**
@@ -96,13 +112,21 @@ export class PaddleOcrService {
    * The cls (orientation classification) model is OPTIONAL — PaddlePaddle has not
    * published a PP-OCRv5 mobile cls ONNX export as of this writing, so we accept
    * its absence. When missing, runPipeline() simply skips the cls branch.
+   *
+   * Tier-aware: server / hybrid bundles embed the character dictionary inside
+   * the rec model's `inference.yml`, so the standalone `dict/ppocr_keys_v5.txt`
+   * is NOT required for those tiers. The mobile bundle still requires the .txt.
    */
   public checkModelFiles(): { present: boolean; missing: string[]; missingOptional: string[]; modelDir: string } {
     const required = [
       this.pathLib.join(PADDLE_MODEL_SUBDIRS.det, PADDLE_MODEL_FILES.det),
       this.pathLib.join(PADDLE_MODEL_SUBDIRS.rec, PADDLE_MODEL_FILES.rec),
-      this.pathLib.join(PADDLE_MODEL_SUBDIRS.dict, PADDLE_MODEL_FILES.dict),
     ];
+    // Only mobile requires the standalone dict file. Server/hybrid embed the
+    // dictionary inside rec/inference.yml (handled in loadDictionary()).
+    if (this.tier === "mobile") {
+      required.push(this.pathLib.join(PADDLE_MODEL_SUBDIRS.dict, PADDLE_MODEL_FILES.dict));
+    }
     const optional = [
       this.pathLib.join(PADDLE_MODEL_SUBDIRS.cls, PADDLE_MODEL_FILES.cls),
     ];
@@ -161,11 +185,13 @@ export class PaddleOcrService {
       );
 
       if (onStatus) onStatus("正在加载字符字典...");
-      const dictRaw = await this.fs.promises.readFile(
-        this.pathLib.join(this.modelDir, PADDLE_MODEL_SUBDIRS.dict, PADDLE_MODEL_FILES.dict),
-        "utf-8"
-      );
-      this.dictionary = dictRaw.split(/\r?\n/).filter((line) => line.length > 0);
+      this.dictionary = await this.loadDictionary();
+      if (this.dictionary.length === 0) {
+        throw new Error(
+          `PaddleOCR 字典加载失败：未在 ${this.modelDir} 找到字典。` +
+          "mobile 档位下应存在 dict/ppocr_keys_v5.txt；server/hybrid 档位下应存在 rec/inference.yml（含 character_dict 字段）。"
+        );
+      }
 
       this.isInitialized = true;
     })();
@@ -1099,4 +1125,121 @@ export class PaddleOcrService {
       void this.dispose();
     }, PaddleOcrService.IDLE_TIMEOUT_MS);
   }
+
+  // ---------------------------------------------------------------------------
+  // Dictionary loading — tier-aware
+  //
+  // Mobile bundle (legacy): a flat text file at
+  //   `<modelDir>/dict/ppocr_keys_v5.txt`, one token per line.
+  //
+  // Server / Hybrid bundle: the dictionary is embedded inside
+  //   `<modelDir>/rec/inference.yml` under `PostProcess.character_dict`,
+  //   as a YAML list of strings. PaddleOCR ships the rec model with
+  //   its companion yml; we parse it with a tiny dependency-free
+  //   reader that only supports the limited subset used here.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Load the PaddleOCR character dictionary. Mobile falls back to a
+   * `.txt` file; server/hybrid fall back to parsing the rec model's
+   * `inference.yml`. Returns [] if neither source is available
+   * (caller is expected to treat that as a hard error).
+   */
+  private async loadDictionary(): Promise<string[]> {
+    // Mobile: try the .txt file first (back-compat with old data).
+    const txtPath = this.pathLib.join(this.modelDir, PADDLE_MODEL_SUBDIRS.dict, PADDLE_MODEL_FILES.dict);
+    if (this.fs.existsSync(txtPath)) {
+      const raw = await this.fs.promises.readFile(txtPath, "utf-8");
+      const dict = raw.split(/\r?\n/).filter((line) => line.length > 0);
+      if (dict.length > 0) return dict;
+    }
+
+    // Server / hybrid / fallback: parse the rec model's inference.yml.
+    const ymlPath = this.pathLib.join(this.modelDir, PADDLE_MODEL_SUBDIRS.rec, "inference.yml");
+    if (this.fs.existsSync(ymlPath)) {
+      const ymlRaw = await this.fs.promises.readFile(ymlPath, "utf-8");
+      const dict = parsePaddleOcrDictFromYml(ymlRaw);
+      if (dict.length > 0) return dict;
+    }
+
+    return [];
+  }
 }
+
+/**
+ * Standalone helper: parse a PP-OCRv5 inference.yml and extract the
+ * `PostProcess.character_dict` list of strings.
+ *
+ * Intentionally a tiny dependency-free reader. The PP-OCRv5 yml is
+ * generated by PaddleOCR's own export and uses only:
+ *   - top-level `key: value` pairs
+ *   - list items as `- "string"` or `- string` (with double-quote
+ *     escaping for `\\` `\"` `\n` `\t` and Unicode escapes)
+ * We do NOT need a full YAML parser for this restricted format.
+ *
+ * If the yml ever grows additional structure, this parser should be
+ * replaced with a real YAML library — but doing so for one config file
+ * is overkill today.
+ */
+export function parsePaddleOcrDictFromYml(yml: string): string[] {
+  // Find the character_dict section. Allow either "character_dict:" (top
+  // level) or "  character_dict:" (nested). Match the colon to anchor.
+  const startMatch = yml.match(/^\s*character_dict:\s*$/m);
+  if (!startMatch) return [];
+  const startIdx = startMatch.index! + startMatch[0].length;
+  const tail = yml.slice(startIdx);
+  // Each list item starts with "  - " (or "    - " for deeper nesting).
+  // We accept any leading whitespace ≥ 1 + "- " as long as the line
+  // after the dash is a string literal.
+  // Per-line matching. The `^` and `$` in each pattern are anchored to
+  // line boundaries (since `line` is a single line of text, no `m` flag
+  // is needed; `^` matches start of string, `$` matches end of string,
+  // and for a single line these are equivalent to line boundaries).
+  //
+  // We intentionally do NOT use `\s*$` at the end because U+3000
+  // (full-width space, the actual first dictionary entry in the real
+  // PP-OCRv5 yml) is treated as `\s` by the ECMAScript regex engine
+  // per the White_Space property. A trailing `\s*` would eat it.
+  const lines = tail.split(/\r?\n/);
+  const result: string[] = [];
+  for (const line of lines) {
+    if (line.trim() === "" || /^\s*#/.test(line)) continue;
+    const m = line.match(/^(\s*)-(\s?)(.*)$/);
+    if (m) {
+      // m[2] is the optional single space after `-`. m[3] is the
+      // raw payload (may be `　`, empty, or anything else).
+      result.push(unquoteYamlString(m[3]));
+      continue;
+    }
+    // First non-list line ends the list.
+    break;
+  }
+  return result;
+}
+
+/**
+ * Strip surrounding quotes from a YAML scalar and unescape PP-OCRv5's
+ * limited escape sequences (`\\`, `\"`, `\n`, `\t`, `\uXXXX`).
+ */
+function unquoteYamlString(raw: string): string {
+  // Use a custom strip that only removes ASCII whitespace — NOT the
+  // ECMAScript-default `String.prototype.trim()` which would also eat
+  // U+3000 (full-width space, the actual first dictionary entry in
+  // the real PP-OCRv5 yml).
+  let s = raw.replace(/^[ \t]+|[ \t]+$/g, "");
+  if (s.startsWith('"') && s.endsWith('"') && s.length >= 2) {
+    s = s.slice(1, -1);
+  } else if (s.startsWith("'") && s.endsWith("'") && s.length >= 2) {
+    s = s.slice(1, -1);
+  }
+  return s
+    .replace(/\\\\/g, "\x00BACKSLASH\x00")
+    .replace(/\\"/g, '"')
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t")
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/\x00BACKSLASH\x00/g, "\\");
+}
+
+/** Exposed so unit tests can verify without a real model file. */
+export const _internal = { unquoteYamlString, parsePaddleOcrDictFromYml };

@@ -8,7 +8,11 @@
 
 import * as path from "path";
 import { PaddleOcrService } from "./paddle-ocr-service";
-import { PADDLE_DEFAULT_MODEL_DIR } from "./paddle-ocr-types";
+import {
+  PADDLE_DEFAULT_MODEL_DIR,
+  PADDLE_TIER_SPECS,
+  type PaddleOcrModelTier,
+} from "./paddle-ocr-types";
 import { TesseractOcrService } from "./tesseract-ocr-service";
 
 /** A single engine's model state. */
@@ -41,15 +45,25 @@ export class VisionDiagnostics {
   private readonly fs: typeof import("fs");
   private readonly pathLib: typeof import("path");
   private readonly vaultRoot: string | null;
+  private readonly tier: PaddleOcrModelTier;
 
   constructor(
     private readonly pluginDir: string,
     private readonly settings: VisionLikeSettings,
-    opts?: { vaultRoot?: string | null; fs?: typeof import("fs"); path?: typeof import("path") }
+    opts?: {
+      vaultRoot?: string | null;
+      fs?: typeof import("fs");
+      path?: typeof import("path");
+      /** Which PaddleOCR model tier to check. Defaults to "mobile"
+       *  to keep the legacy test fixtures valid. In production,
+       *  the value comes from settings.paddleOcrTier. */
+      tier?: PaddleOcrModelTier;
+    }
   ) {
     this.fs = opts?.fs ?? require("fs");
     this.pathLib = opts?.path ?? require("path");
     this.vaultRoot = opts?.vaultRoot ?? null;
+    this.tier = opts?.tier ?? "mobile";
   }
 
   /**
@@ -197,7 +211,10 @@ export class VisionDiagnostics {
 
   private resolvePaddleOcrDir(): string {
     let dir = this.settings.paddleOcrModelPath;
-    if (!dir) return this.pathLib.join(this.pluginDir, PADDLE_DEFAULT_MODEL_DIR);
+    if (!dir) {
+      const tierDir = PADDLE_TIER_SPECS[this.tier].dirName;
+      return this.pathLib.join(this.pluginDir, "models", "ocr", "pp-ocrv5", tierDir);
+    }
     return this.resolveRelative(dir);
   }
 

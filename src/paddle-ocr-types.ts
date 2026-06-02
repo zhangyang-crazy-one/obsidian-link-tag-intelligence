@@ -63,6 +63,83 @@ export const PADDLE_MODEL_SUBDIRS = {
   dict: "dict",
 } as const;
 
+// ─── PaddleOCR model tier (mobile / server / hybrid) ─────────────────────────
+//
+// The PP-OCRv5 family ships three useful deployment configurations:
+//   - mobile: 4.8 MB det + 16.5 MB rec = ~21 MB total. Fast, low-memory.
+//   - server: 88.1 MB det + 84.5 MB rec = ~173 MB total. High accuracy,
+//     designed for long text lines and printed/handwritten Chinese.
+//   - hybrid: mobile det + server rec = ~89 MB total. Best compromise
+//     when memory is tight but rec quality matters more than det quality.
+//
+// Files are stored in <pluginRoot>/models/ocr/pp-ocrv5/<tier>/.
+// Each tier has its own det + rec files (and, for mobile, an optional
+// ppocr_keys_v5.txt; for server, the dictionary is embedded inside
+// the rec model's inference.yml).
+//
+// All SHAs are placeholders ("e3b0c44…b855", the SHA256 of an empty
+// string) — see `PLACEHOLDER_SHA256` in speech-model.ts. downloadWithRetry
+// skips the checksum when it sees this placeholder, matching the
+// convention used for the speech models.
+
+export type PaddleOcrModelTier = "mobile" | "server" | "hybrid";
+
+export type PaddleTierSpec = {
+  det: {
+    repo: string;
+    filename: string;
+    sha256: string;
+    sizeBytes: number;
+  };
+  rec: {
+    repo: string;
+    filename: string;
+    sha256: string;
+    sizeBytes: number;
+  };
+  /** Sub-directory under models/ocr/pp-ocrv5/. */
+  dirName: "mobile" | "server" | "hybrid";
+  /** Short human-readable summary for the Settings dropdown. */
+  summary: string;
+};
+
+const PLACEHOLDER = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+export const PADDLE_TIER_SPECS: Record<PaddleOcrModelTier, PaddleTierSpec> = {
+  mobile: {
+    det: { repo: "PaddlePaddle/PP-OCRv5_mobile_det_onnx", filename: "inference.onnx", sha256: PLACEHOLDER, sizeBytes: 5_063_518 },
+    rec: { repo: "PaddlePaddle/PP-OCRv5_mobile_rec_onnx", filename: "inference.onnx", sha256: PLACEHOLDER, sizeBytes: 17_297_408 },
+    dirName: "mobile",
+    summary: "Mobile (fast, ~22 MB)",
+  },
+  server: {
+    det: { repo: "PaddlePaddle/PP-OCRv5_server_det_onnx", filename: "inference.onnx", sha256: PLACEHOLDER, sizeBytes: 92_408_575 },
+    rec: { repo: "PaddlePaddle/PP-OCRv5_server_rec_onnx", filename: "inference.onnx", sha256: PLACEHOLDER, sizeBytes: 88_602_496 },
+    dirName: "server",
+    summary: "Server (precise, ~181 MB, default)",
+  },
+  hybrid: {
+    det: { repo: "PaddlePaddle/PP-OCRv5_mobile_det_onnx", filename: "inference.onnx", sha256: PLACEHOLDER, sizeBytes: 5_063_518 },
+    rec: { repo: "PaddlePaddle/PP-OCRv5_server_rec_onnx", filename: "inference.onnx", sha256: PLACEHOLDER, sizeBytes: 88_602_496 },
+    dirName: "hybrid",
+    summary: "Hybrid (mobile det + server rec, ~94 MB)",
+  },
+};
+
+/** Server is the default — user has empirically confirmed mobile
+ *  produces unreadable output on textbook pages. */
+export const DEFAULT_PADDLE_TIER: PaddleOcrModelTier = "server";
+
+/** Build the canonical model dir for a given tier. */
+export function getPaddleTierModelDir(tier: PaddleOcrModelTier): string {
+  return `models/ocr/pp-ocrv5/${PADDLE_TIER_SPECS[tier].dirName}`;
+}
+
+/** Default model dir is now tier-aware. The legacy value
+ *  `"models/ocr/pp-ocrv5/mobile"` is still exposed for back-compat
+ *  with existing user data.json settings. */
+export const PADDLE_DEFAULT_MODEL_DIR = getPaddleTierModelDir(DEFAULT_PADDLE_TIER);
+
 // ─── PaddleOCR detection hyperparameters ─────────────────────────────────────
 //
 // These are exposed to the user via Settings (src/settings.ts). Defaults are
@@ -115,9 +192,6 @@ export const PADDLE_MODEL_FILES = {
   cls: "inference.onnx",
   dict: "ppocr_keys_v5.txt",
 } as const;
-
-/** Default PaddleOCR model directory (relative to plugin root). */
-export const PADDLE_DEFAULT_MODEL_DIR = "models/ocr/pp-ocrv5/mobile";
 
 /** Default HuggingFace repo for PP-OCRv5 mobile bundle. */
 export const PADDLE_HF_REPO = "PaddlePaddle/PP-OCRv5_mobile_rec";

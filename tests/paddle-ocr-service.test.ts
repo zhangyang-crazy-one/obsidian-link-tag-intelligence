@@ -1,8 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { PaddleOcrService } from "../src/paddle-ocr-service";
+import {
+  PaddleOcrService,
+  _internal,
+  parsePaddleOcrDictFromYml,
+} from "../src/paddle-ocr-service";
 import {
   PADDLE_MODEL_FILES,
   PADDLE_MODEL_SUBDIRS,
+  PADDLE_TIER_SPECS,
 } from "../src/paddle-ocr-types";
 import * as realPath from "path";
 
@@ -389,5 +394,177 @@ describe("PaddleOcrService geometry helpers", () => {
       minAreaRect: (pts: Array<[number, number]>) => Quad8 | null;
     }).minAreaRect([[0, 0], [1, 1]]);
     expect(rect).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PaddleOcrService constructor honors the new `tier` option
+// ---------------------------------------------------------------------------
+
+describe("PaddleOcrService constructor with tier option", () => {
+  it("defaults to mobile tier when no tier is specified", () => {
+    const svc = new PaddleOcrService(MODEL_DIR, { fs: {} as never });
+    expect((svc as unknown as { tier: string }).tier).toBe("mobile");
+  });
+
+  it("accepts server tier", () => {
+    const svc = new PaddleOcrService(MODEL_DIR, { tier: "server", fs: {} as never });
+    expect((svc as unknown as { tier: string }).tier).toBe("server");
+  });
+
+  it("accepts hybrid tier", () => {
+    const svc = new PaddleOcrService(MODEL_DIR, { tier: "hybrid", fs: {} as never });
+    expect((svc as unknown as { tier: string }).tier).toBe("hybrid");
+  });
+
+  it("checkModelFiles uses server-tier paths when tier=server", () => {
+    const existing = new Set<string>([
+      realPath.join(MODEL_DIR, "det", "inference.onnx"),
+      realPath.join(MODEL_DIR, "rec", "inference.onnx"),
+      // server tier has dict embedded in rec/inference.yml, no separate dict/
+    ]);
+    const fs = makeFsMock({ existing, dictText: "" });
+    const svc = new PaddleOcrService(MODEL_DIR, { tier: "server", fs });
+    const result = svc.checkModelFiles();
+    // For server tier the rec/inference.yml is required instead of dict/
+    expect(result.missing).toEqual([]); // both det + rec present
+    expect(result.modelDir).toBe(MODEL_DIR);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parsePaddleOcrDictFromYml — yml dictionary parser
+// ---------------------------------------------------------------------------
+
+describe("parsePaddleOcrDictFromYml", () => {
+  it("extracts an unquoted list of tokens", () => {
+    // The first entry of the real PP-OCRv5 mobile yml is 　 (full-width
+    // space, the CTC blank token in PaddleOCR's convention). Subsequent
+    // entries are real CJK characters. This test exercises the basic
+    // list-of-strings path through the parser.
+    const yml = [
+      "PostProcess:",
+      "  name: CTCLabelDecode",
+      "  character_dict:",
+      "    - 　",
+      "    - 一",
+      "    - 乙",
+      "    - 二",
+    ].join("\n");
+    const r = parsePaddleOcrDictFromYml(yml);
+    expect(parsePaddleOcrDictFromYml(yml)).toEqual(["　", "一", "乙", "二"]);
+  });
+
+  it("handles an empty list item (the `-` line on its own)", () => {
+    // Some Yaml serializers emit `-` for an empty string. PP-OCRv5 doesn't
+    // do this, but the parser should still be robust.
+    const yml = `
+character_dict:
+    - "　"
+    -
+    - 一
+`;
+    expect(parsePaddleOcrDictFromYml(yml)).toEqual(["　", "", "一"]);
+  });
+
+  it("handles double-quoted strings with escape sequences", () => {
+    const yml = `
+PostProcess:
+  character_dict:
+    - "\\\\"
+    - "\\"quoted\\""
+    - "line1\\nline2"
+    - "tab\\there"
+`;
+    expect(parsePaddleOcrDictFromYml(yml)).toEqual([
+      "\\",
+      '"quoted"',
+      "line1\nline2",
+      "tab\there",
+    ]);
+  });
+
+  it("handles Unicode escape sequences \\uXXXX", () => {
+    const yml = `
+PostProcess:
+  character_dict:
+    - "中"
+    - "あ"
+    - "𝐀"
+`;
+    // The PaddleOCRv5 rec yml uses literal CJK characters, not \u escapes,
+    // but our unquoteYamlString also handles \\uXXXX for robustness.
+    expect(parsePaddleOcrDictFromYml(yml).length).toBe(3);
+  });
+
+  it("returns [] if no character_dict section", () => {
+    const yml = `
+SomeOtherSection:
+  foo: bar
+`;
+    expect(parsePaddleOcrDictFromYml(yml)).toEqual([]);
+  });
+
+  it("returns [] for empty character_dict section", () => {
+    const yml = `
+PostProcess:
+  character_dict:
+`;
+    expect(parsePaddleOcrDictFromYml(yml)).toEqual([]);
+  });
+
+  it("stops at the first non-list line", () => {
+    const yml = `
+PostProcess:
+  character_dict:
+    - 一
+    - 二
+  name: CTCLabelDecode
+    - this_should_not_be_included
+`;
+    expect(parsePaddleOcrDictFromYml(yml)).toEqual(["一", "二"]);
+  });
+
+  it("unquoteYamlString strips surrounding double quotes", () => {
+    expect(_internal.unquoteYamlString('"hello"')).toBe("hello");
+    expect(_internal.unquoteYamlString('"中"')).toBe("中");
+  });
+
+  it("unquoteYamlString strips surrounding single quotes", () => {
+    expect(_internal.unquoteYamlString("'hello'")).toBe("hello");
+  });
+
+  it("unquoteYamlString handles backslash sequences", () => {
+    expect(_internal.unquoteYamlString('"a\\\\b"')).toBe("a\\b");
+    expect(_internal.unquoteYamlString('"a\\"b"')).toBe('a"b');
+    expect(_internal.unquoteYamlString('"a\\nb"')).toBe("a\nb");
+    expect(_internal.unquoteYamlString('"a\\tb"')).toBe("a\tb");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PADDLE_TIER_SPECS invariants — guard against spec drift
+// ---------------------------------------------------------------------------
+
+describe("PADDLE_TIER_SPECS", () => {
+  it("has exactly the three documented tiers", () => {
+    expect(Object.keys(PADDLE_TIER_SPECS).sort()).toEqual(["hybrid", "mobile", "server"]);
+  });
+
+  it("every tier has det and rec spec with non-empty fields", () => {
+    for (const [tier, spec] of Object.entries(PADDLE_TIER_SPECS)) {
+      expect(spec.det.repo, `tier=${tier} det.repo`).toMatch(/PP-OCRv5_/);
+      expect(spec.rec.repo, `tier=${tier} rec.repo`).toMatch(/PP-OCRv5_/);
+      expect(spec.det.filename).toBe("inference.onnx");
+      expect(spec.rec.filename).toBe("inference.onnx");
+      expect(spec.det.sizeBytes).toBeGreaterThan(0);
+      expect(spec.rec.sizeBytes).toBeGreaterThan(0);
+    }
+  });
+
+  it("server tier files are larger than mobile", () => {
+    const m = PADDLE_TIER_SPECS.mobile.det.sizeBytes + PADDLE_TIER_SPECS.mobile.rec.sizeBytes;
+    const s = PADDLE_TIER_SPECS.server.det.sizeBytes + PADDLE_TIER_SPECS.server.rec.sizeBytes;
+    expect(s).toBeGreaterThan(m * 3); // server is at least 3x bigger than mobile
   });
 });
