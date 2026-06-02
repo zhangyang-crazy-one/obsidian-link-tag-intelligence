@@ -22,6 +22,28 @@ type TranslationKey =
   | "visionDiagnosticOk"
   | "visionDiagnosticFail"
   | "visionPaddleOcrMissing"
+  | "paddleDetAdvancedHeading"
+  | "paddleDetAdvancedDesc"
+  | "paddleDetReset"
+  | "paddleDetResetConfirm"
+  | "paddleDetDbThreshLabel"
+  | "paddleDetDbThreshDesc"
+  | "paddleDetBoxThreshLabel"
+  | "paddleDetBoxThreshDesc"
+  | "paddleDetUnclipRatioLabel"
+  | "paddleDetUnclipRatioDesc"
+  | "paddleDetMinSizeLabel"
+  | "paddleDetMinSizeDesc"
+  | "paddleDetNmsIouThreshLabel"
+  | "paddleDetNmsIouThreshDesc"
+  | "paddleDetMaxCandidatesLabel"
+  | "paddleDetMaxCandidatesDesc"
+  | "paddleDetLimitSideLenLabel"
+  | "paddleDetLimitSideLenDesc"
+  | "paddleDetScoreModeLabel"
+  | "paddleDetScoreModeDesc"
+  | "paddleDetUseDilationLabel"
+  | "paddleDetUseDilationDesc"
   | "visionTesseractMissing"
   | "visionQwenVlMissing"
   | "currentNote"
@@ -456,6 +478,28 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     visionDiagnosticOk: "All vision model files are present.",
     visionDiagnosticFail: "Some vision model files are missing — see report above.",
     visionPaddleOcrMissing: "PaddleOCR model missing at {path}. Run the model diagnostics button to see which file is needed.",
+    paddleDetAdvancedHeading: "Advanced PaddleOCR detection parameters",
+    paddleDetAdvancedDesc: "Tune the DBNet postprocessor for your specific workload. Defaults are PaddleOCR's official values. ⚠ Changing these can hurt accuracy on images that already work well.",
+    paddleDetReset: "Reset to PaddleOCR defaults",
+    paddleDetResetConfirm: "Reset all 9 PaddleOCR detection parameters to their official defaults?",
+    paddleDetDbThreshLabel: "Binarize threshold (db_thresh)",
+    paddleDetDbThreshDesc: "Pixel probability > this counts as text. Lower = more sensitive (may detect noise). Range 0.1–0.9. PaddleOCR default: 0.3.",
+    paddleDetBoxThreshLabel: "Box score threshold (db_box_thresh)",
+    paddleDetBoxThreshDesc: "Average confidence inside a candidate box. Lower = keep uncertain boxes (more recall, less precision). Range 0.1–0.9. PaddleOCR default: 0.6.",
+    paddleDetUnclipRatioLabel: "Unclip expansion ratio",
+    paddleDetUnclipRatioDesc: "How far each detected box is expanded outward. Higher = box more generous around the text. Range 1.0–3.0. PaddleOCR default: 1.5.",
+    paddleDetMinSizeLabel: "Minimum box side (px)",
+    paddleDetMinSizeDesc: "Boxes smaller than this on their short side are dropped. Higher = filters more noise. Range 1–50. PaddleOCR default: 3.",
+    paddleDetNmsIouThreshLabel: "NMS IoU threshold",
+    paddleDetNmsIouThreshDesc: "Boxes with IoU above this are merged. Lower = more aggressive merging. Range 0.1–0.9. PaddleOCR default: 0.3.",
+    paddleDetMaxCandidatesLabel: "Max candidate boxes (cap)",
+    paddleDetMaxCandidatesDesc: "Hard cap for performance. Range 100–5000. PaddleOCR default: 1000.",
+    paddleDetLimitSideLenLabel: "Long-side resize for inference",
+    paddleDetLimitSideLenDesc: "Image is downscaled so its longest side is this value before detection. Higher = slower but more accurate for small text. Range 320–2048. PaddleOCR default: 960.",
+    paddleDetScoreModeLabel: "Score mode",
+    paddleDetScoreModeDesc: "fast = mean of pixels in axis-aligned bbox. slow = mean inside polygon (more accurate, slower).",
+    paddleDetUseDilationLabel: "Dilate segmentation map",
+    paddleDetUseDilationDesc: "Apply 3×3 dilation to the binarized map before contour finding. Useful for dense small text. PaddleOCR mobile default: true.",
     visionTesseractMissing: "Tesseract language data missing at {path}. Run the model diagnostics button to see which file is needed.",
     visionQwenVlMissing: "Qwen2-VL (or alternative VLM) model missing at {path}.",
     currentNote: "Current note",
@@ -889,6 +933,28 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     visionDiagnosticOk: "所有视觉模型文件已就绪。",
     visionDiagnosticFail: "部分视觉模型文件缺失 — 详见上方报告。",
     visionPaddleOcrMissing: "PaddleOCR 模型缺失：{path}。点击「运行模型诊断」查看具体缺失文件。",
+    paddleDetAdvancedHeading: "高级 PaddleOCR 检测参数",
+    paddleDetAdvancedDesc: "为你的具体场景微调 DBNet 后处理。默认值为 PaddleOCR 官方值。⚠ 修改这些参数可能让原本能识别的图片反而变差。",
+    paddleDetReset: "重置为 PaddleOCR 官方默认",
+    paddleDetResetConfirm: "确认将 9 个 PaddleOCR 检测参数全部重置为官方默认值？",
+    paddleDetDbThreshLabel: "二值化阈值 (db_thresh)",
+    paddleDetDbThreshDesc: "像素概率 > 此值算文字像素。越低越敏感（可能误检噪声）。范围 0.1–0.9。官方默认：0.3。",
+    paddleDetBoxThreshLabel: "检测框置信度阈值 (db_box_thresh)",
+    paddleDetBoxThreshDesc: "候选框内平均概率。越低越宽松（召回↑、精度↓）。范围 0.1–0.9。官方默认：0.6。",
+    paddleDetUnclipRatioLabel: "Unclip 扩展比例",
+    paddleDetUnclipRatioDesc: "检测框向外扩展距离。越高框越大。范围 1.0–3.0。官方默认：1.5。",
+    paddleDetMinSizeLabel: "最小框边长 (像素)",
+    paddleDetMinSizeDesc: "小于此边长的框被丢弃。越高过滤越严。范围 1–50。官方默认：3。",
+    paddleDetNmsIouThreshLabel: "NMS IoU 阈值",
+    paddleDetNmsIouThreshDesc: "IoU 高于此阈值的框被合并。越低合并越激进。范围 0.1–0.9。官方默认：0.3。",
+    paddleDetMaxCandidatesLabel: "最大候选框数",
+    paddleDetMaxCandidatesDesc: "性能保护上限。范围 100–5000。官方默认：1000。",
+    paddleDetLimitSideLenLabel: "推理时最长边长度",
+    paddleDetLimitSideLenDesc: "检测前图片被缩放到此最长边。越大越慢但对小字越准。范围 320–2048。官方默认：960。",
+    paddleDetScoreModeLabel: "得分模式",
+    paddleDetScoreModeDesc: "fast = bbox 内均值（快）。slow = polygon 内均值（准但慢）。",
+    paddleDetUseDilationLabel: "膨胀分割图",
+    paddleDetUseDilationDesc: "在 contour 提取前对二值化图做 3×3 膨胀。密集小字场景有用。PaddleOCR 移动端默认：开。",
     visionTesseractMissing: "Tesseract 语言包缺失：{path}。点击「运行模型诊断」查看具体缺失文件。",
     visionQwenVlMissing: "Qwen2-VL (或其他视觉大模型) 模型缺失：{path}。",
     currentNote: "当前笔记",

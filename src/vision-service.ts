@@ -43,7 +43,19 @@ export class LocalOfflineVisionService {
       const vaultPath = adapter.getBasePath ? adapter.getBasePath() : "";
       paddleOcrDir = path.resolve(vaultPath, paddleOcrDir);
     }
-    this.paddleOcrService = new PaddleOcrService(paddleOcrDir);
+    this.paddleOcrService = new PaddleOcrService(paddleOcrDir, {
+      detConfig: {
+        dbThresh: this.settings.paddleDetDbThresh,
+        dbBoxThresh: this.settings.paddleDetBoxThresh,
+        unclipRatio: this.settings.paddleDetUnclipRatio,
+        minSize: this.settings.paddleDetMinSize,
+        nmsIouThresh: this.settings.paddleDetNmsIouThresh,
+        maxCandidates: this.settings.paddleDetMaxCandidates,
+        limitSideLen: this.settings.paddleDetLimitSideLen,
+        scoreMode: this.settings.paddleDetScoreMode,
+        useDilation: this.settings.paddleDetUseDilation,
+      },
+    });
 
     // Tesseract tessdata path (configurable via settings.tesseractDataPath, default models/tessdata).
     let tesseractDir = this.settings?.tesseractDataPath;

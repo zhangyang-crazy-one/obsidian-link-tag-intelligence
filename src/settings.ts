@@ -209,6 +209,16 @@ export interface LinkTagIntelligenceSettings {
   visionSmartRouting: boolean;
   // PaddleOCR / Tesseract model paths (overridable; empty means use plugin defaults)
   paddleOcrModelPath: string;
+  // PaddleOCR detection hyperparameters (overridable; empty = use PADDLE_DET_DEFAULTS)
+  paddleDetDbThresh: number;
+  paddleDetBoxThresh: number;
+  paddleDetUnclipRatio: number;
+  paddleDetMinSize: number;
+  paddleDetNmsIouThresh: number;
+  paddleDetMaxCandidates: number;
+  paddleDetLimitSideLen: number;
+  paddleDetScoreMode: "fast" | "slow";
+  paddleDetUseDilation: boolean;
   tesseractDataPath: string;
   // AI Settings
   aiProvider: "openai" | "anthropic" | "deepseek" | "minimax";
@@ -274,6 +284,15 @@ export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSetting
     visionModelPath: "",
     visionSmartRouting: true,
     paddleOcrModelPath: "",
+    paddleDetDbThresh: 0.3,
+    paddleDetBoxThresh: 0.6,
+    paddleDetUnclipRatio: 1.5,
+    paddleDetMinSize: 3,
+    paddleDetNmsIouThresh: 0.3,
+    paddleDetMaxCandidates: 1000,
+    paddleDetLimitSideLen: 960,
+    paddleDetScoreMode: "fast",
+    paddleDetUseDilation: true,
     tesseractDataPath: "",
     // AI Settings defaults
     aiProvider: "openai",
@@ -2134,6 +2153,12 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
       void this.plugin.runVisionDiagnostics();
     });
 
+    // ── Advanced PaddleOCR detection parameters (collapsible) ─────────
+    // User-tunable thresholds; defaults are PaddleOCR official values.
+    // All values are written to settings.paddleDet* and passed to
+    // PaddleOcrService at construction time.
+    this.renderPaddleDetAdvancedSection(section);
+
     // Helpful instructions link/card
     const hintCard = section.createDiv({ cls: "lti-workbench-hint-card" });
     hintCard.createEl("h4", { text: "离线中英双语多模态权重部署指南 (国内高速镜像加速)" });
@@ -2142,6 +2167,119 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     ul.createEl("li", { text: "2. 路径二 (PaddleOCR 主 OCR)：PP-OCRv5 mobile ONNX (PaddlePaddle/PP-OCRv5_mobile_*) 4 个文件 ~30MB。仅用于 <OCR> 任务，不用于图像语义。" });
     ul.createEl("li", { text: "3. 路径三 (Tesseract 兜底 OCR)：从 https://github.com/tesseract-ocr/tessdata 拉取 chi_sim.traineddata + eng.traineddata，存放到 models/tessdata/。仅在 PaddleOCR 不可用时使用。" });
     ul.createEl("li", { text: "4. 下载模型权重后，将其存放在 models/ 目录下，并在上方设置好对应的相对或绝对路径即可。HuggingFace 镜像站可高速下载各 ONNX 权重：https://hf-mirror.com" });
+  }
+
+  /**
+   * Renders the "Advanced PaddleOCR Detection Parameters" collapsible
+   * sub-section inside the Vision section. Exposes the 9 hyperparameters
+   * of the DBNet postprocessor so users can tune them for their specific
+   * workload (e.g. dense Chinese text, small receipts, handwriting).
+   *
+   * Each field has a human-language description of the trade-off so
+   * users can self-tune without reading the PaddleOCR paper. A "reset to
+   * defaults" button restores PaddleOCR's official values.
+   */
+  private renderPaddleDetAdvancedSection(parentSection: HTMLElement): void {
+    const detSection = this.createSectionCard(
+      parentSection,
+      this.plugin.t("paddleDetAdvancedHeading"),
+      this.plugin.t("paddleDetAdvancedDesc")
+    );
+
+    // Helper to create a labelled number input that writes back to settings
+    // and immediately re-saves. Caller supplies a guard to keep the value
+    // in a sane range (we don't want users typing 1000 for dbThresh).
+    const addNumber = (
+      key: "paddleDetDbThresh" | "paddleDetBoxThresh" | "paddleDetUnclipRatio" | "paddleDetMinSize" | "paddleDetNmsIouThresh" | "paddleDetMaxCandidates" | "paddleDetLimitSideLen",
+      labelKey: string,
+      descKey: string,
+      min: number,
+      max: number,
+      step: number
+    ): void => {
+      const row = detSection.createDiv({ cls: "lti-voice-field-row" });
+      const field = this.createFieldShell(row, this.plugin.t(labelKey) as string, this.plugin.t(descKey) as string);
+      const inputRow = field.createDiv({ cls: "lti-voice-input-row" });
+      const input = inputRow.createEl("input", {
+        cls: "lti-workbench-input lti-voice-path-input",
+        type: "number",
+      });
+      input.value = String((this.plugin.settings as unknown as Record<string, number>)[key]);
+      input.min = String(min);
+      input.max = String(max);
+      input.step = String(step);
+      input.addEventListener("change", () => {
+        const raw = parseFloat(input.value);
+        if (Number.isFinite(raw)) {
+          const clamped = Math.max(min, Math.min(max, raw));
+          (this.plugin.settings as unknown as Record<string, number>)[key] = clamped;
+          if (clamped !== raw) input.value = String(clamped);
+          void this.plugin.saveSettings();
+        }
+      });
+    };
+
+    addNumber("paddleDetDbThresh", "paddleDetDbThreshLabel", "paddleDetDbThreshDesc", 0.1, 0.9, 0.05);
+    addNumber("paddleDetBoxThresh", "paddleDetBoxThreshLabel", "paddleDetBoxThreshDesc", 0.1, 0.9, 0.05);
+    addNumber("paddleDetUnclipRatio", "paddleDetUnclipRatioLabel", "paddleDetUnclipRatioDesc", 1.0, 3.0, 0.1);
+    addNumber("paddleDetMinSize", "paddleDetMinSizeLabel", "paddleDetMinSizeDesc", 1, 50, 1);
+    addNumber("paddleDetNmsIouThresh", "paddleDetNmsIouThreshLabel", "paddleDetNmsIouThreshDesc", 0.1, 0.9, 0.05);
+    addNumber("paddleDetMaxCandidates", "paddleDetMaxCandidatesLabel", "paddleDetMaxCandidatesDesc", 100, 5000, 100);
+    addNumber("paddleDetLimitSideLen", "paddleDetLimitSideLenLabel", "paddleDetLimitSideLenDesc", 320, 2048, 32);
+
+    // Score mode: dropdown (fast / slow)
+    const scoreRow = detSection.createDiv({ cls: "lti-voice-field-row" });
+    const scoreField = this.createFieldShell(
+      scoreRow,
+      this.plugin.t("paddleDetScoreModeLabel") as string,
+      this.plugin.t("paddleDetScoreModeDesc") as string
+    );
+    const scoreSelect = scoreField.createEl("select", { cls: "lti-workbench-input lti-voice-path-input" });
+    for (const mode of ["fast", "slow"] as const) {
+      const opt = scoreSelect.createEl("option", { value: mode, text: mode });
+      if (this.plugin.settings.paddleDetScoreMode === mode) opt.selected = true;
+    }
+    scoreSelect.addEventListener("change", () => {
+      this.plugin.settings.paddleDetScoreMode = scoreSelect.value as "fast" | "slow";
+      void this.plugin.saveSettings();
+    });
+
+    // useDilation: toggle
+    this.createToggleField(
+      detSection,
+      this.plugin.t("paddleDetUseDilationLabel") as string,
+      this.plugin.t("paddleDetUseDilationDesc") as string,
+      this.plugin.settings.paddleDetUseDilation,
+      async (value) => {
+        this.plugin.settings.paddleDetUseDilation = value;
+        await this.plugin.saveSettings();
+      }
+    );
+
+    // Reset to PaddleOCR defaults button
+    const resetRow = detSection.createDiv({ cls: "lti-voice-field-row" });
+    const resetBtn = resetRow.createEl("button", {
+      cls: "lti-workbench-button lti-voice-diagnostic-btn",
+      text: this.plugin.t("paddleDetReset") as string,
+      type: "button"
+    });
+    resetBtn.addEventListener("click", () => {
+      const confirmMsg = this.plugin.t("paddleDetResetConfirm") as string;
+      if (typeof window !== "undefined" && !window.confirm(confirmMsg)) return;
+      this.plugin.settings.paddleDetDbThresh = 0.3;
+      this.plugin.settings.paddleDetBoxThresh = 0.6;
+      this.plugin.settings.paddleDetUnclipRatio = 1.5;
+      this.plugin.settings.paddleDetMinSize = 3;
+      this.plugin.settings.paddleDetNmsIouThresh = 0.3;
+      this.plugin.settings.paddleDetMaxCandidates = 1000;
+      this.plugin.settings.paddleDetLimitSideLen = 960;
+      this.plugin.settings.paddleDetScoreMode = "fast";
+      this.plugin.settings.paddleDetUseDilation = true;
+      void this.plugin.saveSettings().then(() => {
+        // Re-render the entire settings tab to refresh the input values
+        this.display();
+      });
+    });
   }
 
   private renderAiSection(containerEl: HTMLElement): void {
