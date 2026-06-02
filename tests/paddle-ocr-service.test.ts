@@ -80,6 +80,16 @@ function allModelFiles(): Set<string> {
   return set;
 }
 
+// All 4 files (including optional cls) - useful for tests that want the "everything present" case
+function fullyEquippedRequired(): Set<string> {
+  const set = new Set<string>();
+  for (const sub of [PADDLE_MODEL_SUBDIRS.det, PADDLE_MODEL_SUBDIRS.rec]) {
+    set.add(realPath.join(MODEL_DIR, sub, PADDLE_MODEL_FILES.det));
+  }
+  set.add(realPath.join(MODEL_DIR, PADDLE_MODEL_SUBDIRS.dict, PADDLE_MODEL_FILES.dict));
+  return set;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -98,25 +108,41 @@ describe("PaddleOcrService.checkModelFiles", () => {
     expect(result.modelDir).toBe(MODEL_DIR);
   });
 
-  it("lists missing files when one model is absent", () => {
+  it("lists missing files when one required model is absent", () => {
     const existing = allModelFiles();
-    // Drop the cls model file
-    const clsPath = realPath.join(MODEL_DIR, PADDLE_MODEL_SUBDIRS.cls, PADDLE_MODEL_FILES.cls);
-    existing.delete(clsPath);
+    // Drop the rec model file (required, not optional)
+    const recPath = realPath.join(MODEL_DIR, PADDLE_MODEL_SUBDIRS.rec, PADDLE_MODEL_FILES.det);
+    existing.delete(recPath);
     const fs = makeFsMock({ existing, dictText: DICT_LINES.join("\n") });
     const svc = new PaddleOcrService(MODEL_DIR, { fs, path: realPath });
     const result = svc.checkModelFiles();
     expect(result.present).toBe(false);
     expect(result.missing).toHaveLength(1);
-    expect(result.missing[0]).toContain(PADDLE_MODEL_SUBDIRS.cls);
+    expect(result.missing[0]).toContain(PADDLE_MODEL_SUBDIRS.rec);
   });
 
-  it("reports 4 missing files when the entire model dir is empty", () => {
+  it("treats missing cls as a non-fatal optional absence", () => {
+    const existing = allModelFiles();
+    // Drop only the cls model file (cls is optional since PP-OCRv5 mobile cls
+    // ONNX is not published by PaddlePaddle)
+    const clsPath = realPath.join(MODEL_DIR, PADDLE_MODEL_SUBDIRS.cls, PADDLE_MODEL_FILES.det);
+    existing.delete(clsPath);
+    const fs = makeFsMock({ existing, dictText: DICT_LINES.join("\n") });
+    const svc = new PaddleOcrService(MODEL_DIR, { fs, path: realPath });
+    const result = svc.checkModelFiles();
+    expect(result.present).toBe(true);                       // all required files present
+    expect(result.missing).toHaveLength(0);
+    expect(result.missingOptional).toHaveLength(1);
+    expect(result.missingOptional[0]).toContain(PADDLE_MODEL_SUBDIRS.cls);
+  });
+
+  it("reports 3 missing files when the entire model dir is empty (cls excluded as optional)", () => {
     const fs = makeFsMock({ existing: new Set(), dictText: "" });
     const svc = new PaddleOcrService(MODEL_DIR, { fs, path: realPath });
     const result = svc.checkModelFiles();
     expect(result.present).toBe(false);
-    expect(result.missing).toHaveLength(4);
+    expect(result.missing).toHaveLength(3);
+    expect(result.missingOptional).toHaveLength(1);
   });
 });
 

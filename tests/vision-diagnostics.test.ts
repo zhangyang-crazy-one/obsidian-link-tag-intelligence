@@ -130,7 +130,8 @@ describe("VisionDiagnostics.runDiagnostics — partial / total failure", () => {
     const r = diag.runDiagnostics();
     expect(r.overallOk).toBe(false);
     expect(r.paddleOcr.present).toBe(false);
-    expect(r.paddleOcr.missing).toHaveLength(4);
+    expect(r.paddleOcr.missing).toHaveLength(3);     // 3 required (det, rec, dict)
+    expect(r.paddleOcr.missingOptional).toHaveLength(1); // cls (optional)
     expect(r.tesseract.present).toBe(false);
     expect(r.tesseract.missing).toHaveLength(2);
     expect(r.qwenVl.present).toBe(false);
@@ -196,7 +197,7 @@ describe("VisionDiagnostics.formatReport", () => {
     const diag = new VisionDiagnostics(PLUGIN_DIR, {}, { fs, path: realPath });
     const report = diag.formatReport(diag.runDiagnostics());
     expect(report).toMatch(/❌ 视觉模型完整性检查未通过/);
-    expect(report).toMatch(/缺失: 4 项/);  // PaddleOCR
+    expect(report).toMatch(/缺失: 3 项/);  // PaddleOCR required (det, rec, dict)
     expect(report).toMatch(/缺失: 2 项/);  // Tesseract
     expect(report).toMatch(/修复指引/);
   });

@@ -76,16 +76,23 @@ export class PaddleOcrService {
   /**
    * Check whether all required PaddleOCR model files exist on disk.
    * Returns a list of missing file paths (relative to the model dir) — empty if all present.
+   *
+   * The cls (orientation classification) model is OPTIONAL — PaddlePaddle has not
+   * published a PP-OCRv5 mobile cls ONNX export as of this writing, so we accept
+   * its absence. When missing, runPipeline() simply skips the cls branch.
    */
-  public checkModelFiles(): { present: boolean; missing: string[]; modelDir: string } {
+  public checkModelFiles(): { present: boolean; missing: string[]; missingOptional: string[]; modelDir: string } {
     const required = [
       this.pathLib.join(PADDLE_MODEL_SUBDIRS.det, PADDLE_MODEL_FILES.det),
       this.pathLib.join(PADDLE_MODEL_SUBDIRS.rec, PADDLE_MODEL_FILES.rec),
-      this.pathLib.join(PADDLE_MODEL_SUBDIRS.cls, PADDLE_MODEL_FILES.cls),
       this.pathLib.join(PADDLE_MODEL_SUBDIRS.dict, PADDLE_MODEL_FILES.dict),
     ];
+    const optional = [
+      this.pathLib.join(PADDLE_MODEL_SUBDIRS.cls, PADDLE_MODEL_FILES.cls),
+    ];
     const missing = required.filter((rel) => !this.fs.existsSync(this.pathLib.join(this.modelDir, rel)));
-    return { present: missing.length === 0, missing, modelDir: this.modelDir };
+    const missingOptional = optional.filter((rel) => !this.fs.existsSync(this.pathLib.join(this.modelDir, rel)));
+    return { present: missing.length === 0, missing, missingOptional, modelDir: this.modelDir };
   }
 
   /**
@@ -114,11 +121,22 @@ export class PaddleOcrService {
         { executionProviders: ["cpu"] }
       );
 
-      if (onStatus) onStatus("正在加载 PaddleOCR 方向分类模型...");
-      this.clsSession = await ort.InferenceSession.create(
-        this.pathLib.join(this.modelDir, PADDLE_MODEL_SUBDIRS.cls, PADDLE_MODEL_FILES.cls),
-        { executionProviders: ["cpu"] }
-      );
+      // cls is optional — PaddlePaddle has not released a PP-OCRv5 mobile cls ONNX
+      // export, so we tolerate its absence and skip orientation classification.
+      if (check.missingOptional.length === 0) {
+        if (onStatus) onStatus("正在加载 PaddleOCR 方向分类模型...");
+        try {
+          this.clsSession = await ort.InferenceSession.create(
+            this.pathLib.join(this.modelDir, PADDLE_MODEL_SUBDIRS.cls, PADDLE_MODEL_FILES.cls),
+            { executionProviders: ["cpu"] }
+          );
+        } catch (e) {
+          console.warn("[lti-paddle-ocr] cls 模型加载失败，跳过方向分类:", e);
+          this.clsSession = null;
+        }
+      } else {
+        if (onStatus) onStatus("(可选) 方向分类模型缺失，跳过 0°/180° 判定");
+      }
 
       if (onStatus) onStatus("正在加载 PaddleOCR 文本识别模型...");
       this.recSession = await ort.InferenceSession.create(
@@ -219,8 +237,8 @@ export class PaddleOcrService {
       const box = detBoxes[i];
       const cropped = this.warpCrop(raw, width, height, channels, box);
 
-      // 3. Classification: 0° or 180° (only if cls is enabled — always loaded here)
-      const angle = await this.runCls(cropped);
+      // 3. Classification: 0° or 180° — only if cls model loaded
+      const angle: 0 | 180 = this.clsSession ? await this.runCls(cropped) : 0;
 
       // 4. Recognition: CTC decode via dictionary
       const text = await this.runRec(angle === 180 ? this.flipHorizontal(cropped) : cropped);

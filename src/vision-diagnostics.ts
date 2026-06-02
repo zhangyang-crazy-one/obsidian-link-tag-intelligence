@@ -15,6 +15,7 @@ import { TesseractOcrService } from "./tesseract-ocr-service";
 export type ModelState = {
   present: boolean;
   missing: string[];
+  missingOptional?: string[];
   modelDir: string;
   fileCount: number;
   totalSizeBytes?: number;
@@ -60,15 +61,21 @@ export class VisionDiagnostics {
     const qwenVlDir = this.resolveQwenVlDir();
     const visionWorkerPath = this.pathLib.join(this.pluginDir, "vision-worker.js");
 
-    // PaddleOCR — 4 files across 3 sub-dirs + dict
-    const paddleOcrFiles = [
+    // PaddleOCR — 3 required + 1 optional (cls). PP-OCRv5 mobile cls ONNX is not
+    // yet published by PaddlePaddle, so cls is treated as optional and only logged
+    // in the missingOptional list.
+    const paddleOcrRequired = [
       this.pathLib.join(paddleOcrDir, "det", "inference.onnx"),
       this.pathLib.join(paddleOcrDir, "rec", "inference.onnx"),
-      this.pathLib.join(paddleOcrDir, "cls", "inference.onnx"),
       this.pathLib.join(paddleOcrDir, "dict", "ppocr_keys_v5.txt"),
     ];
-    const paddleMissing = paddleOcrFiles.filter((p) => !this.fs.existsSync(p));
-    const paddleTotalSize = paddleOcrFiles.reduce((s, p) => s + this.safeSize(p), 0);
+    const paddleOcrOptional = [
+      this.pathLib.join(paddleOcrDir, "cls", "inference.onnx"),
+    ];
+    const paddleMissing = paddleOcrRequired.filter((p) => !this.fs.existsSync(p));
+    const paddleMissingOptional = paddleOcrOptional.filter((p) => !this.fs.existsSync(p));
+    const paddleOcrAll = [...paddleOcrRequired, ...paddleOcrOptional];
+    const paddleTotalSize = paddleOcrAll.reduce((s, p) => s + this.safeSize(p), 0);
 
     // Tesseract — chi_sim + eng language data
     const tesseractFiles = [
@@ -98,8 +105,9 @@ export class VisionDiagnostics {
       paddleOcr: {
         present: paddleMissing.length === 0,
         missing: paddleMissing,
+        missingOptional: paddleMissingOptional,
         modelDir: paddleOcrDir,
-        fileCount: paddleOcrFiles.length - paddleMissing.length,
+        fileCount: paddleOcrAll.length - paddleMissing.length - paddleMissingOptional.length,
         totalSizeBytes: paddleTotalSize,
       },
       tesseract: {
@@ -132,10 +140,15 @@ export class VisionDiagnostics {
     const lines: string[] = [];
     lines.push(r.overallOk ? "✅ 视觉模型完整性检查通过" : "❌ 视觉模型完整性检查未通过");
     lines.push("");
-    lines.push(this.formatEngine("PaddleOCR (主 OCR 引擎)", r.paddleOcr, "PP-OCRv5 mobile ONNX (~30MB)"));
+    lines.push(this.formatEngine("PaddleOCR (主 OCR 引擎)", r.paddleOcr, "PP-OCRv5 mobile ONNX (~22MB required, +1MB optional cls)"));
     lines.push(this.formatEngine("Tesseract (OCR 兜底)", r.tesseract, "chi_sim + eng traineddata (~6MB)"));
     lines.push(this.formatEngine("Qwen2-VL (图像语义)", r.qwenVl, "ONNX 量化包 (~1-4GB)"));
     lines.push(this.formatVisionWorker(r.visionWorkerJs));
+
+    if (r.paddleOcr.missingOptional && r.paddleOcr.missingOptional.length > 0) {
+      lines.push("");
+      lines.push("ℹ️ PaddleOCR 方向分类 (cls) 模型缺失 - PaddlePaddle 暂未发布 PP-OCRv5 mobile 的 cls ONNX 导出，OCR 仍可正常工作（跳过 0°/180° 旋转判定）。");
+    }
 
     if (!r.overallOk) {
       lines.push("");
