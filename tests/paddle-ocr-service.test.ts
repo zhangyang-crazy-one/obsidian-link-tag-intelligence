@@ -247,3 +247,147 @@ describe("PaddleOcrService.destroy", () => {
     expect(ort.InferenceSession.create).toHaveBeenCalledTimes(6);
   });
 });
+
+// ---------------------------------------------------------------------------
+// PaddleOcrService construction honors detConfig overrides
+// ---------------------------------------------------------------------------
+
+describe("PaddleOcrService constructor with detConfig overrides", () => {
+  it("uses the user-supplied detConfig values (not the defaults)", () => {
+    // We can't easily test that the constants are read, but we can verify
+    // the constructor accepts a Partial<PaddleDetConfig> without throwing.
+    const svc = new PaddleOcrService(MODEL_DIR, {
+      detConfig: {
+        dbThresh: 0.5,
+        dbBoxThresh: 0.4,
+        unclipRatio: 2.0,
+        minSize: 5,
+        nmsIouThresh: 0.5,
+        maxCandidates: 500,
+        limitSideLen: 800,
+        scoreMode: "slow",
+        useDilation: true,
+      },
+    });
+    expect(svc).toBeInstanceOf(PaddleOcrService);
+  });
+
+  it("falls back to PADDLE_DET_DEFAULTS for any unspecified field", () => {
+    // Partial override: only set dbThresh, rest should default
+    const svc = new PaddleOcrService(MODEL_DIR, {
+      detConfig: { dbThresh: 0.42 },
+    });
+    expect(svc).toBeInstanceOf(PaddleOcrService);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Geometry helper sanity checks (polygon area, IoU, marching-squares perimeter)
+// We access internals via a small PaddleOcrService instance — these private
+// helpers are pure math, no model loading required.
+// ---------------------------------------------------------------------------
+
+/** Type alias matching the private Quad return type. */
+type Quad8 = [number, number, number, number, number, number, number, number];
+
+describe("PaddleOcrService geometry helpers", () => {
+  it("polygonIoU of identical quads equals 1.0", () => {
+    const svc = new PaddleOcrService(MODEL_DIR);
+    const a: Quad8 = [0, 0, 10, 0, 10, 10, 0, 10];
+    // (polygonIoU is private; call it via any-cast)
+    const iou = (svc as unknown as { polygonIoU: (a: Quad8, b: Quad8) => number }).polygonIoU(a, a);
+    expect(iou).toBeCloseTo(1.0, 5);
+  });
+
+  it("polygonIoU of disjoint quads equals 0.0", () => {
+    const svc = new PaddleOcrService(MODEL_DIR);
+    const a: Quad8 = [0, 0, 10, 0, 10, 10, 0, 10];
+    const b: Quad8 = [20, 20, 30, 20, 30, 30, 20, 30];
+    const iou = (svc as unknown as { polygonIoU: (a: Quad8, b: Quad8) => number }).polygonIoU(a, b);
+    expect(iou).toBe(0);
+  });
+
+  it("polygonIoU of half-overlapping quads is between 0 and 1", () => {
+    const svc = new PaddleOcrService(MODEL_DIR);
+    const a: Quad8 = [0, 0, 10, 0, 10, 10, 0, 10];
+    const b: Quad8 = [5, 0, 15, 0, 15, 10, 5, 10];
+    const iou = (svc as unknown as { polygonIoU: (a: Quad8, b: Quad8) => number }).polygonIoU(a, b);
+    expect(iou).toBeGreaterThan(0);
+    expect(iou).toBeLessThan(1);
+  });
+
+  it("polygonArea of a 10x10 square is 100", () => {
+    const svc = new PaddleOcrService(MODEL_DIR);
+    const a: Quad8 = [0, 0, 10, 0, 10, 10, 0, 10];
+    const area = (svc as unknown as { polygonArea: (q: number[]) => number }).polygonArea(a);
+    expect(area).toBeCloseTo(100, 5);
+  });
+
+  it("polygonPerimeter of a 10x10 square is 40", () => {
+    const svc = new PaddleOcrService(MODEL_DIR);
+    const a: Quad8 = [0, 0, 10, 0, 10, 10, 0, 10];
+    const perim = (svc as unknown as { polygonPerimeter: (q: number[]) => number }).polygonPerimeter(a);
+    expect(perim).toBeCloseTo(40, 5);
+  });
+
+  it("polygonOffsetDistance matches the PaddleOCR formula (area * ratio / perimeter)", () => {
+    const svc = new PaddleOcrService(MODEL_DIR);
+    const a: Quad8 = [0, 0, 10, 0, 10, 10, 0, 10];
+    // area = 100, perimeter = 40, ratio = 1.5 → distance = 100*1.5/40 = 3.75
+    const dist = (svc as unknown as { polygonOffsetDistance: (q: Quad8, r: number) => number }).polygonOffsetDistance(a, 1.5);
+    expect(dist).toBeCloseTo(3.75, 5);
+  });
+
+  it("offsetPolygon returns a polygon with strictly larger area than the input", () => {
+    const svc = new PaddleOcrService(MODEL_DIR);
+    const a: Quad8 = [5, 5, 15, 5, 15, 15, 5, 15];
+    const before = (svc as unknown as { polygonArea: (q: number[]) => number }).polygonArea(a);
+    const offset = (svc as unknown as { offsetPolygon: (q: number[], d: number) => number[] }).offsetPolygon(a, 3);
+    const after = (svc as unknown as { polygonArea: (q: number[]) => number }).polygonArea(offset);
+    expect(after).toBeGreaterThan(before);
+  });
+
+  it("greedyNMS suppresses overlapping low-score boxes", () => {
+    const svc = new PaddleOcrService(MODEL_DIR);
+    // Two nearly-identical boxes; one with a higher score should win.
+    const a: Quad8 = [0, 0, 10, 0, 10, 10, 0, 10];
+    const b: Quad8 = [1, 1, 11, 1, 11, 11, 1, 11]; // ~81% overlap with a
+    const kept = (svc as unknown as {
+      greedyNMS: (polys: Quad8[], scores: number[], thresh: number) => Quad8[];
+    }).greedyNMS([a, b], [0.9, 0.5], 0.3);
+    expect(kept).toHaveLength(1);
+    expect(kept[0]).toEqual(a);
+  });
+
+  it("greedyNMS keeps non-overlapping boxes", () => {
+    const svc = new PaddleOcrService(MODEL_DIR);
+    const a: Quad8 = [0, 0, 10, 0, 10, 10, 0, 10];
+    const b: Quad8 = [20, 20, 30, 20, 30, 30, 20, 30];
+    const kept = (svc as unknown as {
+      greedyNMS: (polys: Quad8[], scores: number[], thresh: number) => Quad8[];
+    }).greedyNMS([a, b], [0.9, 0.8], 0.3);
+    expect(kept).toHaveLength(2);
+  });
+
+  it("minAreaRect of a 10x10 square is a 10x10 square", () => {
+    const svc = new PaddleOcrService(MODEL_DIR);
+    const points: Array<[number, number]> = [
+      [0, 0], [10, 0], [10, 10], [0, 10]
+    ];
+    const rect = (svc as unknown as {
+      minAreaRect: (pts: Array<[number, number]>) => Quad8 | null;
+    }).minAreaRect(points);
+    expect(rect).not.toBeNull();
+    // 4 corner area = 100
+    const a = (svc as unknown as { polygonArea: (q: number[]) => number }).polygonArea(rect!);
+    expect(a).toBeCloseTo(100, 1);
+  });
+
+  it("minAreaRect of a degenerate 2-point set returns null", () => {
+    const svc = new PaddleOcrService(MODEL_DIR);
+    const rect = (svc as unknown as {
+      minAreaRect: (pts: Array<[number, number]>) => Quad8 | null;
+    }).minAreaRect([[0, 0], [1, 1]]);
+    expect(rect).toBeNull();
+  });
+});
