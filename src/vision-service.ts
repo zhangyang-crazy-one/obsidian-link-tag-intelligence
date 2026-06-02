@@ -1,12 +1,15 @@
 // Local Multimodal Vision & Smart Routing Service.
 // Manages the lifecycle of the standalone local VLM Node.js child process,
-// and intelligently routes tasks (PaddleOCR WASM for simple text extraction vs. local Qwen2-VL/Florence VLM for multi-modal tasks).
+// and implements 3-tier routing for OCR: PaddleOCR (primary) → Tesseract (fallback) → error.
+// Image-semantic tasks (caption / detection) go directly to the Qwen2-VL child process.
 
 import { App } from "obsidian";
 import * as cp from "child_process";
 import * as path from "path";
 import * as fs from "fs";
 import { TesseractOcrService } from "./tesseract-ocr-service";
+import { PaddleOcrService } from "./paddle-ocr-service";
+import { PADDLE_DEFAULT_MODEL_DIR } from "./paddle-ocr-types";
 
 export class LocalOfflineVisionService {
   private app: App;
@@ -16,7 +19,11 @@ export class LocalOfflineVisionService {
   private idleTimer: NodeJS.Timeout | null = null;
   private settings: any;
 
-  // Smart routing delegate for simple, light OCR tasks
+  // OCR services — primary PaddleOCR + Tesseract safety net.
+  // Qwen2-VL is intentionally NOT in the OCR fallback chain; it's a semantic
+  // model, not an OCR engine, and using it for OCR wastes 4GB of model memory
+  // for a much worse result.
+  private paddleOcrService: PaddleOcrService;
   private tesseractOcrService: TesseractOcrService;
 
   private static IDLE_TIMEOUT_MS = 180000; // 3 minutes of idle before killing the child process
@@ -25,10 +32,29 @@ export class LocalOfflineVisionService {
     this.app = app;
     this.settings = settings;
 
-    // Resolve tessdata path inside models directory of the plugin
     const pluginDir = this.getPluginDir();
-    const tessdataPath = path.join(pluginDir, "models", "tessdata");
-    this.tesseractOcrService = new TesseractOcrService(tessdataPath);
+
+    // Resolve PaddleOCR model dir (configurable via settings.paddleOcrModelPath).
+    let paddleOcrDir = this.settings?.paddleOcrModelPath;
+    if (!paddleOcrDir) {
+      paddleOcrDir = path.join(pluginDir, PADDLE_DEFAULT_MODEL_DIR);
+    } else if (!path.isAbsolute(paddleOcrDir)) {
+      const adapter = this.app.vault.adapter as any;
+      const vaultPath = adapter.getBasePath ? adapter.getBasePath() : "";
+      paddleOcrDir = path.resolve(vaultPath, paddleOcrDir);
+    }
+    this.paddleOcrService = new PaddleOcrService(paddleOcrDir);
+
+    // Tesseract tessdata path (configurable via settings.tesseractDataPath, default models/tessdata).
+    let tesseractDir = this.settings?.tesseractDataPath;
+    if (!tesseractDir) {
+      tesseractDir = path.join(pluginDir, "models", "tessdata");
+    } else if (!path.isAbsolute(tesseractDir)) {
+      const adapter = this.app.vault.adapter as any;
+      const vaultPath = adapter.getBasePath ? adapter.getBasePath() : "";
+      tesseractDir = path.resolve(vaultPath, tesseractDir);
+    }
+    this.tesseractOcrService = new TesseractOcrService(tesseractDir);
   }
 
   /**
@@ -144,7 +170,9 @@ export class LocalOfflineVisionService {
   }
 
   /**
-   * Main interface that implements Intelligent Hybrid Routing (智能分流)
+   * Main interface implementing 3-tier OCR routing + image-semantic dispatch.
+   * <OCR>: PaddleOCR (primary) → Tesseract (fallback) → throw with both errors.
+   * <DETAILED_CAPTION>/<MORE_DETAILED_CAPTION>/<OD>: Qwen2-VL child process.
    */
   public async processTask(
     imagePath: string,
@@ -152,23 +180,53 @@ export class LocalOfflineVisionService {
     isSmartRoutingEnabled = true,
     onStatus?: (msg: string) => void
   ): Promise<string> {
-    
-    // 智能分流判定：
-    // 如果是纯文本 OCR 提取，且开启了智能分流开关 -> 路由至超轻量极速 PaddleOCR WASM 引擎！
     if (task === "<OCR>" && isSmartRoutingEnabled) {
-      if (onStatus) onStatus("触发智能分流：使用极速 OCR WASM 引擎...");
-      try {
-        return await this.tesseractOcrService.runOcr(imagePath, onStatus);
-      } catch (e) {
-        console.warn("[lti-vision-service] 智能分流 OCR 失败，回退到多模态大模型深度提取:", e);
-        if (onStatus) onStatus("分流 OCR 失败，自动回退到本地离线多模态大模型进行高精度深度提取...");
-      }
+      return this.runOcrWithFallback(imagePath, onStatus);
+    }
+    return this.runImageSemanticTask(imagePath, task, onStatus);
+  }
+
+  /**
+   * 3-tier OCR routing:
+   *   1. PaddleOCR (primary — high precision, ~30MB model, 200-400ms/image)
+   *   2. Tesseract (fallback — broader language coverage, WASM worker)
+   *   3. Throw combined error if both fail
+   */
+  private async runOcrWithFallback(imagePath: string, onStatus?: (msg: string) => void): Promise<string> {
+    // Tier 1: PaddleOCR
+    try {
+      if (onStatus) onStatus("正在使用 PaddleOCR 提取文字...");
+      return await this.paddleOcrService.runOcr(imagePath, onStatus);
+    } catch (paddleErr: any) {
+      this.lastPaddleError = paddleErr?.message ?? String(paddleErr);
+      console.warn("[lti-vision-service] PaddleOCR 失败，回退到 Tesseract:", paddleErr);
+      if (onStatus) onStatus("PaddleOCR 失败，自动回退到 Tesseract OCR...");
     }
 
-    // 否则（多模态打标、描述、目标检测，或关闭了智能分流） -> 拉起强劲的本地离线视觉子进程进行处理！
+    // Tier 2: Tesseract (safety net)
+    try {
+      return await this.tesseractOcrService.runOcr(imagePath, onStatus);
+    } catch (tessErr: any) {
+      console.error("[lti-vision-service] Tesseract 也失败:", tessErr);
+      throw new Error(
+        `OCR 全部失败。PaddleOCR: ${this.lastPaddleError ?? "(unknown)"} | Tesseract: ${tessErr?.message ?? "(unknown)"}`
+      );
+    }
+  }
+
+  /**
+   * Image-semantic tasks (caption / detection) — always go to the Qwen2-VL child process.
+   */
+  private async runImageSemanticTask(
+    imagePath: string,
+    task: "<DETAILED_CAPTION>" | "<MORE_DETAILED_CAPTION>" | "<OD>",
+    onStatus?: (msg: string) => void
+  ): Promise<string> {
     const ok = await this.getOrBuildWorker(onStatus);
     if (!ok || !this.childProcess) {
-      throw new Error("无法初始化本地离线视觉引擎，请检查模型文件是否已正确放置于 models/Qwen2-VL-2B-Instruct 目录或自定义的模型路径中");
+      throw new Error(
+        "无法初始化本地离线视觉引擎，请检查模型文件是否已正确放置于 models/Qwen2-VL-2B-Instruct 目录或自定义的模型路径中"
+      );
     }
 
     return new Promise((resolve, reject) => {
@@ -182,7 +240,7 @@ export class LocalOfflineVisionService {
             const res = JSON.parse(line);
             if (res.type === "result") {
               this.childProcess?.stdout?.removeListener("data", stdoutHandler);
-              this.resetIdleTimer(); // Reset idle countdown
+              this.resetIdleTimer();
 
               if (res.success) {
                 resolve(res.text);
@@ -206,6 +264,12 @@ export class LocalOfflineVisionService {
       }) + "\n");
     });
   }
+
+  /**
+   * Track the last PaddleOCR error so the combined error message can include it.
+   * (Reading the field directly is simpler than threading it through two try blocks.)
+   */
+  private lastPaddleError: string | null = null;
 
   /**
    * Reset idle garbage collector countdown
@@ -245,6 +309,7 @@ export class LocalOfflineVisionService {
    */
   public destroy(): void {
     this.terminateProcess();
+    this.paddleOcrService.destroy();
     this.tesseractOcrService.destroy();
   }
 }
