@@ -45,6 +45,7 @@ import { LINK_TAG_INTELLIGENCE_VIEW, LinkTagIntelligenceView } from "./view";
 import type { ViewRefreshRequest } from "./view-refresh";
 import { SpeechRecorder, type RecorderSnapshot } from "./speech-recorder";
 import { downloadModelFiles, getModelFileList, getModelRepo, isArchiveDownload } from "./speech-model";
+import { LocalOfflineVisionService } from "./vision-service";
 
 const SENTENCE_END_PUNCTUATION = /[。！？\.!\?]$/;
 
@@ -92,14 +93,20 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   private readonly referencePreview = new ReferencePreviewPopover();
   private referencePreviewToken = 0;
   speechRecorder: SpeechRecorder = new SpeechRecorder();
+  visionService: LocalOfflineVisionService;
   private _sentenceManager: SentenceManager | null = null;
   private speechInsertBuffer = "";
   private speechInsertTimer: ReturnType<typeof setTimeout> | null = null;
   autoStopTimer: ReturnType<typeof setInterval> | null = null;
   autoStopSecondsRemaining = 0;
+  // In-memory flag: whether the lazy one-shot vision diagnostics have been run
+  // during this Obsidian session. Avoids re-running the fs.existsSync sweep
+  // (and re-showing the first-run guide Notice) on every OCR/Vision call.
+  private _visionDiagnosticsRun = false;
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    this.visionService = new LocalOfflineVisionService(this.app, this.settings);
     this.speechRecorder.setApp(this.app);
     this.speechRecorder.setSettingsLanguage(this.settings.speechLanguage);
     this.speechRecorder.setSettingsVadSensitivity(this.settings.speechVadSensitivity);
@@ -376,6 +383,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     this.flushSpeechInsertBuffer();
     this._sentenceManager = null;
     this.speechRecorder.destroy();
+    this.visionService.destroy();
     this.referencePreview.destroy();
   }
 
@@ -1748,5 +1756,305 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
   getAutoStopSecondsRemaining(): number {
     return this.autoStopSecondsRemaining;
+  }
+
+  async runLocalVisionTask(task: "<OCR>" | "<DETAILED_CAPTION>"): Promise<void> {
+    if (!this.settings.visionEnabled) {
+      new Notice("请先在插件设置中开启「本地多模态视觉服务」！");
+      return;
+    }
+
+    // First-call pre-check: if any engine is missing, surface a 12s guide
+    // Notice so the user knows where to look before the OCR/Vision call fails.
+    // This is gated by an in-memory flag so we don't spam on every invocation.
+    if (!this._visionDiagnosticsRun) {
+      this._visionDiagnosticsRun = true;
+      try {
+        const { VisionDiagnostics } = await import("./vision-diagnostics");
+        const fs = this.getFs();
+        if (fs) {
+          const diag = new VisionDiagnostics(this.getVisionPluginDir(), this.settings, {
+            fs: fs as unknown as typeof import("fs"),
+            path: require("path") as typeof import("path"),
+            vaultRoot: this.getVaultRoot(),
+          });
+          const report = diag.runDiagnostics();
+          if (!report.overallOk) {
+            new Notice(
+              `${this.t("visionModelFirstRunTitle")}\n\n${this.t("visionModelFirstRunGuide")}`,
+              12000
+            );
+          }
+        }
+      } catch {
+        // Non-fatal: if diagnostics fail to load, fall through to the actual OCR call
+        // which will surface a clearer error.
+      }
+    }
+
+    const view = this.getContextMarkdownView();
+    if (!view) {
+      new Notice("请先打开一篇可编辑的 Markdown 笔记以运行视觉识别！");
+      return;
+    }
+
+    let absolutePath = "";
+    let fileName = "";
+    let isPdf = false;
+
+    // 1. Try native Electron dialog first to get the absolute path perfectly without browser sandbox limits
+    let openedViaElectron = false;
+    try {
+      const desktopRequire = (globalThis as any).require;
+      const electron = desktopRequire?.("electron");
+      const remote = electron?.remote || desktopRequire?.("@electron/remote");
+      const dialog = remote?.dialog;
+
+      if (dialog?.showOpenDialog) {
+        const result = await dialog.showOpenDialog({
+          title: task === "<OCR>" ? "选择本地图片或 PDF 进行 OCR 提取" : "选择本地图片进行多模态打标",
+          properties: ["openFile"],
+          filters: [
+            { name: "Images and PDFs", extensions: ["png", "jpg", "jpeg", "webp", "bmp", "pdf"] }
+          ]
+        });
+
+        if (result.canceled || result.filePaths.length === 0) {
+          return; // User canceled the dialog
+        }
+
+        absolutePath = result.filePaths[0];
+        // Extract file name
+        // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+        const pathModule = require("path");
+        fileName = pathModule.basename(absolutePath);
+        isPdf = fileName.toLowerCase().endsWith(".pdf");
+        openedViaElectron = true;
+      }
+    } catch (dialogErr) {
+      console.warn("[lti-electron-dialog-failed], falling back to HTML input", dialogErr);
+    }
+
+    // 2. Fall back to standard HTML input if Electron dialog is not available
+    if (!openedViaElectron) {
+      const fileInput = document.createElement("input");
+      fileInput.type = "file";
+      fileInput.accept = "image/*,application/pdf";
+      fileInput.style.display = "none";
+      document.body.appendChild(fileInput);
+
+      const fileSelectedPromise = new Promise<{ absolutePath: string; fileName: string; isPdf: boolean } | null>((resolve) => {
+        fileInput.addEventListener("change", () => {
+          const file = fileInput.files?.[0];
+          if (!file) {
+            resolve(null);
+            return;
+          }
+          const pathVal = (file as any).path;
+          if (!pathVal) {
+            resolve(null);
+            return;
+          }
+          resolve({
+            absolutePath: pathVal,
+            fileName: file.name,
+            isPdf: file.name.toLowerCase().endsWith(".pdf")
+          });
+        });
+      });
+
+      fileInput.click();
+      const selection = await fileSelectedPromise;
+      document.body.removeChild(fileInput);
+
+      if (!selection) {
+        new Notice("无法获取选中文件的绝对物理路径，请重试！");
+        return;
+      }
+
+      absolutePath = selection.absolutePath;
+      fileName = selection.fileName;
+      isPdf = selection.isPdf;
+    }
+
+    // Now proceed to process the file!
+    if (isPdf && task === "<DETAILED_CAPTION>") {
+      new Notice("本地离线多模态视觉打标暂时仅支持图片格式，文字提取请选择「本地图片离线 OCR 提取」！");
+      return;
+    }
+
+    const editor = view.editor;
+    const cursor = editor.getCursor();
+
+    // Create status Notice with custom duration to show progress
+    const notice = new Notice(`⏳ [Local AI] 准备处理: ${fileName}...`, 0);
+
+    try {
+      let insertText = "";
+
+      // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+      const { exec } = require("child_process");
+
+      if (isPdf) {
+        // 1. Try to extract digital text using fast pdftotext first
+        notice.setMessage("⏳ [Local AI] 正在调用系统提取 PDF 文字...");
+        
+        let text = "";
+        try {
+          text = await new Promise<string>((resolve, reject) => {
+            exec(`pdftotext "${absolutePath}" -`, (error: any, stdout: string) => {
+              if (error) {
+                reject(new Error(`PDF 文字提取失败: ${error.message}`));
+              } else {
+                resolve(stdout);
+              }
+            });
+          });
+        } catch (textErr) {
+          console.warn("Digital PDF text extraction failed:", textErr);
+        }
+
+        if (text && text.trim().length >= 10) {
+          insertText = text.trim();
+          notice.setMessage("✅ [Local AI] PDF 文本提取成功！已插入当前文档。");
+        } else {
+          // 2. Fall back to rasterizing the first page and running OCR on it (for scanned PDFs)
+          notice.setMessage("⏳ [Local AI] 检测到扫描版 PDF，正在将首页转换为高清图片以运行离线 OCR...");
+          
+          const tempPrefix = `lti_pdf_page_${Date.now()}`;
+          const tempPattern = `/tmp/${tempPrefix}`;
+          
+          await new Promise<void>((resolve, reject) => {
+            exec(`pdftoppm -png -r 150 -f 1 -l 1 "${absolutePath}" "${tempPattern}"`, (error: any) => {
+              if (error) {
+                reject(new Error(`PDF 页面渲染失败: ${error.message}`));
+              } else {
+                resolve();
+              }
+            });
+          });
+
+          // Find the generated file in /tmp
+          // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+          const fs = require("fs");
+          const tmpFiles = fs.readdirSync("/tmp").filter((f: string) => f.startsWith(tempPrefix) && f.endsWith(".png"));
+          if (tmpFiles.length === 0) {
+            throw new Error("无法定位转换后的 PDF 页面图片！");
+          }
+          
+          const tempImagePath = `/tmp/${tmpFiles[0]}`;
+          
+          try {
+            // Run OCR on the temporary image
+            const onStatusUpdate = (msg: string) => {
+              notice.setMessage(`[Local AI] ${msg}`);
+            };
+
+            const ocrResult = await this.visionService.processTask(
+              tempImagePath,
+              "<OCR>",
+              this.settings.visionSmartRouting,
+              onStatusUpdate
+            );
+
+            if (!ocrResult || !ocrResult.trim()) {
+              throw new Error("扫描版 PDF 首页 OCR 识别完成，但未提取出有效内容。");
+            }
+
+            insertText = ocrResult.trim();
+            notice.setMessage("✅ [Local AI] 扫描版 PDF 首页 OCR 提取成功！已插入当前文档。");
+          } finally {
+            // Clean up the temp image
+            try {
+              fs.unlinkSync(tempImagePath);
+            } catch (cleanErr) {
+              console.warn("Failed to clean up temp PDF page image:", cleanErr);
+            }
+          }
+        }
+      } else {
+        // Image OCR or Vision Tagging
+        const onStatusUpdate = (msg: string) => {
+          notice.setMessage(`[Local AI] ${msg}`);
+        };
+
+        const result = await this.visionService.processTask(
+          absolutePath,
+          task,
+          this.settings.visionSmartRouting,
+          onStatusUpdate
+        );
+
+        if (!result || !result.trim()) {
+          throw new Error("识别完成，但未提取出有效内容。");
+        }
+
+        if (task === "<OCR>") {
+          insertText = result.trim();
+          notice.setMessage("✅ [Local AI] 图片 OCR 提取成功！已插入当前文档。");
+        } else {
+          insertText = `\n> [!NOTE] 智能图像打标 (${fileName})\n> **分析描述**: ${result.trim()}\n\n`;
+          notice.setMessage("✅ [Local AI] 智能打标描述生成成功！已插入当前文档。");
+        }
+      }
+
+      // Insert directly at the currently focused cursor position
+      editor.replaceRange(insertText, cursor);
+      
+      // Hide initial infinite notice and show final success brief notice
+      setTimeout(() => notice.hide(), 1500);
+
+    } catch (err: any) {
+      notice.hide();
+      console.error("[lti-local-vision-error]", err);
+      new Notice(`❌ 本地识别失败: ${err.message}`, 8000);
+    }
+  }
+
+  /**
+   * Run a model integrity check across PaddleOCR, Tesseract, Qwen2-VL, and the
+   * vision-worker.js build artifact. The result is displayed as a multi-line
+   * Markdown Notice. Triggered by the "运行模型诊断" button in the settings panel
+   * and by runLocalVisionTask() on the first OCR/Vision invocation.
+   */
+  async runVisionDiagnostics(): Promise<void> {
+    try {
+      const { VisionDiagnostics } = await import("./vision-diagnostics");
+      const fs = this.getFs();
+      if (!fs) {
+        new Notice("❌ 模型诊断需要 Node.js fs API（仅桌面端可用）", 8000);
+        return;
+      }
+      const pluginDir = this.getVisionPluginDir();
+      const vaultRoot = this.getVaultRoot();
+      const diag = new VisionDiagnostics(pluginDir, this.settings, {
+        fs: fs as unknown as typeof import("fs"),
+        path: require("path") as typeof import("path"),
+        vaultRoot,
+      });
+      const report = diag.runDiagnostics();
+      const formatted = diag.formatReport(report);
+      new Notice(formatted, 15000);
+    } catch (e: any) {
+      console.error("[lti-vision-diagnostics-error]", e);
+      new Notice(`❌ 模型诊断失败: ${e?.message ?? e}`, 8000);
+    }
+  }
+
+  /**
+   * Resolve the absolute path of the plugin's install directory.
+   * Mirrors getPluginDir() in vision-service.ts.
+   */
+  private getVisionPluginDir(): string {
+    const adapter = this.app.vault.adapter as { getBasePath?: () => string };
+    const vaultPath = adapter.getBasePath ? adapter.getBasePath() : "";
+    const manifestDir = this.app.vault.configDir + "/plugins/link-tag-intelligence";
+    return require("path").resolve(vaultPath, manifestDir);
+  }
+
+  /** Resolve the absolute path of the vault root for relative-path resolution. */
+  private getVaultRoot(): string | null {
+    const adapter = this.app.vault.adapter as { getBasePath?: () => string };
+    return adapter.getBasePath ? adapter.getBasePath() : null;
   }
 }

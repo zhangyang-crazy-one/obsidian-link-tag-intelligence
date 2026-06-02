@@ -203,11 +203,24 @@ export interface LinkTagIntelligenceSettings {
   speechModelChoice: "zipformer" | "sensevoice";
   speechAutoHotwords: boolean;
   speechConfusionMapText: string;
+  // Vision Settings
+  visionEnabled: boolean;
+  visionModelPath: string;
+  visionSmartRouting: boolean;
+  // PaddleOCR / Tesseract model paths (overridable; empty means use plugin defaults)
+  paddleOcrModelPath: string;
+  tesseractDataPath: string;
   // AI Settings
   aiProvider: "openai" | "anthropic" | "deepseek" | "minimax";
   aiModel: string;
   aiApiKey: string;
   aiBaseUrl: string;
+  aiMaxTokens: number;
+  // Wire format style for the chosen provider. MiniMax exposes both
+  // OpenAI-compatible (/v1/chat/completions) and Anthropic-compatible
+  // (/anthropic/v1/messages) endpoints; the Anthropic style is required for
+  // multimodal (image) inputs. Other providers ignore this field.
+  aiApiStyle: "openai" | "anthropic";
   aiAsrSource: "local" | "cloud";
   aiLastUsedTemplateId: string;
   aiTemplates: AITemplate[];
@@ -254,14 +267,21 @@ export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSetting
     speechAutoPunctuate: true,
     speechDecodingMethod: "greedy_search",
     speechMaxUtteranceSec: 20,
-    speechModelChoice: "zipformer",
     speechAutoHotwords: true,
     speechConfusionMapText: "在显价值:在险价值\n风险穗:风险矩阵\n富力业:傅里叶",
+    // Vision Defaults
+    visionEnabled: false,
+    visionModelPath: "",
+    visionSmartRouting: true,
+    paddleOcrModelPath: "",
+    tesseractDataPath: "",
     // AI Settings defaults
     aiProvider: "openai",
     aiModel: "gpt-4o-mini",
     aiApiKey: "",
     aiBaseUrl: "https://api.openai.com/v1",
+    aiMaxTokens: 4096,
+    aiApiStyle: "openai",
     aiAsrSource: "local",
     aiLastUsedTemplateId: "standard-markdown",
     aiTemplates: [...DEFAULT_AI_TEMPLATES]
@@ -455,8 +475,12 @@ export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagI
     ? normalized.aiProvider
     : "openai";
   normalized.aiModel = typeof normalized.aiModel === "string" && normalized.aiModel.trim() ? normalized.aiModel.trim() : defaults.aiModel;
+  normalized.aiMaxTokens = Number.isFinite(normalized.aiMaxTokens) && normalized.aiMaxTokens >= 1
+    ? Math.round(normalized.aiMaxTokens)
+    : defaults.aiMaxTokens || 4096;
   normalized.aiApiKey = typeof normalized.aiApiKey === "string" ? normalized.aiApiKey : "";
   normalized.aiBaseUrl = typeof normalized.aiBaseUrl === "string" && normalized.aiBaseUrl.trim() ? normalized.aiBaseUrl.trim() : defaults.aiBaseUrl;
+  normalized.aiApiStyle = normalized.aiApiStyle === "anthropic" ? "anthropic" : "openai";
   normalized.aiAsrSource = normalized.aiAsrSource === "cloud" ? "cloud" : "local";
   normalized.aiLastUsedTemplateId = typeof normalized.aiLastUsedTemplateId === "string" ? normalized.aiLastUsedTemplateId : defaults.aiLastUsedTemplateId;
 
@@ -480,6 +504,16 @@ export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagI
 }
 
 type WorkbenchPage = "overview" | "workflow" | "plugins" | "taxonomy" | "speech" | "ai";
+
+// Placeholder hints for the AI Base URL / Model Name input fields. These are
+// shown only when the field is empty — they never overwrite the user's value.
+// Keys mirror the LinkTagIntelligenceSettings["aiProvider"] union.
+const AI_PROVIDER_HINTS: Record<"openai" | "anthropic" | "deepseek" | "minimax", { baseUrl: string; model: string }> = {
+  openai:    { baseUrl: "https://api.openai.com/v1",        model: "gpt-4o-mini" },
+  anthropic: { baseUrl: "https://api.anthropic.com/v1",     model: "claude-3-5-sonnet-20241022" },
+  deepseek:  { baseUrl: "https://api.deepseek.com",         model: "deepseek-chat" },
+  minimax:   { baseUrl: "https://api.minimaxi.com/v1",      model: "MiniMax-M3" }
+};
 
 export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
   plugin: LinkTagIntelligencePlugin;
@@ -1959,6 +1993,155 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
       }
     );
+
+    // Call our new Local Vision & OCR settings section
+    this.renderVisionSection(containerEl);
+  }
+
+  private renderVisionSection(containerEl: HTMLElement): void {
+    const section = this.createSectionCard(
+      containerEl,
+      "本地离线多模态视觉服务 (Local Vision & OCR)",
+      "配置本地轻量级双语视觉多模态模型与离线 OCR 引擎。支持图像智能描述、打标及自动任务分流。"
+    );
+
+    // Vision Enabled Toggle
+    this.createToggleField(
+      section,
+      "开启本地多模态视觉服务" as any,
+      "激活此选项后将启用本地中英双语视觉模型（支持 InternVL2-1B 等量化版，小于800M）对图片进行打标与语义描述功能。" as any,
+      this.plugin.settings.visionEnabled,
+      async (value) => {
+        this.plugin.settings.visionEnabled = value;
+        await this.plugin.saveSettings();
+      }
+    );
+
+    // Smart Routing Toggle
+    this.createToggleField(
+      section,
+      "启用智能分流路由 (Smart Hybrid Routing)" as any,
+      "在执行常规纯文本 OCR 提取时，自动智能流转至极速 WASM 引擎（200ms），仅在执行复杂图像分析、多模态打标与描述时加载子进程视觉大模型，极大节省系统开销。" as any,
+      this.plugin.settings.visionSmartRouting,
+      async (value) => {
+        this.plugin.settings.visionSmartRouting = value;
+        await this.plugin.saveSettings();
+      }
+    );
+
+    // Model path input
+    const modelRow = section.createDiv({ cls: "lti-voice-field-row" });
+    const modelField = this.createFieldShell(
+      modelRow,
+      "Qwen2-VL 多模态模型路径" as any,
+      "指定 Qwen2-VL / InternVL2 / Florence-2 物理文件夹绝对或相对路径。留空则默认指向插件 models/Qwen2-VL-2B-Instruct 目录（用于 <DETAILED_CAPTION>/<OD> 等图像语义任务）。" as any
+    );
+    const modelInputRow = modelField.createDiv({ cls: "lti-voice-input-row" });
+    const modelInput = modelInputRow.createEl("input", { cls: "lti-workbench-input lti-voice-path-input", type: "text" });
+    modelInput.value = this.plugin.settings.visionModelPath || "";
+    modelInput.placeholder = "models/Qwen2-VL-2B-Instruct";
+    modelInput.addEventListener("change", () => {
+      this.plugin.settings.visionModelPath = modelInput.value.trim();
+      void this.plugin.saveSettings();
+    });
+
+    const browseBtn = modelInputRow.createEl("button", {
+      cls: "lti-workbench-button lti-voice-browse-btn",
+      text: this.plugin.t("speechBrowse"),
+      type: "button"
+    });
+    browseBtn.addEventListener("click", () => {
+      try {
+        const desktopRequire = (globalThis as Record<string, unknown>).require as ((m: string) => Record<string, unknown>) | undefined;
+        const electron = desktopRequire?.("electron");
+        const dialog = electron?.remote?.dialog as { showOpenDialog?: (...args: unknown[]) => Promise<{ canceled: boolean; filePaths: string[] }> } | undefined;
+        if (dialog?.showOpenDialog) {
+          void dialog.showOpenDialog({ properties: ["openDirectory"] }).then((result) => {
+            if (!result.canceled && result.filePaths.length > 0) {
+              modelInput.value = result.filePaths[0] ?? "";
+              modelInput.dispatchEvent(new Event("change"));
+            }
+          });
+          return;
+        }
+      } catch {
+        // Fallback
+      }
+
+      const dirPicker = document.createElement("input");
+      dirPicker.type = "file";
+      dirPicker.setAttribute("webkitdirectory", "");
+      dirPicker.setAttribute("directory", "");
+      dirPicker.style.display = "none";
+      document.body.appendChild(dirPicker);
+      dirPicker.addEventListener("change", () => {
+        const files = dirPicker.files;
+        if (files && files.length > 0) {
+          const firstPath = files[0].webkitRelativePath || files[0].name;
+          const dirName = firstPath.split("/")[0] ?? "";
+          if (dirName) {
+            const adapter = this.plugin.app.vault.adapter;
+            const vaultRoot = (adapter as { getBasePath?: () => string }).getBasePath?.() ?? "";
+            modelInput.value = vaultRoot ? vaultRoot + "/" + dirName : dirName;
+            modelInput.dispatchEvent(new Event("change"));
+          }
+        }
+        document.body.removeChild(dirPicker);
+      });
+      dirPicker.click();
+    });
+
+    // PaddleOCR model path (primary OCR engine)
+    const paddleRow = section.createDiv({ cls: "lti-voice-field-row" });
+    const paddleField = this.createFieldShell(
+      paddleRow,
+      "PaddleOCR 模型路径 (主 OCR 引擎)" as any,
+      "PP-OCRv5 mobile ONNX 模型目录。包含 det/inference.onnx、rec/inference.onnx、cls/inference.onnx、dict/ppocr_keys_v5.txt 4 个文件（共约 30MB）。留空默认指向插件 models/ocr/pp-ocrv5/mobile/。" as any
+    );
+    const paddleInputRow = paddleField.createDiv({ cls: "lti-voice-input-row" });
+    const paddleInput = paddleInputRow.createEl("input", { cls: "lti-workbench-input lti-voice-path-input", type: "text" });
+    paddleInput.value = this.plugin.settings.paddleOcrModelPath || "";
+    paddleInput.placeholder = "models/ocr/pp-ocrv5/mobile";
+    paddleInput.addEventListener("change", () => {
+      this.plugin.settings.paddleOcrModelPath = paddleInput.value.trim();
+      void this.plugin.saveSettings();
+    });
+
+    // Tesseract tessdata path (fallback OCR)
+    const tessRow = section.createDiv({ cls: "lti-voice-field-row" });
+    const tessField = this.createFieldShell(
+      tessRow,
+      "Tesseract 语言包路径 (OCR 兜底)" as any,
+      "Tesseract.js 训练数据目录，需包含 chi_sim.traineddata + eng.traineddata。PaddleOCR 失败时自动回退到此引擎。留空默认指向插件 models/tessdata/。" as any
+    );
+    const tessInputRow = tessField.createDiv({ cls: "lti-voice-input-row" });
+    const tessInput = tessInputRow.createEl("input", { cls: "lti-workbench-input lti-voice-path-input", type: "text" });
+    tessInput.value = this.plugin.settings.tesseractDataPath || "";
+    tessInput.placeholder = "models/tessdata";
+    tessInput.addEventListener("change", () => {
+      this.plugin.settings.tesseractDataPath = tessInput.value.trim();
+      void this.plugin.saveSettings();
+    });
+
+    // Diagnostic button row
+    const diagRow = section.createDiv({ cls: "lti-voice-field-row" });
+    const diagBtn = diagRow.createEl("button", {
+      cls: "lti-workbench-button lti-voice-diagnostic-btn",
+      text: this.plugin.t("visionModelDiagnosticButton"),
+      type: "button"
+    });
+    diagBtn.addEventListener("click", () => {
+      void this.plugin.runVisionDiagnostics();
+    });
+
+    // Helpful instructions link/card
+    const hintCard = section.createDiv({ cls: "lti-workbench-hint-card" });
+    hintCard.createEl("h4", { text: "离线中英双语多模态权重部署指南 (国内高速镜像加速)" });
+    const ul = hintCard.createEl("ul");
+    ul.createEl("li", { text: "1. 路径一 (Qwen2-VL 图像语义)：推荐 Qwen2-VL-2B-Instruct 量化版 (ONNX版 onnx-community/Qwen2-VL-2B-Instruct INT4 ~1.2GB)，用于图像打标/描述/目标检测。" });
+    ul.createEl("li", { text: "2. 路径二 (PaddleOCR 主 OCR)：PP-OCRv5 mobile ONNX (PaddlePaddle/PP-OCRv5_mobile_*) 4 个文件 ~30MB。仅用于 <OCR> 任务，不用于图像语义。" });
+    ul.createEl("li", { text: "3. 路径三 (Tesseract 兜底 OCR)：从 https://github.com/tesseract-ocr/tessdata 拉取 chi_sim.traineddata + eng.traineddata，存放到 models/tessdata/。仅在 PaddleOCR 不可用时使用。" });
+    ul.createEl("li", { text: "4. 下载模型权重后，将其存放在 models/ 目录下，并在上方设置好对应的相对或绝对路径即可。HuggingFace 镜像站可高速下载各 ONNX 权重：https://hf-mirror.com" });
   }
 
   private renderAiSection(containerEl: HTMLElement): void {
@@ -1982,22 +2165,11 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
       this.plugin.settings.aiProvider,
       async (value) => {
         this.plugin.settings.aiProvider = value as "openai" | "anthropic" | "deepseek" | "minimax";
-        // Auto-configure default Base URL & Model for convenience if switching
-        if (value === "deepseek") {
-          this.plugin.settings.aiBaseUrl = "https://api.deepseek.com";
-          this.plugin.settings.aiModel = "deepseek-chat";
-        } else if (value === "minimax") {
-          this.plugin.settings.aiBaseUrl = "https://api.minimax.chat/v1";
-          this.plugin.settings.aiModel = "abab6.5g-chat";
-        } else if (value === "openai") {
-          this.plugin.settings.aiBaseUrl = "https://api.openai.com/v1";
-          this.plugin.settings.aiModel = "gpt-4o-mini";
-        } else if (value === "anthropic") {
-          this.plugin.settings.aiBaseUrl = "https://api.anthropic.com/v1";
-          this.plugin.settings.aiModel = "claude-3-5-sonnet-20241022";
-        }
+        // Do NOT auto-overwrite the user's baseUrl / model / apiStyle.
+        // The placeholders on the input fields below hint at sensible
+        // defaults for each provider; the user owns their values.
         await this.plugin.saveSettings();
-        this.display(); // re-render to update default text inputs
+        this.display(); // re-render so placeholders update to match the new provider
       }
     );
 
@@ -2005,6 +2177,7 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     const urlField = this.createFieldShell(section, this.plugin.t("aiBaseUrl"), this.plugin.t("aiBaseUrlDescription"));
     const urlInput = urlField.createEl("input", { cls: "lti-workbench-input", type: "text" });
     urlInput.value = this.plugin.settings.aiBaseUrl;
+    urlInput.placeholder = AI_PROVIDER_HINTS[this.plugin.settings.aiProvider].baseUrl;
     urlInput.addEventListener("change", async () => {
       this.plugin.settings.aiBaseUrl = urlInput.value.trim();
       await this.plugin.saveSettings();
@@ -2024,10 +2197,46 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     const modelField = this.createFieldShell(section, this.plugin.t("aiModel"), this.plugin.t("aiModelDescription"));
     const modelInput = modelField.createEl("input", { cls: "lti-workbench-input", type: "text" });
     modelInput.value = this.plugin.settings.aiModel;
+    modelInput.placeholder = AI_PROVIDER_HINTS[this.plugin.settings.aiProvider].model;
     modelInput.addEventListener("change", async () => {
       this.plugin.settings.aiModel = modelInput.value.trim();
       await this.plugin.saveSettings();
     });
+
+    // AI Max Output Tokens Input
+    const tokensField = this.createFieldShell(section, this.plugin.t("aiMaxTokens"), this.plugin.t("aiMaxTokensDescription"));
+    const tokensInput = tokensField.createEl("input", { cls: "lti-workbench-input", type: "number" });
+    tokensInput.value = String(this.plugin.settings.aiMaxTokens || 4096);
+    tokensInput.placeholder = "4096";
+    tokensInput.min = "1";
+    tokensInput.addEventListener("change", async () => {
+      const val = parseInt(tokensInput.value, 10);
+      this.plugin.settings.aiMaxTokens = Number.isFinite(val) && val >= 1 ? val : 4096;
+      await this.plugin.saveSettings();
+    });
+
+    // API Wire Format (only meaningful for MiniMax provider, which exposes
+    // both OpenAI- and Anthropic-style endpoints. The Anthropic style is
+    // required for multimodal / image inputs.)
+    if (this.plugin.settings.aiProvider === "minimax") {
+      this.createSelectField(
+        section,
+        this.plugin.t("aiApiStyle"),
+        this.plugin.t("aiApiStyleDescription"),
+        [
+          { value: "openai", label: this.plugin.t("aiApiStyleOpenAI") },
+          { value: "anthropic", label: this.plugin.t("aiApiStyleAnthropic") }
+        ],
+        this.plugin.settings.aiApiStyle,
+        async (value) => {
+          this.plugin.settings.aiApiStyle = value as "openai" | "anthropic";
+          // Only flip the dispatch flag. Base URL stays exactly as the user
+          // entered it; if they need to switch between /v1 and /anthropic/v1
+          // they can edit the Base URL field directly.
+          await this.plugin.saveSettings();
+        }
+      );
+    }
 
     // ASR Source Select
     this.createSelectField(

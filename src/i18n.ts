@@ -14,6 +14,16 @@ type TranslationKey =
   | "suggestTags"
   | "ingestionCapture"
   | "semanticSearch"
+  | "visionOcr"
+  | "visionTagging"
+  | "visionModelDiagnosticButton"
+  | "visionModelFirstRunTitle"
+  | "visionModelFirstRunGuide"
+  | "visionDiagnosticOk"
+  | "visionDiagnosticFail"
+  | "visionPaddleOcrMissing"
+  | "visionTesseractMissing"
+  | "visionQwenVlMissing"
   | "currentNote"
   | "outgoingLinks"
   | "backlinks"
@@ -298,10 +308,16 @@ type TranslationKey =
   | "aiProviderDescription"
   | "aiModel"
   | "aiModelDescription"
+  | "aiMaxTokens"
+  | "aiMaxTokensDescription"
   | "aiApiKey"
   | "aiApiKeyDescription"
   | "aiBaseUrl"
   | "aiBaseUrlDescription"
+  | "aiApiStyle"
+  | "aiApiStyleDescription"
+  | "aiApiStyleOpenAI"
+  | "aiApiStyleAnthropic"
   | "aiAsrSource"
   | "aiAsrSourceDescription"
   | "aiAsrSourceLocal"
@@ -432,6 +448,16 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     suggestTags: "Suggest tags for current note",
     ingestionCapture: "Ingest research source",
     semanticSearch: "Semantic search via external command",
+    visionOcr: "Local offline image OCR",
+    visionTagging: "Local image vision tagging",
+    visionModelDiagnosticButton: "Run model diagnostics",
+    visionModelFirstRunTitle: "Vision model files missing",
+    visionModelFirstRunGuide: "The 3-tier OCR/Vision pipeline needs local model files. Click \"Run model diagnostics\" in Settings → Vision to see exactly what's missing, then download from a HuggingFace mirror (https://hf-mirror.com). PaddleOCR is the primary OCR engine (~30MB); Tesseract is the fallback; Qwen2-VL handles image semantics.",
+    visionDiagnosticOk: "All vision model files are present.",
+    visionDiagnosticFail: "Some vision model files are missing — see report above.",
+    visionPaddleOcrMissing: "PaddleOCR model missing at {path}. Run the model diagnostics button to see which file is needed.",
+    visionTesseractMissing: "Tesseract language data missing at {path}. Run the model diagnostics button to see which file is needed.",
+    visionQwenVlMissing: "Qwen2-VL (or alternative VLM) model missing at {path}.",
     currentNote: "Current note",
     outgoingLinks: "Outgoing links",
     backlinks: "Backlinks",
@@ -716,10 +742,16 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     aiProviderDescription: "Choose the API provider for Chat and LLM-based post-processing.",
     aiModel: "Model Name",
     aiModelDescription: "Model name for chat completions (e.g., gpt-4o-mini, deepseek-chat, claude-3-5-sonnet-20241022).",
+    aiMaxTokens: "Max Output Tokens",
+    aiMaxTokensDescription: "Maximum tokens allowed in the generated response (e.g., 4096, 8192, 16384). Important for reasoning models.",
     aiApiKey: "API Key",
     aiApiKeyDescription: "API secret key for authorization. Handled securely.",
     aiBaseUrl: "API Base URL",
     aiBaseUrlDescription: "Base URL for the provider API endpoint (e.g., https://api.openai.com/v1, https://api.deepseek.com).",
+    aiApiStyle: "API Wire Format",
+    aiApiStyleDescription: "Only applies to the MiniMax provider: pick Anthropic-style requests to enable image/multimodal inputs (uses /anthropic/v1/messages).",
+    aiApiStyleOpenAI: "OpenAI-compatible (/v1/chat/completions)",
+    aiApiStyleAnthropic: "Anthropic-compatible (/anthropic/v1/messages, supports images)",
     aiAsrSource: "ASR Transcription Source",
     aiAsrSourceDescription: "Choose where the audio-to-text phase is processed (Local offline engine or Cloud API).",
     aiAsrSourceLocal: "Local (sherpa-onnx)",
@@ -849,6 +881,16 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     suggestTags: "为当前笔记推荐标签",
     ingestionCapture: "导入研究来源",
     semanticSearch: "通过外部命令进行语义检索",
+    visionOcr: "本地图片离线 OCR 提取",
+    visionTagging: "本地多模态图片打标描述",
+    visionModelDiagnosticButton: "运行模型诊断",
+    visionModelFirstRunTitle: "视觉模型文件缺失",
+    visionModelFirstRunGuide: "三级 OCR/视觉流水线依赖本地模型文件。打开 设置 → 视觉 区域点击「运行模型诊断」可查看具体缺失项，然后从 HuggingFace 镜像 (https://hf-mirror.com) 下载。PaddleOCR 为主 OCR 引擎 (~30MB)，Tesseract 为兜底，Qwen2-VL 处理图像语义。",
+    visionDiagnosticOk: "所有视觉模型文件已就绪。",
+    visionDiagnosticFail: "部分视觉模型文件缺失 — 详见上方报告。",
+    visionPaddleOcrMissing: "PaddleOCR 模型缺失：{path}。点击「运行模型诊断」查看具体缺失文件。",
+    visionTesseractMissing: "Tesseract 语言包缺失：{path}。点击「运行模型诊断」查看具体缺失文件。",
+    visionQwenVlMissing: "Qwen2-VL (或其他视觉大模型) 模型缺失：{path}。",
     currentNote: "当前笔记",
     outgoingLinks: "出链",
     backlinks: "反链",
@@ -1133,10 +1175,16 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     aiProviderDescription: "选择用于文本润色和 Chat Completions 的 API 服务商。",
     aiModel: "模型名称",
     aiModelDescription: "大模型名称（例如 gpt-4o-mini, deepseek-chat, claude-3-5-sonnet-20241022）。",
+    aiMaxTokens: "最大输出 Token 数",
+    aiMaxTokensDescription: "单次生成允许的最大 Token 数量（例如 4096, 8192, 16384）。对于带有深度思考推理过程的模型（如 MiniMax-M3、DeepSeek-R1）建议设为 8192 或更高，以防思考过程截断。",
     aiApiKey: "API 密钥 (API Key)",
     aiApiKeyDescription: "用于访问接口 of API Key，输入后将安全掩码显示。",
     aiBaseUrl: "API 接口地址 (Base URL)",
     aiBaseUrlDescription: "接口基础地址（例如 https://api.openai.com/v1, https://api.deepseek.com）。",
+    aiApiStyle: "接口协议风格",
+    aiApiStyleDescription: "仅对 MiniMax 服务商生效：选择 Anthropic 风格可启用图片/多模态输入（使用 /anthropic/v1/messages 端点）。",
+    aiApiStyleOpenAI: "OpenAI 兼容 (/v1/chat/completions)",
+    aiApiStyleAnthropic: "Anthropic 兼容 (/anthropic/v1/messages，支持图片)",
     aiAsrSource: "语音转文字 (ASR) 来源",
     aiAsrSourceDescription: "选择语音转录阶段的运行位置（本地离线 ASR 引擎或云端 API 接口）。",
     aiAsrSourceLocal: "本地离线 (sherpa-onnx)",
