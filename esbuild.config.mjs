@@ -6,9 +6,13 @@ import process from "node:process";
 const production = process.argv.includes("production");
 
 const context = await esbuild.context({
-  entryPoints: { "main": "src/main.ts", "asr-worker": "src/asr-worker.ts" },
+  // Note: PaddleOCR runs in-process via onnxruntime-node (src/paddle-ocr-service.ts),
+  // so there is no separate paddle-ocr-worker entry point. This keeps memory
+  // footprint minimal (single V8 heap, shared ONNX runtime cache) while still
+  // isolating the heavy compute via idle-timer auto-dispose.
+  entryPoints: { "main": "src/main.ts", "asr-worker": "src/asr-worker.ts", "vision-worker": "src/vision-worker.ts" },
   bundle: true,
-  external: ["obsidian", "@codemirror/state", "@codemirror/view", "sherpa-onnx"],
+  external: ["obsidian", "@codemirror/state", "@codemirror/view", "sherpa-onnx", "@huggingface/transformers", "onnxruntime-node"],
   format: "cjs",
   target: "es2021",
   logLevel: "info",
@@ -29,8 +33,8 @@ if (production) {
   fs.rmSync(distDir, { recursive: true, force: true });
   fs.mkdirSync(path.join(distDir, "node_modules"), { recursive: true });
 
-  // Copy plugin files (including asr-worker for child_process.fork)
-  for (const f of ["main.js", "asr-worker.js", "manifest.json", "styles.css"]) {
+  // Copy plugin files (including asr-worker and vision-worker for child_process.fork)
+  for (const f of ["main.js", "asr-worker.js", "vision-worker.js", "manifest.json", "styles.css"]) {
     fs.copyFileSync(path.resolve(f), path.join(distDir, f));
   }
   // Copy sherpa-onnx (JS + WASM) as runtime dependency
@@ -39,6 +43,24 @@ if (production) {
     path.join(distDir, "node_modules", "sherpa-onnx"),
     { recursive: true }
   );
+
+  // Copy local VLM runtime dependencies for vision-worker.js
+  const vlmDeps = [
+    "@huggingface",
+    "@img",
+    "onnxruntime-node",
+    "onnxruntime-web",
+    "onnxruntime-common",
+    "sharp",
+    "global-agent",
+    "tar"
+  ];
+  for (const dep of vlmDeps) {
+    const srcPath = path.resolve("node_modules", dep);
+    if (fs.existsSync(srcPath)) {
+      fs.cpSync(srcPath, path.join(distDir, "node_modules", dep), { recursive: true });
+    }
+  }
 
   // Download and bundle the Chinese transducer ASR model (~132MB INT8).
   // Uses greedy_search with dither=0.00003 — no modified_beam_search hallucination.

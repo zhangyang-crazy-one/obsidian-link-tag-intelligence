@@ -28,4 +28,16 @@ Thumbs.db
 # Models cache
 models/punc-zh-2024/
 models/zh-2025/
+models/ocr/
+models/tessdata/
+models/Qwen2-VL-*/
+models/InternVL*/
+models/Florence*/
+models/sensevoice/
 *.tar.bz2
+*.traineddata
+
+# Build artifacts produced by esbuild at the repo root
+main.js
+asr-worker.js
+vision-worker.js
