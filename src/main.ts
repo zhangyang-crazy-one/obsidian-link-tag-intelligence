@@ -45,6 +45,12 @@ import { LINK_TAG_INTELLIGENCE_VIEW, LinkTagIntelligenceView } from "./view";
 import type { ViewRefreshRequest } from "./view-refresh";
 import { SpeechRecorder, type RecorderSnapshot } from "./speech-recorder";
 import { downloadModelFiles, getModelFileList, getModelRepo, isArchiveDownload } from "./speech-model";
+import {
+  downloadPaddleTier,
+  getPaddleTierTotalBytes,
+  isPaddleTierInstalled,
+} from "./paddle-model";
+import { DEFAULT_PADDLE_TIER, getPaddleTierModelDir, type PaddleOcrModelTier } from "./paddle-ocr-types";
 import { LocalOfflineVisionService } from "./vision-service";
 
 const SENTENCE_END_PUNCTUATION = /[。！？\.!\?]$/;
@@ -1124,6 +1130,17 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     } catch { return null; }
   }
 
+  /**
+   * Lazily get the Node fs.promises API (only on desktop). Used by
+   * PaddleOCR model download to write large files asynchronously.
+   */
+  private getFsAsync(): { writeFile(path: string, data: Uint8Array): Promise<void> } | null {
+    try {
+      const r = (globalThis as Record<string, unknown>).require as ((m: string) => Record<string, unknown>) | undefined;
+      return r?.("fs").promises as { writeFile: (p: string, d: Uint8Array) => Promise<void> } | null;
+    } catch { return null; }
+  }
+
   private async ensurePunctuationModel(): Promise<boolean> {
     const fs = this.getFs();
     if (!fs) return false;
@@ -1181,6 +1198,99 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     } catch (e) {
       notice.hide();
       new Notice("标点模型离线下载失败: " + String(e), 8000);
+      return false;
+    }
+  }
+
+  /**
+   * Ensure the PaddleOCR model files for `tier` are present on disk
+   * under `<pluginDir>/models/ocr/pp-ocrv5/<tier>/{det,rec}/inference.onnx`.
+   * If not, download them from HuggingFace via the paddle-model helper.
+   * Returns true iff every required file is present (post-download).
+   *
+   * Called by runLocalVisionTask() before the first OCR invocation per
+   * session. Tiers beyond the default are not auto-downloaded — the user
+   * must pick them via the settings UI (提交3) first.
+   */
+  private async ensurePaddleModel(): Promise<boolean> {
+    const fs = this.getFs();
+    if (!fs) {
+      new Notice("PaddleOCR 模型管理需要桌面端 fs API (仅 Obsidian Desktop 可用)。", 8000);
+      return false;
+    }
+    const tier = DEFAULT_PADDLE_TIER;
+    const modelDir = this.getPaddleModelDir(tier);
+    const installed = isPaddleTierInstalled(
+      tier,
+      (p) => fs.existsSync(p),
+      modelDir
+    );
+    if (installed.installed) return true;
+    return this.downloadPaddleModel(tier, modelDir);
+  }
+
+  /** Resolve the absolute path of the model dir for a given PaddleOCR tier. */
+  private getPaddleModelDir(tier: PaddleOcrModelTier): string {
+    const path = require("path") as typeof import("path");
+    return path.join(this.getVisionPluginDir(), getPaddleTierModelDir(tier));
+  }
+
+  /**
+   * Download det + rec for a given PaddleOCR tier into `modelDir`.
+   * Emits progress via a long-lived Notice. Returns true iff all files
+   * wrote successfully (network errors or write failures resolve to false).
+   */
+  private async downloadPaddleModel(
+    tier: PaddleOcrModelTier,
+    modelDir: string
+  ): Promise<boolean> {
+    const fs = this.getFs();
+    const fsAsync = this.getFsAsync();
+    if (!fs || !fsAsync) {
+      new Notice("PaddleOCR 下载需要桌面端 fs.promises (仅 Obsidian Desktop 可用)。", 8000);
+      return false;
+    }
+    const path = require("path") as typeof import("path");
+    const detDir = path.join(modelDir, "det");
+    const recDir = path.join(modelDir, "rec");
+    fs.mkdirSync(detDir, { recursive: true });
+    fs.mkdirSync(recDir, { recursive: true });
+
+    const totalBytes = getPaddleTierTotalBytes(tier);
+    const totalMB = (totalBytes / (1024 * 1024)).toFixed(0);
+    const notice = new Notice(
+      `⏳ [Local AI] 正在下载 PaddleOCR ${tier} 模型 (~${totalMB} MB)...`,
+      0
+    );
+
+    try {
+      const result = await downloadPaddleTier(
+        tier,
+        async ({ role, filename }, data) => {
+          const sub = role === "det" ? detDir : recDir;
+          await fsAsync.writeFile(path.join(sub, filename), new Uint8Array(data));
+        },
+        (p) => {
+          const mb = (p.fileProgress.loadedBytes / (1024 * 1024)).toFixed(1);
+          const total = (p.fileProgress.totalBytes / (1024 * 1024)).toFixed(0);
+          const pct = (p.fileProgress.percent * 100).toFixed(0);
+          notice.setMessage(
+            `⏳ [Local AI] 下载 PaddleOCR ${tier} (${p.fileIndex + 1}/${p.totalFiles}) ` +
+            `${p.role}/${p.currentFile}: ${mb}/${total} MB (${pct}%)`
+          );
+        }
+      );
+      notice.hide();
+      if (result.anyFailed) {
+        const failedNames = result.files.filter((f) => !f.success).map((f) => `${f.role}/${f.filename}`);
+        new Notice(`❌ PaddleOCR 模型下载失败: ${failedNames.join(", ")}。请检查网络或稍后重试。`, 10000);
+        return false;
+      }
+      new Notice(`✅ PaddleOCR ${tier} 模型就绪 (~${totalMB} MB)。`);
+      return true;
+    } catch (e) {
+      notice.hide();
+      new Notice(`❌ PaddleOCR 模型下载异常: ${String(e)}`, 10000);
       return false;
     }
   }
@@ -1880,6 +1990,15 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     // Now proceed to process the file!
     if (isPdf && task === "<DETAILED_CAPTION>") {
       new Notice("本地离线多模态视觉打标暂时仅支持图片格式，文字提取请选择「本地图片离线 OCR 提取」！");
+      return;
+    }
+
+    // Lazy-ensure PaddleOCR model files for the default tier. For <OCR>
+    // and scanned-PDF paths this is required; for <DETAILED_CAPTION> with
+    // smart routing it may still be consulted as a fallback.
+    const paddleOk = await this.ensurePaddleModel();
+    if (!paddleOk && (task === "<OCR>" || isPdf)) {
+      new Notice("PaddleOCR 模型未就绪，无法继续执行 OCR。", 8000);
       return;
     }
 
