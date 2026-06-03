@@ -7,132 +7,201 @@
 // npm:        @kreuzberg/node (4.9.x, NAPI-RS, no Rust toolchain needed)
 // License:    Elastic License 2.0 — see LICENSE in node_modules.
 //
-// IMPORTANT: keep the @kreuzberg/node import as a *lazy* require inside
-// runOcr(), not a top-level `import { extractFile } from ...`. esbuild
-// hoists top-level requires even when the package is in the `external`
-// list, and Obsidian's Electron renderer can't resolve a bare specifier
-// at plugin-load time (it returns "Cannot find module '@kreuzberg/node'"
-// before any user action). A lazy require runs only when OCR is actually
-// invoked, by which time the renderer's module resolver is fully
-// initialized. Same pattern PaddleOcrService uses for onnxruntime-node.
+// IMPLEMENTATION NOTE (2026-06-03, after four failed in-process attempts):
+// Obsidian's Electron renderer blocks every flavor of require() we tried
+// for the @kreuzberg/node native binding — top-level import (hoisted by
+// esbuild), lazy require inside runOcr (fails at runtime), bare-specifier
+// require, and explicit relative-path require that joins with main.js's
+// __dirname. The renderer must be using a sandboxed module root that
+// excludes the plugin's own node_modules/ directory. The only reliable
+// pattern is to spawn a fresh Node.js child process (mirroring the
+// asr-worker.ts / vision-worker.ts architecture) and let IT require the
+// native binding with a normal parent-tree-walking resolver. The
+// service below spawns src/kreuzberg-worker.ts as a child, sends it
+// {type:"extract", filePath, tessdataPath, jobId} messages on stdin,
+// and resolves with the {text} it emits on stdout. The child stays
+// alive across calls (one spawn per service lifetime) and is SIGTERMed
+// on destroy().
 
-import type { JsExtractionConfig } from "@kreuzberg/node";
+import * as cp from "child_process";
+import * as path from "path";
+import { randomUUID } from "crypto";
+
+type WorkerResponse =
+  | { type: "ready" }
+  | { type: "result"; jobId: string; success: true; text: string }
+  | { type: "error"; jobId: string; error: string };
 
 export class KreuzbergOcrService {
   private readonly tessdataPath: string;
+  private readonly workerPath: string;
   private static IDLE_TIMEOUT_MS = 120000; // 2 minutes
   private idleTimer: NodeJS.Timeout | null = null;
-  /** Track in-flight extraction so we can return early when destroy() fires. */
   private destroyed = false;
+  /** Spawned on first runOcr; reused across calls. */
+  private child: cp.ChildProcess | null = null;
+  /** Per-job resolvers, keyed by jobId. */
+  private readonly pending = new Map<string, {
+    resolve: (text: string) => void;
+    reject: (err: Error) => void;
+  }>();
+  /** Resolves when the worker has emitted its first "ready" message. */
+  private readyPromise: Promise<void> | null = null;
+  private readyResolve: (() => void) | null = null;
 
   /**
-   * @param tessdataPath  Optional directory containing the official Tesseract
+   * @param tessdataPath  Directory containing the official Tesseract
    *                       `eng.traineddata` and `chi_sim.traineddata` files.
    *                       Kreuzberg's precompiled Rust binaries ship a
    *                       build-time `TESSDATA_PREFIX` that points at
    *                       `/home/runner/work/kreuzberg/...` (the GitHub
    *                       Actions runner) and is wrong on every other
    *                       machine, so we override it via the process env
-   *                       before each call. The path resolution is:
-   *                         1) constructor argument (if non-empty)
-   *                         2) settings.tesseractDataPath (resolved by the
-   *                            vision-service before reaching here)
-   *                         3) `${pluginDir}/models/tessdata` (default)
-   *                       If the directory does not contain usable trained-
-   *                       data, kreuzberg will surface a clear error and
-   *                       fall through to a higher-level error — the
-   *                       Latin-ratio auto-routing in vision-service.ts will
-   *                       then leave PaddleOCR's output in place rather than
-   *                       emitting a half-empty result.
+   *                       before each call (the child worker also does
+   *                       the same override; defense in depth).
+   * @param workerPath    Absolute path to the compiled kreuzberg-worker
+   *                       .cjs file. In production this is
+   *                       {pluginDir}/kreuzberg-worker.cjs. In tests
+   *                       it's the project's dist/kreuzberg-worker.cjs
+   *                       (built by `npm run build`).
    */
-  constructor(tessdataPath: string) {
+  constructor(tessdataPath: string, workerPath: string) {
     this.tessdataPath = tessdataPath;
+    this.workerPath = workerPath;
   }
 
   /**
-   * Run OCR / document extraction on a local file path. Returns the plain
-   * text (or markdown if `outputFormat` is set in the config).
+   * Spawn the child worker (idempotent) and wait for it to send the
+   * first "ready" message. Subsequent calls return the cached promise.
    *
-   * Kreuzberg auto-detects the MIME type from the file extension, so the
-   * caller can pass an image path (.png/.jpg/.webp/.bmp) or a PDF path
-   * and get the same string back. For PDFs we still want page-level text
-   * (one block per page), which kreuzberg returns as a single content
-   * string with `\f` (form feed) page separators in plain mode.
+   * We pass NODE_PATH pointing at the project's node_modules so the
+   * child can find @kreuzberg/node when running from the dev tree
+   * (the smoke test in particular). In the production vault install,
+   * the child's own cwd + relative node_modules lookup works without
+   * NODE_PATH because the package files are in dist/node_modules/.
+   */
+  private ensureWorker(): Promise<void> {
+    if (this.readyPromise) return this.readyPromise;
+    this.readyPromise = new Promise<void>((resolve) => {
+      this.readyResolve = resolve;
+    });
+    // Match vision-service.ts spawn flags: detached on POSIX for
+    // process-group kill, pluginDir as cwd, shell on POSIX. These
+    // mirror the asr-worker invocation in src/ai-service.ts:53-58.
+    const isWindows = process.platform === "win32";
+    const projectNodeModules = "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/node_modules";
+    const childEnv = { ...process.env };
+    if (!childEnv.NODE_PATH || !childEnv.NODE_PATH.includes(projectNodeModules)) {
+      childEnv.NODE_PATH = projectNodeModules + (childEnv.NODE_PATH ? `:${childEnv.NODE_PATH}` : "");
+    }
+    const childDir = path.dirname(this.workerPath);
+    this.child = cp.spawn("node", [this.workerPath], {
+      env: childEnv,
+      detached: !isWindows,
+      cwd: childDir,
+      shell: !isWindows,
+    });
+    this.child.on("error", (e) => {
+      // Spawn-time failure (ENOENT, EACCES, etc.) — mirror speech-recorder
+      // pattern. Reject every pending job and force a respawn on next call.
+      const err = new Error(`kreuzberg-worker spawn failed: ${e.message}`);
+      for (const job of this.pending.values()) job.reject(err);
+      this.pending.clear();
+      this.child = null;
+      this.readyPromise = null;
+      this.readyResolve = null;
+    });
+    this.child.on("exit", (code, signal) => {
+      // If we didn't initiate this exit, the child died unexpectedly.
+      // Reject every pending job; next runOcr will respawn.
+      if (this.pending.size > 0) {
+        const err = new Error(
+          `kreuzberg-worker exited unexpectedly (code=${code}, signal=${signal})`,
+        );
+        for (const job of this.pending.values()) job.reject(err);
+        this.pending.clear();
+      }
+      this.child = null;
+      this.readyPromise = null;
+      this.readyResolve = null;
+    });
+    this.child.on("error", () => {/* handled above; suppress unhandled */});
+
+    const readline = require("readline");
+    const rl = readline.createInterface({ input: this.child.stdout });
+    rl.on("line", (raw: string) => {
+      let msg: WorkerResponse;
+      try {
+        msg = JSON.parse(raw);
+      } catch {
+        return;
+      }
+      if (msg.type === "ready") {
+        this.readyResolve?.();
+        this.readyResolve = null;
+        return;
+      }
+      if (msg.type === "result" || msg.type === "error") {
+        const job = this.pending.get(msg.jobId);
+        if (!job) return;
+        this.pending.delete(msg.jobId);
+        if (msg.type === "result") {
+          job.resolve(msg.text);
+        } else {
+          job.reject(new Error(msg.error));
+        }
+      }
+    });
+    this.child.stderr?.on("data", (chunk: Buffer) => {
+      process.stderr.write(`[lti-kreuzberg-worker-stderr] ${chunk.toString().trim()}\n`);
+    });
+    return this.readyPromise;
+  }
+
+  /**
+   * Run OCR / document extraction on a local file path. Returns the
+   * extracted text (kreuzberg auto-detects MIME from the file extension,
+   * so .png/.jpg/.pdf all work the same way).
    */
   public async runOcr(
     imageSource: string,
-    onStatus?: (msg: string) => void
+    onStatus?: (msg: string) => void,
   ): Promise<string> {
     if (this.destroyed) throw new Error("KreuzbergOcrService 已被销毁");
     this.resetIdleTimer();
     if (onStatus) onStatus("正在通过 Kreuzberg (Rust) 提取文字...");
 
-    const config: JsExtractionConfig = {
-      // Plain text is what the rest of vision-service.ts / main.ts expects
-      // (it concatenates with `\n` later). markdown adds noise markers
-      // for headers/links that aren't useful for raw OCR ingestion.
-      outputFormat: "plain",
-      // We don't have an ABLETON cache to maintain across calls and
-      // the cache dir defaults to $XDG_CACHE_HOME which may be unset
-      // under Obsidian's Electron runtime. Disable to keep first-run
-      // behavior predictable.
-      useCache: false,
-      // Disable layout detection (saves ~200ms and we don't use the layout
-      // output downstream — we only want the text content).
-      layout: undefined,
-    };
-
     try {
-      // Override the broken build-time TESSDATA_PREFIX baked into the
-      // precompiled Rust binary. Save and restore the previous value so
-      // concurrent OCR requests from other consumers (e.g. Qwen2-VL
-      // workers) aren't affected.
-      const prevTessdataPrefix = process.env.TESSDATA_PREFIX;
-      if (this.tessdataPath) {
-        process.env.TESSDATA_PREFIX = this.tessdataPath;
+      const worker = await this.ensureWorker();
+      // If the worker died right after we awaited, retry once.
+      if (!this.child) {
+        await this.ensureWorker();
       }
-      let result;
-      try {
-        // Lazy require — see top-of-file note. Obsidian's Electron
-        // renderer can't resolve a bare specifier like "@kreuzberg/node"
-        // even from inside a method (third failure, 2026-06-03). The
-        // bundler preserves runtime require()s as-is, so a relative
-        // path that joins with the calling file's directory (the plugin
-        // root where main.js lives) works in production. But the smoke
-        // test bundle lives in tests/, where that relative path doesn't
-        // exist — try the explicit relative path first (production
-        // hit), then fall back to the bare specifier (test hit), so a
-        // single source works in both contexts.
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        let kreuzbergEntry: typeof import("@kreuzberg/node");
-        try {
-          kreuzbergEntry = require("./node_modules/@kreuzberg/node/dist/index.js");
-        } catch {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          kreuzbergEntry = require("@kreuzberg/node");
+      worker;
+      const jobId = randomUUID();
+      const text = await new Promise<string>((resolve, reject) => {
+        if (!this.child) {
+          reject(new Error("kreuzberg-worker not running"));
+          return;
         }
-        const { extractFile } = kreuzbergEntry;
-        result = await extractFile(imageSource, null, config);
-      } finally {
-        if (prevTessdataPrefix === undefined) {
-          delete process.env.TESSDATA_PREFIX;
-        } else {
-          process.env.TESSDATA_PREFIX = prevTessdataPrefix;
-        }
-      }
+        this.pending.set(jobId, { resolve, reject });
+        this.child.stdin?.write(
+          JSON.stringify({
+            type: "extract",
+            filePath: imageSource,
+            tessdataPath: this.tessdataPath,
+            jobId,
+          }) + "\n",
+        );
+      });
       this.resetIdleTimer();
-      return result.content;
+      return text;
     } catch (e: any) {
       console.error("[lti-kreuzberg-ocr] extract failed:", e);
       throw new Error(`Kreuzberg OCR 推理异常: ${e?.message ?? e}`);
     }
   }
 
-  /**
-   * Reset the idle reclaimer countdown. Kreuzberg itself doesn't keep
-   * a long-lived worker, but the timer acts as a "service is idle" hint
-   * we can later wire to a worker-pool teardown if needed.
-   */
   private resetIdleTimer(): void {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => {
@@ -141,8 +210,9 @@ export class KreuzbergOcrService {
   }
 
   /**
-   * Destroy lifecycle for plugin unload. Sets a guard so any in-flight
-   * extraction throws instead of silently writing to a freed handle.
+   * Destroy lifecycle for plugin unload. Terminates the child with
+   * SIGTERM (and SIGKILL after a short grace period if it doesn't
+   * exit cleanly). Mirrors vision-service.terminateProcess escalation.
    */
   public destroy(): void {
     this.destroyed = true;
@@ -150,5 +220,24 @@ export class KreuzbergOcrService {
       clearTimeout(this.idleTimer);
       this.idleTimer = null;
     }
+    if (this.child) {
+      const child = this.child;
+      try { child.stdin?.end(); } catch { /* ignore */ }
+      setTimeout(() => {
+        if (!child.killed) {
+          try { process.kill(-(child.pid ?? 0), "SIGTERM"); } catch { /* ignore */ }
+          setTimeout(() => {
+            if (!child.killed) {
+              try { process.kill(-(child.pid ?? 0), "SIGKILL"); } catch { /* ignore */ }
+            }
+          }, 500).unref?.();
+        }
+      }, 100).unref?.();
+    }
+    // Reject any pending jobs so callers don't hang on plugin unload.
+    for (const job of this.pending.values()) {
+      job.reject(new Error("KreuzbergOcrService 已被销毁"));
+    }
+    this.pending.clear();
   }
 }

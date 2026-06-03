@@ -134,7 +134,15 @@ export class LocalOfflineVisionService {
       const vaultPath = adapter.getBasePath ? adapter.getBasePath() : "";
       kreuzbergTessdataDir = path.resolve(vaultPath, kreuzbergTessdataDir);
     }
-    this.kreuzbergOcrService = new KreuzbergOcrService(kreuzbergTessdataDir);
+    // The .cjs extension is required because the project's package.json
+    // has "type": "module" — Node 24 would otherwise misinterpret the
+    // raw .js as ESM. esbuild.config.mjs emits kreuzberg-worker.cjs
+    // alongside main.js; either project root (dev) or dist/ (prod).
+    const kreuzbergWorkerPath = path.join(pluginDir, "kreuzberg-worker.cjs");
+    this.kreuzbergOcrService = new KreuzbergOcrService(
+      kreuzbergTessdataDir,
+      kreuzbergWorkerPath,
+    );
   }
 
   /**

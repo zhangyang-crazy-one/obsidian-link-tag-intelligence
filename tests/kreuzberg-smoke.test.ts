@@ -27,7 +27,10 @@ if (!process.env.TESSDATA_PREFIX || process.env.TESSDATA_PREFIX === "") {
 describe("kreuzberg smoke (manual, skipped in CI)", () => {
   it("OCRs a single EN page", async () => {
     const PAGE = "/tmp/ocr-test-gongjing17en/page-008.png";
-    const svc = new KreuzbergOcrService(TESSDATA_DIR);
+    const svc = new KreuzbergOcrService(
+      TESSDATA_DIR,
+      "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/dist/kreuzberg-worker.cjs",
+    );
     const t0 = Date.now();
     const text = await svc.runOcr(PAGE);
     const ms = Date.now() - t0;
@@ -38,7 +41,10 @@ describe("kreuzberg smoke (manual, skipped in CI)", () => {
 
   it("OCRs a single ZH page", async () => {
     const PAGE = "/tmp/ocr-test-gongjing13/page-010.png";
-    const svc = new KreuzbergOcrService(TESSDATA_DIR);
+    const svc = new KreuzbergOcrService(
+      TESSDATA_DIR,
+      "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/dist/kreuzberg-worker.cjs",
+    );
     const t0 = Date.now();
     const text = await svc.runOcr(PAGE);
     const ms = Date.now() - t0;

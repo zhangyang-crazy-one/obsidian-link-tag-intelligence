@@ -10,7 +10,7 @@ const context = await esbuild.context({
   // so there is no separate paddle-ocr-worker entry point. This keeps memory
   // footprint minimal (single V8 heap, shared ONNX runtime cache) while still
   // isolating the heavy compute via idle-timer auto-dispose.
-  entryPoints: { "main": "src/main.ts", "asr-worker": "src/asr-worker.ts", "vision-worker": "src/vision-worker.ts" },
+  entryPoints: { "main": "src/main.ts", "asr-worker": "src/asr-worker.ts", "vision-worker": "src/vision-worker.ts", "kreuzberg-worker": "src/kreuzberg-worker.ts" },
   bundle: true,
   // `external` is the runtime-require allowlist. Any package that
   // reaches into the file system via require() relative to its own
@@ -50,20 +50,23 @@ if (production) {
   fs.rmSync(distDir, { recursive: true, force: true });
   fs.mkdirSync(path.join(distDir, "node_modules"), { recursive: true });
 
-  // Copy plugin files (including asr-worker and vision-worker for child_process.fork)
+  // Copy plugin files (including asr-worker, vision-worker,
+  // kreuzberg-worker for child_process.spawn)
   for (const f of ["main.js", "asr-worker.js", "manifest.json", "styles.css"]) {
     fs.copyFileSync(path.resolve(f), path.join(distDir, f));
   }
-  // vision-worker uses CommonJS `require()` but package.json has
-  // "type": "module", so the raw .js file would be misinterpreted by
-  // Node 24 as ESM. Rename to .cjs to force CommonJS resolution.
-  // Both the project root (where Obsidian loads from in dev) and the
-  // dist/ directory (production) need the .cjs extension.
-  if (fs.existsSync(path.resolve("vision-worker.js"))) {
-    fs.copyFileSync(
-      path.resolve("vision-worker.js"),
-      path.join(distDir, "vision-worker.cjs")
-    );
+  // Both vision-worker and kreuzberg-worker use CommonJS `require()` but
+  // package.json has "type": "module", so the raw .js file would be
+  // misinterpreted by Node 24 as ESM. Rename to .cjs to force CommonJS
+  // resolution. Both the project root (where Obsidian loads from in dev)
+  // and the dist/ directory (production) need the .cjs extension.
+  for (const workerName of ["vision-worker", "kreuzberg-worker"]) {
+    if (fs.existsSync(path.resolve(workerName + ".js"))) {
+      fs.copyFileSync(
+        path.resolve(workerName + ".js"),
+        path.join(distDir, workerName + ".cjs")
+      );
+    }
   }
   // Copy sherpa-onnx (JS + WASM) as runtime dependency
   fs.cpSync(
