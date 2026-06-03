@@ -53,6 +53,11 @@ export type WorkerState = {
   activeModelPath: string;
   activeEngine: string;
   processCount: number;
+  // Cached from the init message; applied to image_processor on every
+  // process call. The Qwen2VLProcessor doesn't pass runtime options
+  // through to its image_processor, so we mutate the processor's own
+  // max_pixels field directly.
+  maxPixels: number;
 };
 
 export function makeInitialState(): WorkerState {
@@ -62,6 +67,7 @@ export function makeInitialState(): WorkerState {
     activeModelPath: "",
     activeEngine: "qwen2-vl",
     processCount: 0,
+    maxPixels: 200_704,
   };
 }
 
@@ -151,6 +157,12 @@ export async function handleWorkerMessage(
           const folderName = path.basename(fullPath);
           env.localModelPath = baseDir;
           state.processor = await AutoProcessor.from_pretrained(folderName);
+          // Stash the user's pixel cap. The Qwen2VLProcessor ignores
+          // runtime max_pixels options — its inner image_processor() call
+          // uses the constructor-time value (image_processors_utils.js:625
+          // / 899). We mutate it after init, on every inference, in the
+          // process handler below.
+          state.maxPixels = msg.maxPixels ?? 200_704;
           // Auto-detect q4/fp16/fp32 by inspecting onnx dir
           let dtype = "fp32";
           const onnxDir = path.join(fullPath, "onnx");
@@ -183,6 +195,13 @@ export async function handleWorkerMessage(
           break;
         }
         try {
+          // Single-image constraint: the worker processes exactly one
+          // image per `process` message. The processor's chat template
+          // carries a single `{type:"image"}` content entry; passing an
+          // array of paths would require a multi-image template the
+          // Qwen2-VL model is not configured to handle. Multi-image
+          // workflows must invoke `process` once per image at the
+          // call-site (vision-service.runImageSemanticTask).
           const absoluteImgPath = path.resolve(msg.imagePath);
           // v3+/v4 unified entry: RawImage.read accepts string path / Blob / URL.
           const rawImage = await RawImage.read(absoluteImgPath);
@@ -200,14 +219,14 @@ export async function handleWorkerMessage(
           // inside ignores runtime args — max_pixels is read from the
           // image processor's own config (image_processors_utils.js:625,
           // smart_resize is invoked at line 899). Mutate it before
-          // calling so the downscale actually happens.
-          // 200_704 = 448×448 ≈ 0.2 MP → ≤ 256 vision tokens after
-          // patch_size=14 + merge_size=2. Combined with max_new_tokens=64,
-          // peak activation memory drops well under 10 GB on 30 GB hosts
-          // running Chrome / Obsidian / codex (verified 2026-06-03).
+          // calling so the downscale actually happens. The cap comes from
+          // the init message → settings.visionMaxPixels; default 200_704
+          // = 448×448 ≈ 0.2 MP → ≤ 256 vision tokens. Combined with
+          // max_new_tokens=64, peak activation memory drops well under
+          // 10 GB on 30 GB hosts (verified 2026-06-03).
           const imageProcessor: any = (state.processor as any).image_processor;
-          if (imageProcessor && imageProcessor.max_pixels !== 200_704) {
-            imageProcessor.max_pixels = 200_704;
+          if (imageProcessor && imageProcessor.max_pixels !== state.maxPixels) {
+            imageProcessor.max_pixels = state.maxPixels;
           }
           const inputs = await state.processor(text, rawImage);
           // Cap autoregressive decode length. 64 tokens ≈ 50 words, plenty

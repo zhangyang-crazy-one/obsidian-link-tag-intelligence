@@ -295,6 +295,12 @@ export class LocalOfflineVisionService {
         this.childProcess.stdin?.write(JSON.stringify({
           type: "init",
           modelDir: modelDir,
+          // Pass the user's pixel cap through to the worker. The worker
+          // mutates its image_processor.max_pixels to this value before
+          // each inference (default 200_704; see settings.ts comment).
+          // Qwen2VLProcessor._call ignores runtime args, so the worker
+          // has to mutate the inner image_processor's field directly.
+          maxPixels: this.settings?.visionMaxPixels ?? 200_704,
         }) + "\n");
 
       } catch (err: any) {

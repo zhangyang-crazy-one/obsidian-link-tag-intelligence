@@ -208,6 +208,13 @@ export interface LinkTagIntelligenceSettings {
   visionEnabled: boolean;
   visionModelPath: string;
   visionSmartRouting: boolean;
+  // Cap the input image's pixel area before the Qwen2-VL processor. The
+  // preprocessor's default is 12_845_056 (12.8 MP) which emits ~1792 vision
+  // tokens for a 1552×897 photo and OOM-kills the worker on 30 GB hosts
+  // (~10.7 GB peak RSS). 200_704 = 448×448 ≈ 0.2 MP → ≤ 256 vision tokens,
+  // peak ≈ 6.2 GB. Raise this if the user has more free RAM and wants
+  // more detail. See memory/vision-oom-image-pixel-cap.md.
+  visionMaxPixels: number;
   // PaddleOCR / Tesseract model paths (overridable; empty means use plugin defaults)
   paddleOcrModelPath: string;
   // Which PP-OCRv5 tier to use. Affects the default model dir layout
@@ -288,6 +295,7 @@ export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSetting
     visionEnabled: false,
     visionModelPath: "",
     visionSmartRouting: true,
+    visionMaxPixels: 200_704,
     paddleOcrModelPath: "",
     paddleOcrTier: DEFAULT_PADDLE_TIER,
     paddleDetDbThresh: 0.3,
@@ -2059,6 +2067,26 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
       }
     );
+
+    // Pixel cap (no UI control; just a description so users know there IS
+    // a cap and how to tune it). Edit data.json → visionMaxPixels to
+    // change. Default 200_704 keeps peak RSS under 7 GB on a 30 GB host
+    // (verified 2026-06-03). Raise on machines with more free RAM if the
+    // user wants finer visual detail in DETAILED_CAPTION output.
+    const capInfo = section.createDiv({ cls: "lti-workbench-field" });
+    capInfo.createDiv({
+      text: "推理输入图像像素上限 (visionMaxPixels)" as any,
+      cls: "lti-workbench-field-label",
+    });
+    capInfo.createDiv({
+      text:
+        "默认 200_704（约 448×448）。Qwen2-VL-2B 在推理时峰值内存约 6.2 GB；" +
+        "若系统可用 RAM 充足（≥ 16 GB）且需要更细的视觉描述，可手动编辑 " +
+        ".obsidian/plugins/link-tag-intelligence/data.json 中的 visionMaxPixels 字段，"+
+        "建议值：786_432（768×1024）≈ 8 GB 峰值；12_845_056（默认值）≈ 10.7 GB 峰值（可能 OOM-killed）。" +
+        "每次只处理一张图像。",
+      cls: "setting-item-description lti-workbench-field-description",
+    });
 
     // Model path input
     const modelRow = section.createDiv({ cls: "lti-voice-field-row" });

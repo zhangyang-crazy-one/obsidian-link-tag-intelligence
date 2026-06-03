@@ -82,6 +82,10 @@ describe("vision-worker protocol", () => {
     mockModel.dispose.mockReset();
     mockProcessor.apply_chat_template.mockReset();
     mockProcessor.batch_decode.mockReset();
+    // Reset the image_processor's max_pixels to the Qwen2-VL default so
+    // each test starts from a known state (otherwise W11's mutation
+    // leaks into W12's assertion).
+    mockProcessor.image_processor.max_pixels = 12_845_056;
   });
 
   it("W1: init succeeds on first call, refuses re-init on second", async () => {
@@ -263,16 +267,16 @@ describe("vision-worker protocol", () => {
     );
   });
 
-  // W11: the worker mutates `image_processor.max_pixels` from the
-  // Qwen2-VL default (12_845_056 → ~1792 vision tokens for a 1552×897
-  // photo) down to 200_704 (~256 tokens). The Qwen2VLProcessor._call
-  // signature accepts runtime args, but its inner image_processor(images)
-  // call ignores them — only the constructed `this.max_pixels` is read by
-  // smart_resize. So we mutate the field directly. This caps the
-  // autoregressive KV cache + activations well under 10 GB on 30 GB hosts
-  // (verified 2026-06-03 via standalone smoke test).
-  it("W11: process handler mutates image_processor.max_pixels to 200_704", async () => {
-    // First init a model so state.processor is set
+  // W11: the worker mutates `image_processor.max_pixels` to whatever the
+  // init message specified (default 200_704 when not provided). The
+  // Qwen2VLProcessor._call signature accepts runtime args, but its inner
+  // image_processor(images) call ignores them — only the constructed
+  // `this.max_pixels` is read by smart_resize. So we mutate the field
+  // directly. The cap value is sourced from settings.visionMaxPixels via
+  // vision-service.ts → init message. The default (200_704) keeps peak
+  // activation memory well under 10 GB on 30 GB hosts.
+  it("W11: process handler mutates image_processor.max_pixels to init-time cap (default 200_704)", async () => {
+    // First init a model so state.processor is set; no maxPixels → default.
     await handleWorkerMessage(
       JSON.stringify({ type: "init", modelDir: "/models/qwen" }),
       state,
@@ -297,12 +301,39 @@ describe("vision-worker protocol", () => {
     );
 
     expect(r).toBe("continue");
-    // The critical assertion: the worker mutated max_pixels down to
-    // 200_704, NOT 12_845_056, before calling the processor.
+    // The worker mutated max_pixels down to the default cap.
     expect(mockProcessor.image_processor.max_pixels).toBe(200_704);
     // And inference completed with success=true
     expect(emit).toHaveBeenCalledWith(
       expect.objectContaining({ type: "result", success: true })
     );
+  });
+
+  // W12: explicit maxPixels in the init message propagates through to
+  // image_processor.max_pixels. This is the user's settings.visionMaxPixels
+  // round-trip — verifies the parent service's threading of the value
+  // actually lands at the mutation point.
+  it("W12: init message's maxPixels overrides the default cap", async () => {
+    // Fresh state for this test so the previous test's mutation doesn't leak.
+    const freshState = makeInitialState();
+    await handleWorkerMessage(
+      JSON.stringify({ type: "init", modelDir: "/models/qwen", maxPixels: 786_432 }),
+      freshState,
+      emit
+    );
+    emit.mockClear();
+
+    expect(mockProcessor.image_processor.max_pixels).toBe(12_845_056);
+    mockModel.generate.mockResolvedValue({ fake: "tensor" });
+    mockProcessor.batch_decode.mockReturnValue(["ok"]);
+
+    await handleWorkerMessage(
+      JSON.stringify({ type: "process", imagePath: "/tmp/photo.png", task: "<OD>" }),
+      freshState,
+      emit
+    );
+
+    // The user's 768×1024 cap (786_432) was applied, not the default.
+    expect(mockProcessor.image_processor.max_pixels).toBe(786_432);
   });
 });
