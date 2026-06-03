@@ -22,6 +22,15 @@ type TranslationKey =
   | "visionDiagnosticOk"
   | "visionDiagnosticFail"
   | "visionPaddleOcrMissing"
+  | "paddleOcrTierLabel"
+  | "paddleOcrTierDesc"
+  | "paddleOcrTierMobileLabel"
+  | "paddleOcrTierServerLabel"
+  | "paddleOcrTierHybridLabel"
+  | "paddleOcrDownloadButton"
+  | "paddleOcrDownloadInProgress"
+  | "paddleOcrDownloadDone"
+  | "paddleOcrDownloadFailed"
   | "paddleDetAdvancedHeading"
   | "paddleDetAdvancedDesc"
   | "paddleDetReset"
@@ -478,6 +487,15 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     visionDiagnosticOk: "All vision model files are present.",
     visionDiagnosticFail: "Some vision model files are missing — see report above.",
     visionPaddleOcrMissing: "PaddleOCR model missing at {path}. Run the model diagnostics button to see which file is needed.",
+    paddleOcrTierLabel: "PaddleOCR model tier",
+    paddleOcrTierDesc: "PP-OCRv5 model size. Mobile = fast / low memory. Server = best accuracy, default. Hybrid = mobile detector + server recognizer. Switching tiers triggers a model download on next OCR call.",
+    paddleOcrTierMobileLabel: "Mobile — fast, ~22 MB",
+    paddleOcrTierServerLabel: "Server — precise, ~181 MB, default",
+    paddleOcrTierHybridLabel: "Hybrid — mobile det + server rec, ~94 MB",
+    paddleOcrDownloadButton: "Download PaddleOCR model now",
+    paddleOcrDownloadInProgress: "Downloading PaddleOCR {tier} model…",
+    paddleOcrDownloadDone: "PaddleOCR {tier} model ready.",
+    paddleOcrDownloadFailed: "PaddleOCR model download failed: {error}",
     paddleDetAdvancedHeading: "Advanced PaddleOCR detection parameters",
     paddleDetAdvancedDesc: "Tune the DBNet postprocessor for your specific workload. Defaults are PaddleOCR's official values. ⚠ Changing these can hurt accuracy on images that already work well.",
     paddleDetReset: "Reset to PaddleOCR defaults",
@@ -933,6 +951,15 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     visionDiagnosticOk: "所有视觉模型文件已就绪。",
     visionDiagnosticFail: "部分视觉模型文件缺失 — 详见上方报告。",
     visionPaddleOcrMissing: "PaddleOCR 模型缺失：{path}。点击「运行模型诊断」查看具体缺失文件。",
+    paddleOcrTierLabel: "PaddleOCR 模型档位",
+    paddleOcrTierDesc: "PP-OCRv5 模型大小。Mobile = 速度快 / 内存低；Server = 精度最高（默认）；Hybrid = 移动端检测器 + 服务端识别器。切换档位后，下次 OCR 调用时会自动下载所选档位的模型。",
+    paddleOcrTierMobileLabel: "Mobile — 速度快，约 22 MB",
+    paddleOcrTierServerLabel: "Server — 精度高，约 181 MB（默认）",
+    paddleOcrTierHybridLabel: "Hybrid — 移动端 det + 服务端 rec，约 94 MB",
+    paddleOcrDownloadButton: "立即下载 PaddleOCR 模型",
+    paddleOcrDownloadInProgress: "正在下载 PaddleOCR {tier} 模型…",
+    paddleOcrDownloadDone: "PaddleOCR {tier} 模型已就绪。",
+    paddleOcrDownloadFailed: "PaddleOCR 模型下载失败：{error}",
     paddleDetAdvancedHeading: "高级 PaddleOCR 检测参数",
     paddleDetAdvancedDesc: "为你的具体场景微调 DBNet 后处理。默认值为 PaddleOCR 官方值。⚠ 修改这些参数可能让原本能识别的图片反而变差。",
     paddleDetReset: "重置为 PaddleOCR 官方默认",

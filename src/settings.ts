@@ -9,6 +9,7 @@ import {
 import type { LanguageSetting, UILanguage } from "./i18n";
 import type LinkTagIntelligencePlugin from "./main";
 import { AIService } from "./ai-service";
+import { DEFAULT_PADDLE_TIER, PADDLE_TIER_SPECS, type PaddleOcrModelTier } from "./paddle-ocr-types";
 
 export type WorkflowMode = "general" | "researcher";
 
@@ -209,6 +210,10 @@ export interface LinkTagIntelligenceSettings {
   visionSmartRouting: boolean;
   // PaddleOCR / Tesseract model paths (overridable; empty means use plugin defaults)
   paddleOcrModelPath: string;
+  // Which PP-OCRv5 tier to use. Affects the default model dir layout
+  // and which HuggingFace repo is downloaded. Overridden if paddleOcrModelPath
+  // is set to a custom path.
+  paddleOcrTier: PaddleOcrModelTier;
   // PaddleOCR detection hyperparameters (overridable; empty = use PADDLE_DET_DEFAULTS)
   paddleDetDbThresh: number;
   paddleDetBoxThresh: number;
@@ -284,6 +289,7 @@ export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSetting
     visionModelPath: "",
     visionSmartRouting: true,
     paddleOcrModelPath: "",
+    paddleOcrTier: DEFAULT_PADDLE_TIER,
     paddleDetDbThresh: 0.3,
     paddleDetBoxThresh: 0.6,
     paddleDetUnclipRatio: 1.5,
@@ -470,6 +476,12 @@ export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagI
   normalized.smartConnectionsResultsLimit = Number.isFinite(normalized.smartConnectionsResultsLimit) && normalized.smartConnectionsResultsLimit > 0
     ? normalized.smartConnectionsResultsLimit
     : defaults.smartConnectionsResultsLimit;
+
+  // PaddleOCR tier: only mobile / server / hybrid are valid. A stale data.json
+  // (e.g. from a future tier we don't yet know about) falls back to the default.
+  normalized.paddleOcrTier = PADDLE_TIER_SPECS[normalized.paddleOcrTier as PaddleOcrModelTier]
+    ? (normalized.paddleOcrTier as PaddleOcrModelTier)
+    : defaults.paddleOcrTier;
 
   normalized.speechHotwordsFile = typeof normalized.speechHotwordsFile === "string" ? normalized.speechHotwordsFile.trim() : defaults.speechHotwordsFile;
   normalized.speechModelPath = typeof normalized.speechModelPath === "string" ? normalized.speechModelPath.trim() : defaults.speechModelPath;
@@ -2109,6 +2121,31 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
       });
       dirPicker.click();
     });
+
+    // PaddleOCR model tier (mobile / server / hybrid). Selecting a tier
+    // changes the default model dir layout and which HuggingFace repo is
+    // pulled on the next download. Users with a custom paddleOcrModelPath
+    // are unaffected (their path takes precedence at runtime).
+    this.createSelectField(
+      section,
+      this.plugin.t("paddleOcrTierLabel"),
+      this.plugin.t("paddleOcrTierDesc"),
+      (["mobile", "server", "hybrid"] as PaddleOcrModelTier[]).map((tier) => ({
+        value: tier,
+        label: this.plugin.t(
+          tier === "mobile"
+            ? "paddleOcrTierMobileLabel"
+            : tier === "server"
+            ? "paddleOcrTierServerLabel"
+            : "paddleOcrTierHybridLabel"
+        ) || PADDLE_TIER_SPECS[tier].summary,
+      })),
+      this.plugin.settings.paddleOcrTier,
+      async (value) => {
+        this.plugin.settings.paddleOcrTier = value as PaddleOcrModelTier;
+        await this.plugin.saveSettings();
+      }
+    );
 
     // PaddleOCR model path (primary OCR engine)
     const paddleRow = section.createDiv({ cls: "lti-voice-field-row" });
