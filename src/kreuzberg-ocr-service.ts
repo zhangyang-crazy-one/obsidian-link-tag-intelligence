@@ -6,8 +6,17 @@
 // Online docs: https://kreuzberg.dev
 // npm:        @kreuzberg/node (4.9.x, NAPI-RS, no Rust toolchain needed)
 // License:    Elastic License 2.0 — see LICENSE in node_modules.
+//
+// IMPORTANT: keep the @kreuzberg/node import as a *lazy* require inside
+// runOcr(), not a top-level `import { extractFile } from ...`. esbuild
+// hoists top-level requires even when the package is in the `external`
+// list, and Obsidian's Electron renderer can't resolve a bare specifier
+// at plugin-load time (it returns "Cannot find module '@kreuzberg/node'"
+// before any user action). A lazy require runs only when OCR is actually
+// invoked, by which time the renderer's module resolver is fully
+// initialized. Same pattern PaddleOcrService uses for onnxruntime-node.
 
-import { extractFile, type JsExtractionConfig } from "@kreuzberg/node";
+import type { JsExtractionConfig } from "@kreuzberg/node";
 
 export class KreuzbergOcrService {
   private readonly tessdataPath: string;
@@ -84,6 +93,10 @@ export class KreuzbergOcrService {
       }
       let result;
       try {
+        // Lazy require — see top-of-file note. Hoisting this to module
+        // scope breaks Obsidian's renderer module resolution.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { extractFile } = require("@kreuzberg/node") as typeof import("@kreuzberg/node");
         result = await extractFile(imageSource, null, config);
       } finally {
         if (prevTessdataPrefix === undefined) {
