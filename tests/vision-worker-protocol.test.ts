@@ -6,20 +6,27 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const { mockProcessor, mockModel, mockEnv, mockFromPretrainedProcessor, mockFromPretrainedModel } =
   vi.hoisted(() => {
-    const processor = {
-      apply_chat_template: vi.fn(),
-      batch_decode: vi.fn(),
-    };
+    // Qwen2VLProcessor is invoked as a function: processor(text, image) →
+    // inputs (the worker then spreads the result into model.generate()).
+    // Mock it as a callable that also carries the methods the worker uses.
+    const processorFn: any = vi.fn().mockReturnValue({ input_ids: "fake" });
+    // image_processor is a sub-object the worker mutates to bound vision
+    // tokens; preprocessor_config.json ships max_pixels: 12_845_056 by
+    // default, which causes 1792 tokens for a 1552×897 photo and
+    // OOM-kills the worker on 30 GB hosts (verified 2026-06-03).
+    processorFn.image_processor = { max_pixels: 12_845_056 };
+    processorFn.apply_chat_template = vi.fn().mockReturnValue("chat-templated");
+    processorFn.batch_decode = vi.fn().mockReturnValue(["decoded text"]);
     const model = {
       generate: vi.fn(),
       dispose: vi.fn(),
     };
     const env = { allowLocalModels: false, allowRemoteModels: false };
     return {
-      mockProcessor: processor,
+      mockProcessor: processorFn,
       mockModel: model,
       mockEnv: env,
-      mockFromPretrainedProcessor: vi.fn().mockResolvedValue(processor),
+      mockFromPretrainedProcessor: vi.fn().mockResolvedValue(processorFn),
       mockFromPretrainedModel: vi.fn().mockResolvedValue(model),
     };
   });
@@ -253,6 +260,49 @@ describe("vision-worker protocol", () => {
     expect(state.activeEngine).toBe("lfm2-vl-450m");
     expect(emit).toHaveBeenCalledWith(
       expect.objectContaining({ type: "ready", ok: true, engine: "lfm2-vl-450m" })
+    );
+  });
+
+  // W11: the worker mutates `image_processor.max_pixels` from the
+  // Qwen2-VL default (12_845_056 → ~1792 vision tokens for a 1552×897
+  // photo) down to 200_704 (~256 tokens). The Qwen2VLProcessor._call
+  // signature accepts runtime args, but its inner image_processor(images)
+  // call ignores them — only the constructed `this.max_pixels` is read by
+  // smart_resize. So we mutate the field directly. This caps the
+  // autoregressive KV cache + activations well under 10 GB on 30 GB hosts
+  // (verified 2026-06-03 via standalone smoke test).
+  it("W11: process handler mutates image_processor.max_pixels to 200_704", async () => {
+    // First init a model so state.processor is set
+    await handleWorkerMessage(
+      JSON.stringify({ type: "init", modelDir: "/models/qwen" }),
+      state,
+      emit
+    );
+    emit.mockClear();
+
+    // Sanity: the mock's image_processor starts at the Qwen2-VL default
+    expect(mockProcessor.image_processor.max_pixels).toBe(12_845_056);
+
+    mockModel.generate.mockResolvedValue({ fake: "tensor" });
+    mockProcessor.batch_decode.mockReturnValue(["a clean bathroom with peach walls"]);
+
+    const r = await handleWorkerMessage(
+      JSON.stringify({
+        type: "process",
+        imagePath: "/tmp/photo.png",
+        task: "<DETAILED_CAPTION>",
+      }),
+      state,
+      emit
+    );
+
+    expect(r).toBe("continue");
+    // The critical assertion: the worker mutated max_pixels down to
+    // 200_704, NOT 12_845_056, before calling the processor.
+    expect(mockProcessor.image_processor.max_pixels).toBe(200_704);
+    // And inference completed with success=true
+    expect(emit).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "result", success: true })
     );
   });
 });

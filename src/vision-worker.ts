@@ -194,9 +194,26 @@ export async function handleWorkerMessage(
             { role: "user", content: [{ type: "image" }, { type: "text", text: msg.task }] },
           ];
           const text = state.processor.apply_chat_template(conversation, { add_generation_prompt: true });
-          // Canonical processor call: positional (text, image).
+          // Bound the visual token count so peak memory stays under the
+          // user's available RAM. The Qwen2VLProcessor._call() signature
+          // is `(text, images, ...args)` but the image_processor() call
+          // inside ignores runtime args — max_pixels is read from the
+          // image processor's own config (image_processors_utils.js:625,
+          // smart_resize is invoked at line 899). Mutate it before
+          // calling so the downscale actually happens.
+          // 200_704 = 448×448 ≈ 0.2 MP → ≤ 256 vision tokens after
+          // patch_size=14 + merge_size=2. Combined with max_new_tokens=64,
+          // peak activation memory drops well under 10 GB on 30 GB hosts
+          // running Chrome / Obsidian / codex (verified 2026-06-03).
+          const imageProcessor: any = (state.processor as any).image_processor;
+          if (imageProcessor && imageProcessor.max_pixels !== 200_704) {
+            imageProcessor.max_pixels = 200_704;
+          }
           const inputs = await state.processor(text, rawImage);
-          const outputs = await state.model.generate({ ...inputs, max_new_tokens: 512 });
+          // Cap autoregressive decode length. 64 tokens ≈ 50 words, plenty
+          // for DETAILED_CAPTION. The 512 default was chosen for chat,
+          // not single-image captioning.
+          const outputs = await state.model.generate({ ...inputs, max_new_tokens: 64 });
           const decoded = state.processor.batch_decode(outputs, { skip_special_tokens: true })[0];
           emit({ type: "result", success: true, text: decoded });
           state.processCount += 1;
