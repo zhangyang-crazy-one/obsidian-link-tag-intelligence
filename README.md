@@ -59,6 +59,33 @@ This plugin bundles the following open-source model:
 
 We are grateful to the k2-fsa team for their outstanding work on open-source speech processing.
 
+## Local Vision & OCR
+
+Offline image understanding and text extraction, fully local — image bytes never leave your device.
+
+- **OCR (`<OCR>` task)** — runs PP-OCRv5 via [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) (ONNX). Recognizes printed Chinese, English, and mixed text. Falls back to Tesseract.js automatically if PaddleOCR init or inference fails.
+- **Image captioning (`<DETAILED_CAPTION>` task)** — uses Qwen2-VL in a standalone Node.js child process. Generates a paragraph-length description suitable for image-aware note tagging.
+- **PDF support** — digital-text PDFs use `pdftotext` (no model load); scanned PDFs rasterize page 1 via `pdftoppm` and run it through the OCR pipeline.
+- **Smart routing** — when enabled, the plugin picks the cheapest engine that can answer the task (PaddleOCR for plain text, Qwen2-VL for image semantics).
+
+### PaddleOCR Tier
+
+The OCR engine ships in three deployment tiers, selectable from Settings → Local Multimodal → PaddleOCR tier:
+
+| Tier | Detector | Recognizer | Total | Use case |
+|------|----------|------------|-------|----------|
+| `mobile` | mobile (4.8 MB) | mobile (16.5 MB) | ~22 MB | Low-memory machines, fast preview |
+| `server` (default) | server (88 MB) | server (85 MB) | ~181 MB | Best accuracy on textbook / long-line scans |
+| `hybrid` | mobile (4.8 MB) | server (85 MB) | ~94 MB | Memory-constrained machines that still need server-grade recognition |
+
+Files are pulled from `huggingface.co/PaddlePaddle/PP-OCRv5_*_onnx` (China users benefit from `hf-mirror.com`, auto-detected). On first OCR call the plugin will offer to download the missing files; the Settings panel also has a **Download PaddleOCR model now** button for pre-warming the cache.
+
+### Model Attribution
+
+> **PaddleOCR (PP-OCRv5)** — Apache 2.0, [PaddlePaddle](https://github.com/PaddlePaddle/PaddleOCR)  
+> **Qwen2-VL** — Apache 2.0, [Alibaba DAMO Academy](https://github.com/QwenLM/Qwen2-VL)  
+> **Tesseract.js** — Apache 2.0, [naptha/tesseract.js](https://github.com/naptha/tesseract.js)
+
 Recommended research flow:
 
 1. Run the ingestion CLI from the plugin to create a literature note from a DOI, arXiv ID, or PDF.

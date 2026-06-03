@@ -40,6 +40,33 @@
 
 感谢 k2-fsa 团队在开源语音处理领域的卓越工作。
 
+## 本地视觉与 OCR
+
+完全本地的离线图像理解与文字提取 —— 图像数据不会离开你的设备。
+
+- **OCR 任务（`<OCR>`）**：通过 [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) (ONNX) 运行 PP-OCRv5，识别印刷体中文、英文与中英混排。如 PaddleOCR 初始化或推理失败，自动回退到 Tesseract.js。
+- **图像描述任务（`<DETAILED_CAPTION>`）**：在独立 Node.js 子进程中调用 Qwen2-VL，生成适合打标的段落级图像描述。
+- **PDF 支持**：数字版 PDF 走 `pdftotext`（无需加载模型）；扫描版 PDF 走 `pdftoppm` 把首页转图片，再走 OCR 流水线。
+- **智能路由**：启用后，插件会自动选择能完成任务的最低成本引擎（OCR 用 PaddleOCR，图像语义用 Qwen2-VL）。
+
+### PaddleOCR 档位
+
+OCR 引擎提供三种部署档位，可在「设置 → 本地多模态 → PaddleOCR 档位」中选择：
+
+| 档位 | 检测模型 | 识别模型 | 总大小 | 适用场景 |
+|------|----------|----------|--------|----------|
+| `mobile` | 移动端 (4.8 MB) | 移动端 (16.5 MB) | ~22 MB | 低内存机器、快速预览 |
+| `server` (默认) | 服务端 (88 MB) | 服务端 (85 MB) | ~181 MB | 教材 / 长行扫描的最高精度 |
+| `hybrid` | 移动端 (4.8 MB) | 服务端 (85 MB) | ~94 MB | 内存紧张但仍需服务端识别质量 |
+
+模型文件从 `huggingface.co/PaddlePaddle/PP-OCRv5_*_onnx` 拉取（国内用户自动走 `hf-mirror.com` 加速）。首次 OCR 调用时插件会提示下载缺失文件；设置面板也提供「立即下载 PaddleOCR 模型」按钮以便提前预热缓存。
+
+### 模型归属
+
+> **PaddleOCR (PP-OCRv5)** — Apache 2.0，[PaddlePaddle](https://github.com/PaddlePaddle/PaddleOCR)  
+> **Qwen2-VL** — Apache 2.0，[阿里巴巴达摩院](https://github.com/QwenLM/Qwen2-VL)  
+> **Tesseract.js** — Apache 2.0，[naptha/tesseract.js](https://github.com/naptha/tesseract.js)
+
 ## 插件工作流
 
 启用插件后，通过侧边栏功能区或命令面板打开 `Link & Tag Intelligence` 侧边栏。

@@ -2147,6 +2147,23 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
       }
     );
 
+    // Manual "Download PaddleOCR model now" button. Triggered when the user
+    // wants to pre-warm the model files (e.g. on a metered connection) or
+    // pull a newly selected tier without invoking OCR.
+    const paddleDownloadRow = section.createDiv({ cls: "lti-voice-field-row" });
+    const paddleDownloadField = this.createFieldShell(
+      paddleDownloadRow,
+      this.plugin.t("paddleOcrDownloadButton") as any,
+      "" as any
+    );
+    const paddleDownloadBtn = paddleDownloadField.createEl("button", {
+      text: this.plugin.t("paddleOcrDownloadButton"),
+      cls: "lti-workbench-button",
+    });
+    paddleDownloadBtn.addEventListener("click", () => {
+      void this.plugin.downloadPaddleModelFromSettings();
+    });
+
     // PaddleOCR model path (primary OCR engine)
     const paddleRow = section.createDiv({ cls: "lti-voice-field-row" });
     const paddleField = this.createFieldShell(

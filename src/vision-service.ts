@@ -9,7 +9,7 @@ import * as path from "path";
 import * as fs from "fs";
 import { TesseractOcrService } from "./tesseract-ocr-service";
 import { PaddleOcrService } from "./paddle-ocr-service";
-import { PADDLE_DEFAULT_MODEL_DIR } from "./paddle-ocr-types";
+import { DEFAULT_PADDLE_TIER, getPaddleTierModelDir, type PaddleOcrModelTier } from "./paddle-ocr-types";
 
 export class LocalOfflineVisionService {
   private app: App;
@@ -34,16 +34,24 @@ export class LocalOfflineVisionService {
 
     const pluginDir = this.getPluginDir();
 
+    // Resolve PaddleOCR tier from settings (default: server). The tier
+    // determines the default model dir layout (under models/ocr/pp-ocrv5/<tier>/)
+    // and is forwarded to PaddleOcrService so dictionary loading and any
+    // tier-specific behavior is configured correctly.
+    const paddleTier: PaddleOcrModelTier = this.settings?.paddleOcrTier ?? DEFAULT_PADDLE_TIER;
+
     // Resolve PaddleOCR model dir (configurable via settings.paddleOcrModelPath).
+    // Custom path always wins; otherwise we honor the chosen tier's subdir.
     let paddleOcrDir = this.settings?.paddleOcrModelPath;
     if (!paddleOcrDir) {
-      paddleOcrDir = path.join(pluginDir, PADDLE_DEFAULT_MODEL_DIR);
+      paddleOcrDir = path.join(pluginDir, getPaddleTierModelDir(paddleTier));
     } else if (!path.isAbsolute(paddleOcrDir)) {
       const adapter = this.app.vault.adapter as any;
       const vaultPath = adapter.getBasePath ? adapter.getBasePath() : "";
       paddleOcrDir = path.resolve(vaultPath, paddleOcrDir);
     }
     this.paddleOcrService = new PaddleOcrService(paddleOcrDir, {
+      tier: paddleTier,
       detConfig: {
         dbThresh: this.settings.paddleDetDbThresh,
         dbBoxThresh: this.settings.paddleDetBoxThresh,

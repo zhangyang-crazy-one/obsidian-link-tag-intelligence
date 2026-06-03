@@ -1218,7 +1218,12 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       new Notice("PaddleOCR 模型管理需要桌面端 fs API (仅 Obsidian Desktop 可用)。", 8000);
       return false;
     }
-    const tier = DEFAULT_PADDLE_TIER;
+    // If the user has supplied a custom model path, we don't try to manage
+    // it — that's their responsibility. The vision-service will use it as-is.
+    if (this.settings.paddleOcrModelPath && this.settings.paddleOcrModelPath.trim()) {
+      return true;
+    }
+    const tier = this.settings.paddleOcrTier ?? DEFAULT_PADDLE_TIER;
     const modelDir = this.getPaddleModelDir(tier);
     const installed = isPaddleTierInstalled(
       tier,
@@ -2158,6 +2163,40 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       console.error("[lti-vision-diagnostics-error]", e);
       new Notice(`❌ 模型诊断失败: ${e?.message ?? e}`, 8000);
     }
+  }
+
+  /**
+   * Public entry point used by the "Download PaddleOCR model now" button
+   * in the settings panel. Downloads the user's selected tier; if a custom
+   * paddleOcrModelPath is set we notify the user that the path is theirs
+   * to manage and exit early (no auto-overwrite).
+   */
+  async downloadPaddleModelFromSettings(): Promise<void> {
+    if (this.settings.paddleOcrModelPath && this.settings.paddleOcrModelPath.trim()) {
+      new Notice(
+        "已设置自定义 PaddleOCR 路径；下载功能仅管理默认 tier 子目录。\n" +
+        `当前路径: ${this.settings.paddleOcrModelPath}`,
+        8000
+      );
+      return;
+    }
+    const tier = this.settings.paddleOcrTier ?? DEFAULT_PADDLE_TIER;
+    const modelDir = this.getPaddleModelDir(tier);
+    const fs = this.getFs();
+    if (!fs) {
+      new Notice("PaddleOCR 下载需要桌面端 fs API (仅 Obsidian Desktop 可用)。", 8000);
+      return;
+    }
+    const installed = isPaddleTierInstalled(
+      tier,
+      (p) => fs.existsSync(p),
+      modelDir
+    );
+    if (installed.installed) {
+      new Notice(`PaddleOCR ${tier} 模型已存在 (~${(getPaddleTierTotalBytes(tier) / 1024 / 1024).toFixed(0)} MB)。无需重复下载。`, 6000);
+      return;
+    }
+    await this.downloadPaddleModel(tier, modelDir);
   }
 
   /**
