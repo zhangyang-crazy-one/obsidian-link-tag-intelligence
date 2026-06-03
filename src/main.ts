@@ -2061,17 +2061,26 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       if (isPdf) {
         // 1. Try to extract digital text using fast pdftotext first
         notice.setMessage("⏳ [Local AI] 正在调用系统提取 PDF 文字...");
-        
+
         let text = "";
         try {
           text = await new Promise<string>((resolve, reject) => {
-            exec(`pdftotext "${absolutePath}" -`, (error: any, stdout: string) => {
-              if (error) {
-                reject(new Error(`PDF 文字提取失败: ${error.message}`));
-              } else {
-                resolve(stdout);
-              }
-            });
+            // Bump maxBuffer from Node's default 1 MB to 50 MB. The default
+            // trips immediately on engineering-textbook PDFs (e.g. 工程经济学
+            // 第17版 is ~5 MB of plain text across 10 pages) and surfaces
+            // as "stdout maxBuffer length exceeded". 50 MB is enough headroom
+            // for any single document a user is likely to process at once.
+            exec(
+              `pdftotext "${absolutePath}" -`,
+              { maxBuffer: 50 * 1024 * 1024 },
+              (error: any, stdout: string) => {
+                if (error) {
+                  reject(new Error(`PDF 文字提取失败: ${error.message}`));
+                } else {
+                  resolve(stdout);
+                }
+              },
+            );
           });
         } catch (textErr) {
           console.warn("Digital PDF text extraction failed:", textErr);
