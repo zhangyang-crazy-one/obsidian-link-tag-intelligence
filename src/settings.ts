@@ -246,6 +246,12 @@ export interface LinkTagIntelligenceSettings {
   aiAsrSource: "local" | "cloud";
   aiLastUsedTemplateId: string;
   aiTemplates: AITemplate[];
+  // Textbook OCR cleaner — vault-relative path to the JSON manifest
+  // describing chapter list + source notes. Set via the
+  // `clean-textbook` command (which opens a file picker); persisted
+  // here so a re-run doesn't require re-picking. Empty string means
+  // "no manifest selected yet".
+  textbookManifestPath: string;
 }
 
 export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSettings {
@@ -317,7 +323,8 @@ export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSetting
     aiApiStyle: "openai",
     aiAsrSource: "local",
     aiLastUsedTemplateId: "standard-markdown",
-    aiTemplates: [...DEFAULT_AI_TEMPLATES]
+    aiTemplates: [...DEFAULT_AI_TEMPLATES],
+    textbookManifestPath: "",
   };
 }
 
@@ -538,6 +545,8 @@ export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagI
   } else {
     normalized.aiTemplates = [...DEFAULT_AI_TEMPLATES];
   }
+  normalized.textbookManifestPath =
+    typeof normalized.textbookManifestPath === "string" ? normalized.textbookManifestPath : "";
 
   return normalized;
 }

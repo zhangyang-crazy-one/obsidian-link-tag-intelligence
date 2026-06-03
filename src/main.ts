@@ -17,6 +17,7 @@ import {
   type ResearchSourceMetadata,
   resolveNoteTarget
 } from "./notes";
+import { cleanBook, parseManifest, pickManifestFile } from "./textbook-cleaner";
 import {
   applyCompanionPresetToVault,
   buildResearchWorkbenchProfile,
@@ -270,6 +271,68 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       id: "semantic-search-external",
       name: this.t("semanticSearch"),
       callback: () => this.openSemanticSearch()
+    });
+
+    // Textbook OCR cleaner — splits a 700-page book into per-chapter
+    // AI calls. First invocation prompts for the manifest JSON via
+    // a file input; subsequent invocations reuse the path stored
+    // in settings. See src/textbook-cleaner.ts for the manifest
+    // schema. The cleaner runs sequentially (MiniMax-M3 rate-limits
+    // per-account) and writes each cleaned chapter to the path
+    // declared in the manifest's `output_dir`.
+    this.addCommand({
+      id: "clean-textbook",
+      name: "清理教材 OCR（按章拆分 AI 整理）",
+      callback: async () => {
+        try {
+          // Step 1: resolve the manifest path. If unset, prompt for
+          // a JSON file (browser file input; works in both Obsidian
+          // desktop and mobile, though the cleaner itself only runs
+          // on desktop due to the child-process workers it relies on).
+          let manifestPath = this.settings.textbookManifestPath;
+          if (!manifestPath) {
+            const picked = await pickManifestFile(this.app);
+            if (!picked) {
+              new Notice("未选择 manifest，已取消");
+              return;
+            }
+            manifestPath = picked;
+            this.settings.textbookManifestPath = manifestPath;
+            await this.saveSettings();
+          }
+
+          // Step 2: parse + validate.
+          const manifest = await parseManifest(this.app, manifestPath);
+          new Notice(`📚 准备清理《${manifest.book_title}》共 ${manifest.chapters.length} 章`);
+
+          // Step 3: run. The cleaner emits per-chapter Notice
+          // updates; we just need to summarize at the end.
+          const result = await cleanBook(this.app, this.settings, manifest);
+          if (result.failed === 0) {
+            new Notice(`✅ 清理完成：${result.succeeded}/${result.total} 章已保存到 ${manifest.output_dir}`);
+          } else {
+            new Notice(
+              `⚠️ 清理部分失败：${result.succeeded} 成功 / ${result.failed} 失败。` +
+              `失败章节：${result.failures.map((f) => f.chapter.id).join(", ")}`,
+              8000,
+            );
+            console.error("[textbook-cleaner] failures:", result.failures);
+          }
+        } catch (e: any) {
+          new Notice(`❌ 清理失败: ${e?.message ?? e}`, 8000);
+          console.error("[textbook-cleaner]", e);
+        }
+      },
+    });
+
+    this.addCommand({
+      id: "reset-textbook-manifest",
+      name: "重置教材清理 manifest 路径",
+      callback: async () => {
+        this.settings.textbookManifestPath = "";
+        await this.saveSettings();
+        new Notice("已重置 manifest 路径。下次 `clean-textbook` 将重新弹出文件选择器");
+      },
     });
 
     this.addCommand({
