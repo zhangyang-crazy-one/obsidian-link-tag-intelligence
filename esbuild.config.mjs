@@ -12,7 +12,24 @@ const context = await esbuild.context({
   // isolating the heavy compute via idle-timer auto-dispose.
   entryPoints: { "main": "src/main.ts", "asr-worker": "src/asr-worker.ts", "vision-worker": "src/vision-worker.ts" },
   bundle: true,
-  external: ["obsidian", "@codemirror/state", "@codemirror/view", "sherpa-onnx", "@huggingface/transformers", "onnxruntime-node"],
+  // `external` is the runtime-require allowlist. Any package that
+  // reaches into the file system via require() relative to its own
+  // directory (NAPI-RS loaders, sharp's image backend, native
+  // extensions) MUST be external — bundling them into main.js breaks
+  // their relative requires because the bundled path resolves from
+  // main.js's location, not the package's dist/ subdir. The previous
+  // setup forgot @kreuzberg/node; esbuild happily inlined the JS
+  // wrapper but the inner `localRequire("../index.js")` then resolved
+  // to plugins/<vault>/../index.js (a non-existent file).
+  external: [
+    "obsidian",
+    "@codemirror/state",
+    "@codemirror/view",
+    "sherpa-onnx",
+    "@huggingface/transformers",
+    "onnxruntime-node",
+    "@kreuzberg/node",
+  ],
   format: "cjs",
   target: "es2021",
   logLevel: "info",
