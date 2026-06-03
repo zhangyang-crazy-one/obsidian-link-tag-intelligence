@@ -113,7 +113,19 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
   async onload(): Promise<void> {
     await this.loadSettings();
-    this.visionService = new LocalOfflineVisionService(this.app, this.settings);
+    this.visionService = new LocalOfflineVisionService(this.app, this.settings, {
+      // Surface persistent worker-respawn failures (e.g. 6 failed starts
+      // within 60s) as a sticky-ish Notice so the user knows their
+      // Qwen2-VL worker is no longer recovering automatically. The
+      // vision-service respawn policy decides when to invoke this; we
+      // just translate the error into something visible.
+      onRespawnFailed: (err) => {
+        new Notice(
+          `❌ 视觉子进程连续启动失败，请检查模型文件或查看控制台日志: ${err.message}`,
+          12000
+        );
+      },
+    });
     this.speechRecorder.setApp(this.app);
     this.speechRecorder.setSettingsLanguage(this.settings.speechLanguage);
     this.speechRecorder.setSettingsVadSensitivity(this.settings.speechVadSensitivity);
