@@ -7,7 +7,7 @@
 // or persist for later inspection.
 
 import * as path from "path";
-import { PaddleOcrService } from "./paddle-ocr-service";
+import { PaddleOcrEngine } from "./paddle-ocr-service";
 import {
   PADDLE_DEFAULT_MODEL_DIR,
   PADDLE_TIER_SPECS,

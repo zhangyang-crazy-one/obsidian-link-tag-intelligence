@@ -106,7 +106,16 @@ export class LocalOfflineVisionService {
       const vaultPath = adapter.getBasePath ? adapter.getBasePath() : "";
       paddleOcrDir = path.resolve(vaultPath, paddleOcrDir);
     }
-    this.paddleOcrService = new PaddleOcrService(paddleOcrDir, {
+    // PaddleOcrService is now spawn-based: it instantiates the
+    // paddle-ocr-worker child process which loads onnxruntime-node +
+    // sharp in its own context (where bare-specifier requires work).
+    // Obsidian's renderer can't load these directly — see
+    // kreuzberg-ocr-fallback memory for the same fix applied to
+    // @kreuzberg/node. The .cjs extension is required because the
+    // project's package.json has "type": "module" — Node 24 would
+    // misinterpret the raw .js as ESM.
+    const paddleOcrWorkerPath = path.join(pluginDir, "paddle-ocr-worker.cjs");
+    this.paddleOcrService = new PaddleOcrService(paddleOcrDir, paddleOcrWorkerPath, {
       tier: paddleTier,
       detConfig: {
         dbThresh: this.settings.paddleDetDbThresh,

@@ -10,7 +10,7 @@ const context = await esbuild.context({
   // so there is no separate paddle-ocr-worker entry point. This keeps memory
   // footprint minimal (single V8 heap, shared ONNX runtime cache) while still
   // isolating the heavy compute via idle-timer auto-dispose.
-  entryPoints: { "main": "src/main.ts", "asr-worker": "src/asr-worker.ts", "vision-worker": "src/vision-worker.ts", "kreuzberg-worker": "src/kreuzberg-worker.ts" },
+  entryPoints: { "main": "src/main.ts", "asr-worker": "src/asr-worker.ts", "vision-worker": "src/vision-worker.ts", "kreuzberg-worker": "src/kreuzberg-worker.ts", "paddle-ocr-worker": "src/paddle-ocr-worker.ts" },
   bundle: true,
   // `external` is the runtime-require allowlist. Any package that
   // reaches into the file system via require() relative to its own
@@ -60,7 +60,7 @@ if (production) {
   // misinterpreted by Node 24 as ESM. Rename to .cjs to force CommonJS
   // resolution. Both the project root (where Obsidian loads from in dev)
   // and the dist/ directory (production) need the .cjs extension.
-  for (const workerName of ["vision-worker", "kreuzberg-worker"]) {
+  for (const workerName of ["vision-worker", "kreuzberg-worker", "paddle-ocr-worker"]) {
     if (fs.existsSync(path.resolve(workerName + ".js"))) {
       fs.copyFileSync(
         path.resolve(workerName + ".js"),

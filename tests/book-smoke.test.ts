@@ -1,7 +1,7 @@
 /**
  * One-off smoke test for the textbook scenario.
  *
- * Runs PaddleOcrService against 10 pages of a Chinese economics textbook
+ * Runs PaddleOcrEngine against 10 pages of a Chinese economics textbook
  * and reports recognized text + per-page timing. NOT a real eval —
  * just a manual sanity check that the new postprocessor works on
  * realistic book-page images (not MagicGrid SVGs).
@@ -12,7 +12,7 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
-import { PaddleOcrService } from "../src/paddle-ocr-service";
+import { PaddleOcrEngine } from "../src/paddle-ocr-service";
 
 const MODEL_DIR = "/home/zhangyangrui/Datesets_4_me/note/my_notebook/.obsidian/plugins/link-tag-intelligence/models/ocr/pp-ocrv5/mobile";
 const PAGES_DIR = "/tmp/ocr-test-book";
@@ -32,7 +32,7 @@ describe("Book smoke (manual, skipped in CI)", () => {
     }
     console.log(`Found ${pages.length} pages\n`);
 
-    const svc = new PaddleOcrService(MODEL_DIR);
+    const svc = new PaddleOcrEngine(MODEL_DIR);
     // Enable diagnostic logging so we can see dbPostprocess filter stats
     // and rec model argmax sequences (gated by this env var, off in CI)
     process.env.LTI_PADDLE_DIAG = "1";

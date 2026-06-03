@@ -1,5 +1,5 @@
 /**
- * Smoke integration test for PaddleOcrService against real models.
+ * Smoke integration test for PaddleOcrEngine against real models.
  *
  * IMPORTANT: This is a SMOKE test, not a regression test. It only verifies
  * that the pipeline runs end-to-end (no crash, returns non-empty text)
@@ -13,18 +13,18 @@
  */
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
-import { PaddleOcrService } from "../src/paddle-ocr-service";
+import { PaddleOcrEngine } from "../src/paddle-ocr-service";
 
 const MODEL_DIR = "/home/zhangyangrui/Datesets_4_me/note/my_notebook/.obsidian/plugins/link-tag-intelligence/models/ocr/pp-ocrv5/mobile";
 const ZH_PNG = "/tmp/ocr-test/zh.png";
 const EN_PNG = "/tmp/ocr-test/en.png";
 
-describe("PaddleOcrService end-to-end smoke (manual, skipped in CI)", () => {
+describe("PaddleOcrEngine end-to-end smoke (manual, skipped in CI)", () => {
   it.skip("runs Chinese image through the full pipeline without crashing", async () => {
     expect(fs.existsSync(ZH_PNG)).toBe(true);
     expect(fs.existsSync(MODEL_DIR)).toBe(true);
 
-    const svc = new PaddleOcrService(MODEL_DIR);
+    const svc = new PaddleOcrEngine(MODEL_DIR);
     const t0 = Date.now();
     const text = await svc.runOcr(ZH_PNG);
     const elapsed = Date.now() - t0;
@@ -37,7 +37,7 @@ describe("PaddleOcrService end-to-end smoke (manual, skipped in CI)", () => {
   it.skip("runs English image through the full pipeline without crashing", async () => {
     expect(fs.existsSync(EN_PNG)).toBe(true);
 
-    const svc = new PaddleOcrService(MODEL_DIR);
+    const svc = new PaddleOcrEngine(MODEL_DIR);
     const t0 = Date.now();
     const text = await svc.runOcr(EN_PNG);
     const elapsed = Date.now() - t0;

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
-  PaddleOcrService,
+  PaddleOcrEngine,
   _internal,
   parsePaddleOcrDictFromYml,
 } from "../src/paddle-ocr-service";
@@ -68,7 +68,7 @@ function makeSharpMock() {
       }),
     }),
     resize: () => _input,
-  })) as unknown as ConstructorParameters<typeof PaddleOcrService>[0] extends infer D
+  })) as unknown as ConstructorParameters<typeof PaddleOcrEngine>[0] extends infer D
     ? D extends { sharp?: infer S } ? S : never
     : never;
 }
@@ -103,10 +103,10 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("PaddleOcrService.checkModelFiles", () => {
+describe("PaddleOcrEngine.checkModelFiles", () => {
   it("reports all files present when everything exists", () => {
     const fs = makeFsMock({ existing: allModelFiles(), dictText: DICT_LINES.join("\n") });
-    const svc = new PaddleOcrService(MODEL_DIR, { fs, path: realPath });
+    const svc = new PaddleOcrEngine(MODEL_DIR, { fs, path: realPath });
     const result = svc.checkModelFiles();
     expect(result.present).toBe(true);
     expect(result.missing).toEqual([]);
@@ -119,7 +119,7 @@ describe("PaddleOcrService.checkModelFiles", () => {
     const recPath = realPath.join(MODEL_DIR, PADDLE_MODEL_SUBDIRS.rec, PADDLE_MODEL_FILES.det);
     existing.delete(recPath);
     const fs = makeFsMock({ existing, dictText: DICT_LINES.join("\n") });
-    const svc = new PaddleOcrService(MODEL_DIR, { fs, path: realPath });
+    const svc = new PaddleOcrEngine(MODEL_DIR, { fs, path: realPath });
     const result = svc.checkModelFiles();
     expect(result.present).toBe(false);
     expect(result.missing).toHaveLength(1);
@@ -133,7 +133,7 @@ describe("PaddleOcrService.checkModelFiles", () => {
     const clsPath = realPath.join(MODEL_DIR, PADDLE_MODEL_SUBDIRS.cls, PADDLE_MODEL_FILES.det);
     existing.delete(clsPath);
     const fs = makeFsMock({ existing, dictText: DICT_LINES.join("\n") });
-    const svc = new PaddleOcrService(MODEL_DIR, { fs, path: realPath });
+    const svc = new PaddleOcrEngine(MODEL_DIR, { fs, path: realPath });
     const result = svc.checkModelFiles();
     expect(result.present).toBe(true);                       // all required files present
     expect(result.missing).toHaveLength(0);
@@ -143,7 +143,7 @@ describe("PaddleOcrService.checkModelFiles", () => {
 
   it("reports 3 missing files when the entire model dir is empty (cls excluded as optional)", () => {
     const fs = makeFsMock({ existing: new Set(), dictText: "" });
-    const svc = new PaddleOcrService(MODEL_DIR, { fs, path: realPath });
+    const svc = new PaddleOcrEngine(MODEL_DIR, { fs, path: realPath });
     const result = svc.checkModelFiles();
     expect(result.present).toBe(false);
     expect(result.missing).toHaveLength(3);
@@ -151,25 +151,25 @@ describe("PaddleOcrService.checkModelFiles", () => {
   });
 });
 
-describe("PaddleOcrService.isReady", () => {
+describe("PaddleOcrEngine.isReady", () => {
   it("is true iff all model files are present", () => {
     const fs = makeFsMock({ existing: allModelFiles(), dictText: DICT_LINES.join("\n") });
-    const svc = new PaddleOcrService(MODEL_DIR, { fs, path: realPath });
+    const svc = new PaddleOcrEngine(MODEL_DIR, { fs, path: realPath });
     expect(svc.isReady).toBe(true);
   });
 
   it("is false when any model file is missing", () => {
     const fs = makeFsMock({ existing: new Set(), dictText: "" });
-    const svc = new PaddleOcrService(MODEL_DIR, { fs, path: realPath });
+    const svc = new PaddleOcrEngine(MODEL_DIR, { fs, path: realPath });
     expect(svc.isReady).toBe(false);
   });
 });
 
-describe("PaddleOcrService.init", () => {
+describe("PaddleOcrEngine.init", () => {
   it("throws a clear error when model files are missing", async () => {
     const fs = makeFsMock({ existing: new Set(), dictText: "" });
     const ort = makeOrtMock();
-    const svc = new PaddleOcrService(MODEL_DIR, { fs, path: realPath, ort: ort as never });
+    const svc = new PaddleOcrEngine(MODEL_DIR, { fs, path: realPath, ort: ort as never });
     await expect(svc.init()).rejects.toThrow(/PaddleOCR 模型文件缺失/);
     // The dictionary file was not read, and no sessions were created.
     expect(ort.InferenceSession.create).not.toHaveBeenCalled();
@@ -178,7 +178,7 @@ describe("PaddleOcrService.init", () => {
   it("loads dictionary + 3 sessions when all model files are present", async () => {
     const fs = makeFsMock({ existing: allModelFiles(), dictText: DICT_LINES.join("\n") });
     const ort = makeOrtMock();
-    const svc = new PaddleOcrService(MODEL_DIR, { fs, path: realPath, ort: ort as never });
+    const svc = new PaddleOcrEngine(MODEL_DIR, { fs, path: realPath, ort: ort as never });
     await svc.init();
     // 3 ONNX sessions created (det, cls, rec)
     expect(ort.InferenceSession.create).toHaveBeenCalledTimes(3);
@@ -190,7 +190,7 @@ describe("PaddleOcrService.init", () => {
   it("surfaces onStatus progress callbacks to the caller", async () => {
     const fs = makeFsMock({ existing: allModelFiles(), dictText: DICT_LINES.join("\n") });
     const ort = makeOrtMock();
-    const svc = new PaddleOcrService(MODEL_DIR, { fs, path: realPath, ort: ort as never });
+    const svc = new PaddleOcrEngine(MODEL_DIR, { fs, path: realPath, ort: ort as never });
     const onStatus = vi.fn();
     await svc.init(onStatus);
     expect(onStatus).toHaveBeenCalled();
@@ -202,11 +202,11 @@ describe("PaddleOcrService.init", () => {
   });
 });
 
-describe("PaddleOcrService.dispose", () => {
+describe("PaddleOcrEngine.dispose", () => {
   it("releases all sessions and clears state", async () => {
     const fs = makeFsMock({ existing: allModelFiles(), dictText: DICT_LINES.join("\n") });
     const ort = makeOrtMock();
-    const svc = new PaddleOcrService(MODEL_DIR, { fs, path: realPath, ort: ort as never });
+    const svc = new PaddleOcrEngine(MODEL_DIR, { fs, path: realPath, ort: ort as never });
     await svc.init();
     expect(ort.InferenceSession.create).toHaveBeenCalledTimes(3);
     await svc.dispose();
@@ -218,17 +218,17 @@ describe("PaddleOcrService.dispose", () => {
   it("is idempotent (safe to call twice)", async () => {
     const fs = makeFsMock({ existing: allModelFiles(), dictText: DICT_LINES.join("\n") });
     const ort = makeOrtMock();
-    const svc = new PaddleOcrService(MODEL_DIR, { fs, path: realPath, ort: ort as never });
+    const svc = new PaddleOcrEngine(MODEL_DIR, { fs, path: realPath, ort: ort as never });
     await svc.init();
     await expect(svc.dispose()).resolves.toBeUndefined();
     await expect(svc.dispose()).resolves.toBeUndefined();
   });
 });
 
-describe("PaddleOcrService.destroy", () => {
+describe("PaddleOcrEngine.destroy", () => {
   it("does not throw when called on an uninitialized service", () => {
     const fs = makeFsMock({ existing: new Set(), dictText: "" });
-    const svc = new PaddleOcrService(MODEL_DIR, { fs, path: realPath });
+    const svc = new PaddleOcrEngine(MODEL_DIR, { fs, path: realPath });
     expect(() => svc.destroy()).not.toThrow();
   });
 
@@ -236,7 +236,7 @@ describe("PaddleOcrService.destroy", () => {
     vi.useFakeTimers();
     const fs = makeFsMock({ existing: allModelFiles(), dictText: DICT_LINES.join("\n") });
     const ort = makeOrtMock();
-    const svc = new PaddleOcrService(MODEL_DIR, { fs, path: realPath, ort: ort as never });
+    const svc = new PaddleOcrEngine(MODEL_DIR, { fs, path: realPath, ort: ort as never });
     // Trigger runOcr so the idle timer is scheduled; runOcr will throw on the
     // minimal sharp mock, so we only need to assert that the timer fires.
     await svc
@@ -254,14 +254,14 @@ describe("PaddleOcrService.destroy", () => {
 });
 
 // ---------------------------------------------------------------------------
-// PaddleOcrService construction honors detConfig overrides
+// PaddleOcrEngine construction honors detConfig overrides
 // ---------------------------------------------------------------------------
 
-describe("PaddleOcrService constructor with detConfig overrides", () => {
+describe("PaddleOcrEngine constructor with detConfig overrides", () => {
   it("uses the user-supplied detConfig values (not the defaults)", () => {
     // We can't easily test that the constants are read, but we can verify
     // the constructor accepts a Partial<PaddleDetConfig> without throwing.
-    const svc = new PaddleOcrService(MODEL_DIR, {
+    const svc = new PaddleOcrEngine(MODEL_DIR, {
       detConfig: {
         dbThresh: 0.5,
         dbBoxThresh: 0.4,
@@ -274,30 +274,30 @@ describe("PaddleOcrService constructor with detConfig overrides", () => {
         useDilation: true,
       },
     });
-    expect(svc).toBeInstanceOf(PaddleOcrService);
+    expect(svc).toBeInstanceOf(PaddleOcrEngine);
   });
 
   it("falls back to PADDLE_DET_DEFAULTS for any unspecified field", () => {
     // Partial override: only set dbThresh, rest should default
-    const svc = new PaddleOcrService(MODEL_DIR, {
+    const svc = new PaddleOcrEngine(MODEL_DIR, {
       detConfig: { dbThresh: 0.42 },
     });
-    expect(svc).toBeInstanceOf(PaddleOcrService);
+    expect(svc).toBeInstanceOf(PaddleOcrEngine);
   });
 });
 
 // ---------------------------------------------------------------------------
 // Geometry helper sanity checks (polygon area, IoU, marching-squares perimeter)
-// We access internals via a small PaddleOcrService instance — these private
+// We access internals via a small PaddleOcrEngine instance — these private
 // helpers are pure math, no model loading required.
 // ---------------------------------------------------------------------------
 
 /** Type alias matching the private Quad return type. */
 type Quad8 = [number, number, number, number, number, number, number, number];
 
-describe("PaddleOcrService geometry helpers", () => {
+describe("PaddleOcrEngine geometry helpers", () => {
   it("polygonIoU of identical quads equals 1.0", () => {
-    const svc = new PaddleOcrService(MODEL_DIR);
+    const svc = new PaddleOcrEngine(MODEL_DIR);
     const a: Quad8 = [0, 0, 10, 0, 10, 10, 0, 10];
     // (polygonIoU is private; call it via any-cast)
     const iou = (svc as unknown as { polygonIoU: (a: Quad8, b: Quad8) => number }).polygonIoU(a, a);
@@ -305,7 +305,7 @@ describe("PaddleOcrService geometry helpers", () => {
   });
 
   it("polygonIoU of disjoint quads equals 0.0", () => {
-    const svc = new PaddleOcrService(MODEL_DIR);
+    const svc = new PaddleOcrEngine(MODEL_DIR);
     const a: Quad8 = [0, 0, 10, 0, 10, 10, 0, 10];
     const b: Quad8 = [20, 20, 30, 20, 30, 30, 20, 30];
     const iou = (svc as unknown as { polygonIoU: (a: Quad8, b: Quad8) => number }).polygonIoU(a, b);
@@ -313,7 +313,7 @@ describe("PaddleOcrService geometry helpers", () => {
   });
 
   it("polygonIoU of half-overlapping quads is between 0 and 1", () => {
-    const svc = new PaddleOcrService(MODEL_DIR);
+    const svc = new PaddleOcrEngine(MODEL_DIR);
     const a: Quad8 = [0, 0, 10, 0, 10, 10, 0, 10];
     const b: Quad8 = [5, 0, 15, 0, 15, 10, 5, 10];
     const iou = (svc as unknown as { polygonIoU: (a: Quad8, b: Quad8) => number }).polygonIoU(a, b);
@@ -322,21 +322,21 @@ describe("PaddleOcrService geometry helpers", () => {
   });
 
   it("polygonArea of a 10x10 square is 100", () => {
-    const svc = new PaddleOcrService(MODEL_DIR);
+    const svc = new PaddleOcrEngine(MODEL_DIR);
     const a: Quad8 = [0, 0, 10, 0, 10, 10, 0, 10];
     const area = (svc as unknown as { polygonArea: (q: number[]) => number }).polygonArea(a);
     expect(area).toBeCloseTo(100, 5);
   });
 
   it("polygonPerimeter of a 10x10 square is 40", () => {
-    const svc = new PaddleOcrService(MODEL_DIR);
+    const svc = new PaddleOcrEngine(MODEL_DIR);
     const a: Quad8 = [0, 0, 10, 0, 10, 10, 0, 10];
     const perim = (svc as unknown as { polygonPerimeter: (q: number[]) => number }).polygonPerimeter(a);
     expect(perim).toBeCloseTo(40, 5);
   });
 
   it("polygonOffsetDistance matches the PaddleOCR formula (area * ratio / perimeter)", () => {
-    const svc = new PaddleOcrService(MODEL_DIR);
+    const svc = new PaddleOcrEngine(MODEL_DIR);
     const a: Quad8 = [0, 0, 10, 0, 10, 10, 0, 10];
     // area = 100, perimeter = 40, ratio = 1.5 → distance = 100*1.5/40 = 3.75
     const dist = (svc as unknown as { polygonOffsetDistance: (q: Quad8, r: number) => number }).polygonOffsetDistance(a, 1.5);
@@ -344,7 +344,7 @@ describe("PaddleOcrService geometry helpers", () => {
   });
 
   it("offsetPolygon returns a polygon with strictly larger area than the input", () => {
-    const svc = new PaddleOcrService(MODEL_DIR);
+    const svc = new PaddleOcrEngine(MODEL_DIR);
     const a: Quad8 = [5, 5, 15, 5, 15, 15, 5, 15];
     const before = (svc as unknown as { polygonArea: (q: number[]) => number }).polygonArea(a);
     const offset = (svc as unknown as { offsetPolygon: (q: number[], d: number) => number[] }).offsetPolygon(a, 3);
@@ -353,7 +353,7 @@ describe("PaddleOcrService geometry helpers", () => {
   });
 
   it("greedyNMS suppresses overlapping low-score boxes", () => {
-    const svc = new PaddleOcrService(MODEL_DIR);
+    const svc = new PaddleOcrEngine(MODEL_DIR);
     // Two nearly-identical boxes; one with a higher score should win.
     const a: Quad8 = [0, 0, 10, 0, 10, 10, 0, 10];
     const b: Quad8 = [1, 1, 11, 1, 11, 11, 1, 11]; // ~81% overlap with a
@@ -365,7 +365,7 @@ describe("PaddleOcrService geometry helpers", () => {
   });
 
   it("greedyNMS keeps non-overlapping boxes", () => {
-    const svc = new PaddleOcrService(MODEL_DIR);
+    const svc = new PaddleOcrEngine(MODEL_DIR);
     const a: Quad8 = [0, 0, 10, 0, 10, 10, 0, 10];
     const b: Quad8 = [20, 20, 30, 20, 30, 30, 20, 30];
     const kept = (svc as unknown as {
@@ -375,7 +375,7 @@ describe("PaddleOcrService geometry helpers", () => {
   });
 
   it("minAreaRect of a 10x10 square is a 10x10 square", () => {
-    const svc = new PaddleOcrService(MODEL_DIR);
+    const svc = new PaddleOcrEngine(MODEL_DIR);
     const points: Array<[number, number]> = [
       [0, 0], [10, 0], [10, 10], [0, 10]
     ];
@@ -389,7 +389,7 @@ describe("PaddleOcrService geometry helpers", () => {
   });
 
   it("minAreaRect of a degenerate 2-point set returns null", () => {
-    const svc = new PaddleOcrService(MODEL_DIR);
+    const svc = new PaddleOcrEngine(MODEL_DIR);
     const rect = (svc as unknown as {
       minAreaRect: (pts: Array<[number, number]>) => Quad8 | null;
     }).minAreaRect([[0, 0], [1, 1]]);
@@ -398,22 +398,22 @@ describe("PaddleOcrService geometry helpers", () => {
 });
 
 // ---------------------------------------------------------------------------
-// PaddleOcrService constructor honors the new `tier` option
+// PaddleOcrEngine constructor honors the new `tier` option
 // ---------------------------------------------------------------------------
 
-describe("PaddleOcrService constructor with tier option", () => {
+describe("PaddleOcrEngine constructor with tier option", () => {
   it("defaults to mobile tier when no tier is specified", () => {
-    const svc = new PaddleOcrService(MODEL_DIR, { fs: {} as never });
+    const svc = new PaddleOcrEngine(MODEL_DIR, { fs: {} as never });
     expect((svc as unknown as { tier: string }).tier).toBe("mobile");
   });
 
   it("accepts server tier", () => {
-    const svc = new PaddleOcrService(MODEL_DIR, { tier: "server", fs: {} as never });
+    const svc = new PaddleOcrEngine(MODEL_DIR, { tier: "server", fs: {} as never });
     expect((svc as unknown as { tier: string }).tier).toBe("server");
   });
 
   it("accepts hybrid tier", () => {
-    const svc = new PaddleOcrService(MODEL_DIR, { tier: "hybrid", fs: {} as never });
+    const svc = new PaddleOcrEngine(MODEL_DIR, { tier: "hybrid", fs: {} as never });
     expect((svc as unknown as { tier: string }).tier).toBe("hybrid");
   });
 
@@ -424,7 +424,7 @@ describe("PaddleOcrService constructor with tier option", () => {
       // server tier has dict embedded in rec/inference.yml, no separate dict/
     ]);
     const fs = makeFsMock({ existing, dictText: "" });
-    const svc = new PaddleOcrService(MODEL_DIR, { tier: "server", fs });
+    const svc = new PaddleOcrEngine(MODEL_DIR, { tier: "server", fs });
     const result = svc.checkModelFiles();
     // For server tier the rec/inference.yml is required instead of dict/
     expect(result.missing).toEqual([]); // both det + rec present

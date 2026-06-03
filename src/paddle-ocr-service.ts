@@ -42,7 +42,7 @@ type SharpLike = {
   };
 };
 
-export class PaddleOcrService {
+export class PaddleOcrEngine {
   private readonly modelDir: string;
   private readonly ort: OrtLike | null = null;
   private readonly sharp: SharpLike | null = null;
@@ -325,7 +325,7 @@ export class PaddleOcrService {
     const inputName = this.clsSession.inputNames[0];
     const outputName = this.clsSession.outputNames[0];
     if (!inputName || !outputName) return 0;
-    const inputTensor = new ort.Tensor("float32", crop, [1, 3, PaddleOcrService.CLS_IMG_HEIGHT, PaddleOcrService.CLS_IMG_WIDTH]);
+    const inputTensor = new ort.Tensor("float32", crop, [1, 3, PaddleOcrEngine.CLS_IMG_HEIGHT, PaddleOcrEngine.CLS_IMG_WIDTH]);
     const out = await this.clsSession.run({ [inputName]: inputTensor });
     const logits = (out[outputName] as { data: Float32Array; dims: number[] } | undefined)?.data;
     if (!logits || logits.length < 2) return 0;
@@ -338,7 +338,7 @@ export class PaddleOcrService {
     const inputName = this.recSession.inputNames[0];
     const outputName = this.recSession.outputNames[0];
     if (!inputName || !outputName) return "";
-    const inputTensor = new ort.Tensor("float32", crop, [1, 3, PaddleOcrService.REC_IMG_HEIGHT, actualWidth]);
+    const inputTensor = new ort.Tensor("float32", crop, [1, 3, PaddleOcrEngine.REC_IMG_HEIGHT, actualWidth]);
     const out = await this.recSession.run({ [inputName]: inputTensor });
     const raw = out[outputName] as { data: Float32Array; dims: number[] } | undefined;
     if (!raw || raw.data.length === 0) return "";
@@ -424,14 +424,14 @@ export class PaddleOcrService {
     const widthPx = maxX - minX + 1;
     const heightPx = maxY - minY + 1;
     if (widthPx < 4 || heightPx < 4) {
-      return { data: new Float32Array(3 * PaddleOcrService.REC_IMG_HEIGHT * 48), width: 48 };
+      return { data: new Float32Array(3 * PaddleOcrEngine.REC_IMG_HEIGHT * 48), width: 48 };
     }
 
-    const outW = Math.min(PaddleOcrService.REC_MAX_WIDTH, Math.max(48, Math.round((widthPx / heightPx) * PaddleOcrService.REC_IMG_HEIGHT)));
-    const out = new Float32Array(3 * PaddleOcrService.REC_IMG_HEIGHT * outW);
-    const stride = PaddleOcrService.REC_IMG_HEIGHT * outW;
-    for (let y = 0; y < PaddleOcrService.REC_IMG_HEIGHT; y++) {
-      const sy = Math.min(sh - 1, Math.round((y / PaddleOcrService.REC_IMG_HEIGHT) * heightPx + minY));
+    const outW = Math.min(PaddleOcrEngine.REC_MAX_WIDTH, Math.max(48, Math.round((widthPx / heightPx) * PaddleOcrEngine.REC_IMG_HEIGHT)));
+    const out = new Float32Array(3 * PaddleOcrEngine.REC_IMG_HEIGHT * outW);
+    const stride = PaddleOcrEngine.REC_IMG_HEIGHT * outW;
+    for (let y = 0; y < PaddleOcrEngine.REC_IMG_HEIGHT; y++) {
+      const sy = Math.min(sh - 1, Math.round((y / PaddleOcrEngine.REC_IMG_HEIGHT) * heightPx + minY));
       for (let x = 0; x < outW; x++) {
         const sx = Math.min(sw - 1, Math.round((x / outW) * widthPx + minX));
         const si = (sy * sw + sx) * schannels;
@@ -449,7 +449,7 @@ export class PaddleOcrService {
   private flipHorizontal(crop: Float32Array, actualWidth: number): Float32Array {
     // 3-channel NCHW (C, H, W)
     const channels = 3;
-    const height = PaddleOcrService.REC_IMG_HEIGHT;
+    const height = PaddleOcrEngine.REC_IMG_HEIGHT;
     const out = new Float32Array(crop.length);
     const planeSize = height * actualWidth;
     for (let c = 0; c < channels; c++) {
@@ -536,7 +536,7 @@ export class PaddleOcrService {
       const hSide = aabb[3] - aabb[1] + 1;
       const longSide = Math.max(wSide, hSide);
       const shortSide = Math.min(wSide, hSide);
-      if (longSide / shortSide > PaddleOcrService.DET_ASPECT_RATIO_THRESH) { stats.droppedAspect++; continue; }
+      if (longSide / shortSide > PaddleOcrEngine.DET_ASPECT_RATIO_THRESH) { stats.droppedAspect++; continue; }
 
       // Hard cap before doing the more expensive unclip + re-fit
       if (polygons.length >= cfg.maxCandidates) break;
@@ -1146,7 +1146,7 @@ export class PaddleOcrService {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => {
       void this.dispose();
-    }, PaddleOcrService.IDLE_TIMEOUT_MS);
+    }, PaddleOcrEngine.IDLE_TIMEOUT_MS);
   }
 
   // ---------------------------------------------------------------------------
@@ -1266,3 +1266,212 @@ function unquoteYamlString(raw: string): string {
 
 /** Exposed so unit tests can verify without a real model file. */
 export const _internal = { unquoteYamlString, parsePaddleOcrDictFromYml };
+
+// ─────────────────────────────────────────────────────────────────────────
+// PaddleOcrService (spawn-based public surface)
+//
+// Mirrors the spawn-based design of KreuzbergOcrService (see
+// src/kreuzberg-ocr-service.ts). This class is the public API used by
+// vision-service.ts; the PaddleOcrEngine above runs INSIDE the child
+// process started by this class.
+//
+// Obsidian's Electron renderer can't resolve a bare-specifier require
+// into the plugin's own node_modules/ for onnxruntime-node or sharp —
+// the same sandbox limitation that motivated the kreuzberg-worker
+// child. This class spawns src/paddle-ocr-worker.ts as a fresh Node
+// child, which CAN require those modules normally. The worker
+// pre-loads onnxruntime-node and sharp in its own context and passes
+// them to the PaddleOcrEngine constructor via the existing
+// dependency-injection design — so the OCR pipeline is identical
+// to running in-process, just inside a child process.
+//
+// Worker protocol (parent → child via stdin, one JSON line per message):
+//   { type: "init",    modelDir, detConfig?, tier?, jobId }
+//   { type: "extract", imagePath, jobId }
+//
+// Worker → parent (stdout, one JSON line per message):
+//   { type: "ready" }
+//   { type: "progress", jobId, stage, message }
+//   { type: "result",   jobId, success: true, text }
+//   { type: "error",    jobId, error }
+//
+// The child stays alive across multiple extracts. Parent SIGTERMs on
+// destroy() (with SIGKILL escalation after 500 ms grace).
+// ─────────────────────────────────────────────────────────────────────────
+
+import * as cp from "child_process";
+import { randomUUID } from "crypto";
+import { createInterface as _createInterface } from "node:readline";
+
+type WorkerResponse =
+  | { type: "ready" }
+  | { type: "progress"; jobId: string; stage: string; message: string }
+  | { type: "result"; jobId: string; success: true; text: string }
+  | { type: "error"; jobId: string; error: string };
+
+export class PaddleOcrService {
+  private readonly modelDir: string;
+  private readonly workerPath: string;
+  private readonly detConfig: Record<string, unknown>;
+  private readonly tier: "mobile" | "server" | "hybrid";
+
+  private child: cp.ChildProcess | null = null;
+  private readonly pending = new Map<string, {
+    resolve: (text: string) => void;
+    reject: (err: Error) => void;
+    onStatus?: (msg: string) => void;
+  }>();
+  private readyPromise: Promise<void> | null = null;
+  private readyResolve: (() => void) | null = null;
+  private destroyed = false;
+  private initialized = false;
+
+  constructor(
+    modelDir: string,
+    workerPath: string,
+    opts?: {
+      detConfig?: Record<string, unknown>;
+      tier?: "mobile" | "server" | "hybrid";
+    },
+  ) {
+    this.modelDir = modelDir;
+    this.workerPath = workerPath;
+    this.detConfig = opts?.detConfig ?? {};
+    this.tier = opts?.tier ?? "mobile";
+  }
+
+  /**
+   * Spawn the child worker (idempotent) and wait for its first
+   * "ready" message. Subsequent calls return the cached promise.
+   */
+  private ensureWorker(): Promise<void> {
+    if (this.readyPromise) return this.readyPromise;
+    this.readyPromise = new Promise<void>((resolve) => {
+      this.readyResolve = resolve;
+    });
+    const isWindows = process.platform === "win32";
+    // Belt-and-suspenders: include the project root's node_modules in
+    // NODE_PATH so the child can find onnxruntime-node and sharp even
+    // when run from the dev tree (where vault/node_modules is partial).
+    const projectNodeModules = "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/node_modules";
+    const childEnv = { ...process.env };
+    if (!childEnv.NODE_PATH || !childEnv.NODE_PATH.includes(projectNodeModules)) {
+      childEnv.NODE_PATH = projectNodeModules + (childEnv.NODE_PATH ? `:${childEnv.NODE_PATH}` : "");
+    }
+    const childDir = require("path").dirname(this.workerPath);
+    this.child = cp.spawn("node", [this.workerPath], {
+      env: childEnv,
+      detached: !isWindows,
+      cwd: childDir,
+      shell: !isWindows,
+    });
+    this.child.on("error", (e) => {
+      const err = new Error(`paddle-ocr-worker spawn failed: ${e.message}`);
+      for (const job of this.pending.values()) job.reject(err);
+      this.pending.clear();
+      this.child = null;
+      this.readyPromise = null;
+      this.readyResolve = null;
+    });
+    this.child.on("exit", (code, signal) => {
+      if (this.pending.size > 0) {
+        const err = new Error(
+          `paddle-ocr-worker exited unexpectedly (code=${code}, signal=${signal})`,
+        );
+        for (const job of this.pending.values()) job.reject(err);
+        this.pending.clear();
+      }
+      this.child = null;
+      this.readyPromise = null;
+      this.readyResolve = null;
+    });
+    const rl = _createInterface({ input: this.child!.stdout! });
+    rl.on("line", (raw: string) => {
+      let msg: WorkerResponse;
+      try { msg = JSON.parse(raw); } catch { return; }
+      if (msg.type === "ready") {
+        this.readyResolve?.();
+        this.readyResolve = null;
+        return;
+      }
+      if (msg.type === "progress") {
+        const job = this.pending.get(msg.jobId);
+        if (job?.onStatus) job.onStatus(msg.message);
+        return;
+      }
+      if (msg.type === "result" || msg.type === "error") {
+        const job = this.pending.get(msg.jobId);
+        if (!job) return;
+        this.pending.delete(msg.jobId);
+        if (msg.type === "result") job.resolve(msg.text);
+        else job.reject(new Error(msg.error));
+      }
+    });
+    this.child.stderr?.on("data", (chunk: Buffer) => {
+      process.stderr.write(`[lti-paddle-ocr-worker-stderr] ${chunk.toString().trim()}\n`);
+    });
+    return this.readyPromise;
+  }
+
+  /** Lazy init: tell the child to load its ONNX models. */
+  public async init(onStatus?: (msg: string) => void): Promise<void> {
+    if (this.initialized) return;
+    await this.ensureWorker();
+    if (!this.child) await this.ensureWorker();
+    const jobId = randomUUID();
+    await new Promise<void>((resolve, reject) => {
+      if (!this.child) { reject(new Error("paddle-ocr-worker not running")); return; }
+      this.pending.set(jobId, { resolve: () => resolve(), reject, onStatus });
+      this.child.stdin?.write(
+        JSON.stringify({
+          type: "init",
+          modelDir: this.modelDir,
+          detConfig: this.detConfig,
+          tier: this.tier,
+          jobId,
+        }) + "\n",
+      );
+    });
+    this.initialized = true;
+  }
+
+  /** Run OCR on a local image path. Returns concatenated text. */
+  public async runOcr(imagePath: string, onStatus?: (msg: string) => void): Promise<string> {
+    if (this.destroyed) throw new Error("PaddleOcrService 已被销毁");
+    await this.init();
+    if (!this.child) throw new Error("paddle-ocr-worker not running");
+    const jobId = randomUUID();
+    return new Promise<string>((resolve, reject) => {
+      if (!this.child) { reject(new Error("paddle-ocr-worker not running")); return; }
+      this.pending.set(jobId, { resolve, reject, onStatus });
+      this.child.stdin?.write(
+        JSON.stringify({ type: "extract", imagePath, jobId }) + "\n",
+      );
+    });
+  }
+
+  /** Release the child. Idempotent. */
+  public async dispose(): Promise<void> { this.destroy(); }
+
+  public destroy(): void {
+    this.destroyed = true;
+    if (this.child) {
+      const child = this.child;
+      try { child.stdin?.end(); } catch { /* ignore */ }
+      setTimeout(() => {
+        if (!child.killed) {
+          try { process.kill(-(child.pid ?? 0), "SIGTERM"); } catch { /* ignore */ }
+          setTimeout(() => {
+            if (!child.killed) {
+              try { process.kill(-(child.pid ?? 0), "SIGKILL"); } catch { /* ignore */ }
+            }
+          }, 500).unref?.();
+        }
+      }, 100).unref?.();
+    }
+    for (const job of this.pending.values()) {
+      job.reject(new Error("PaddleOcrService 已被销毁"));
+    }
+    this.pending.clear();
+  }
+}
