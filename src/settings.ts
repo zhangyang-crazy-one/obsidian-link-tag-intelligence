@@ -242,7 +242,22 @@ export interface LinkTagIntelligenceSettings {
   // OpenAI-compatible (/v1/chat/completions) and Anthropic-compatible
   // (/anthropic/v1/messages) endpoints; the Anthropic style is required for
   // multimodal (image) inputs. Other providers ignore this field.
+  // Note: MiniMax-M3 with long context is more reliable on the Anthropic
+  // wire format — its OpenAI endpoint occasionally returns
+  // net::ERR_EMPTY_RESPONSE on streaming responses for 100K+ token
+  // inputs. Switch to "anthropic" if M3 keeps failing mid-response.
   aiApiStyle: "openai" | "anthropic";
+  // Per-request retry count for transient network errors
+  // (EMPTY_RESPONSE, aborts, 5xx, 429). Default 5. Obsidian's
+  // requestUrl doesn't accept a timeout option, so the only knob
+  // we have is how many times we re-attempt. For MiniMax-M3 with
+  // very long contexts, set this to 7-8.
+  aiRequestRetries: number;
+  // Base delay between retries (ms); exponential backoff (×2 each
+  // attempt). Default 2000ms → 2s, 4s, 8s, 16s, 32s. For M3's
+  // known instability, bumping to 5000ms (5s, 10s, 20s, 40s,
+  // 80s) is recommended.
+  aiRequestRetryBaseMs: number;
   aiAsrSource: "local" | "cloud";
   aiLastUsedTemplateId: string;
   aiTemplates: AITemplate[];
@@ -321,6 +336,8 @@ export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSetting
     aiBaseUrl: "https://api.openai.com/v1",
     aiMaxTokens: 4096,
     aiApiStyle: "openai",
+    aiRequestRetries: 5,
+    aiRequestRetryBaseMs: 2000,
     aiAsrSource: "local",
     aiLastUsedTemplateId: "standard-markdown",
     aiTemplates: [...DEFAULT_AI_TEMPLATES],
@@ -527,6 +544,14 @@ export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagI
   normalized.aiApiKey = typeof normalized.aiApiKey === "string" ? normalized.aiApiKey : "";
   normalized.aiBaseUrl = typeof normalized.aiBaseUrl === "string" && normalized.aiBaseUrl.trim() ? normalized.aiBaseUrl.trim() : defaults.aiBaseUrl;
   normalized.aiApiStyle = normalized.aiApiStyle === "anthropic" ? "anthropic" : "openai";
+  normalized.aiRequestRetries =
+    Number.isFinite(normalized.aiRequestRetries) && normalized.aiRequestRetries >= 1
+      ? Math.round(normalized.aiRequestRetries)
+      : 5;
+  normalized.aiRequestRetryBaseMs =
+    Number.isFinite(normalized.aiRequestRetryBaseMs) && normalized.aiRequestRetryBaseMs >= 100
+      ? Math.round(normalized.aiRequestRetryBaseMs)
+      : 2000;
   normalized.aiAsrSource = normalized.aiAsrSource === "cloud" ? "cloud" : "local";
   normalized.aiLastUsedTemplateId = typeof normalized.aiLastUsedTemplateId === "string" ? normalized.aiLastUsedTemplateId : defaults.aiLastUsedTemplateId;
 
@@ -2441,6 +2466,45 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     tokensInput.addEventListener("change", async () => {
       const val = parseInt(tokensInput.value, 10);
       this.plugin.settings.aiMaxTokens = Number.isFinite(val) && val >= 1 ? val : 4096;
+      await this.plugin.saveSettings();
+    });
+
+    // Retry count + base delay (M3 stability knobs). 1 second per
+    // 1024 chars of input is the per-attempt effective budget
+    // (Obsidian's requestUrl doesn't accept a timeout, so the
+    // only knob we have is how many times we re-attempt). For M3
+    // with 100K+ token prompts, recommend 7-8 retries with 5s base.
+    const retriesField = this.createFieldShell(
+      section,
+      "AI 请求重试次数（MiniMax-M3 推荐 7-8）" as any,
+      "网络瞬断（EMPTY_RESPONSE / 5xx / 429）时的重试次数。Obsidian 的 requestUrl 不支持自定义 timeout，所以这是 M3 崩溃的主要调节手段。" as any,
+    );
+    const retriesInput = retriesField.createEl("input", { cls: "lti-workbench-input", type: "number" });
+    retriesInput.value = String(this.plugin.settings.aiRequestRetries);
+    retriesInput.placeholder = "5";
+    retriesInput.min = "1";
+    retriesInput.max = "10";
+    retriesInput.addEventListener("change", async () => {
+      const val = parseInt(retriesInput.value, 10);
+      this.plugin.settings.aiRequestRetries = Number.isFinite(val) && val >= 1 ? Math.min(val, 10) : 5;
+      retriesInput.value = String(this.plugin.settings.aiRequestRetries);
+      await this.plugin.saveSettings();
+    });
+
+    const retryBaseField = this.createFieldShell(
+      section,
+      "AI 重试基础延迟 (ms)" as any,
+      "首次重试前的等待时间，按 2× 指数退避。默认 2000ms → 2s/4s/8s/16s/32s。MiniMax-M3 推荐 5000ms → 5s/10s/20s/40s/80s，给 M3 服务端留恢复时间。" as any,
+    );
+    const retryBaseInput = retryBaseField.createEl("input", { cls: "lti-workbench-input", type: "number" });
+    retryBaseInput.value = String(this.plugin.settings.aiRequestRetryBaseMs);
+    retryBaseInput.placeholder = "2000";
+    retryBaseInput.min = "100";
+    retryBaseInput.step = "500";
+    retryBaseInput.addEventListener("change", async () => {
+      const val = parseInt(retryBaseInput.value, 10);
+      this.plugin.settings.aiRequestRetryBaseMs = Number.isFinite(val) && val >= 100 ? val : 2000;
+      retryBaseInput.value = String(this.plugin.settings.aiRequestRetryBaseMs);
       await this.plugin.saveSettings();
     });
 

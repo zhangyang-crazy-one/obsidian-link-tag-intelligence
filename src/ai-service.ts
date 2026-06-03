@@ -208,6 +208,20 @@ export class AIService {
    * heuristic because the model is larger and the request may
    * include thinking-mode prefill.
    */
+  /**
+   * Compute a SUGGESTED timeout for a given prompt body. Note: as of
+   * 2026-06-03, Obsidian's requestUrl API does NOT accept a
+   * `timeout` option in its RequestUrlParam interface — passing one
+   * is silently ignored. This function is therefore a hint for
+   * future expansion and for the per-chapter textbook-cleaner
+   * budget (see cleanBook in src/textbook-cleaner.ts). The actual
+   * network timeout is controlled by Electron's net module
+   * (~2-5 minutes default).
+   *
+   * Heuristic: 1s per 1K input characters with a 5-minute minimum.
+   * For MiniMax-M3 specifically, multiply by 2 to account for
+   * thinking-mode prefill latency.
+   */
   private computeRequestTimeout(promptBody: string): number {
     const base = 300_000; // 5 minutes
     const perK = 1_000; // 1s per 1K chars
@@ -225,10 +239,15 @@ export class AIService {
    */
   private async requestUrlWithRetry(
     options: any,
-    maxRetries = 5,
-    initialDelayMs = 2000,
+    maxRetries?: number,
+    initialDelayMs?: number,
     timeoutMs?: number,
   ): Promise<any> {
+    // Resolve retry config from settings (user-tunable) so they can
+    // bump retries / base delay for unstable providers like M3
+    // without code changes. Defaults preserve prior behavior.
+    maxRetries = maxRetries ?? this.settings.aiRequestRetries ?? 5;
+    initialDelayMs = initialDelayMs ?? this.settings.aiRequestRetryBaseMs ?? 2000;
     // Inject the timeout into the requestUrl options if not already
     // set. Obsidian's requestUrl accepts a `timeout` (ms) field; if
     // the caller's options omit it, we apply our computed default
