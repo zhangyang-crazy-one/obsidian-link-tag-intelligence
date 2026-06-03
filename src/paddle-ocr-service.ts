@@ -357,7 +357,7 @@ export class PaddleOcrService {
       }
       const dict = this.dictionary;
       console.log(`[runRec] N=${N} T=${T} argmax(seq)=${JSON.stringify(seq)}`);
-      console.log(`[runRec] decoded chars=${seq.filter(b => b > 0 && b < dict.length).map(b => dict[b]).join("")}`);
+      console.log(`[runRec] decoded chars=${seq.filter(b => b > 0 && b - 1 < dict.length).map(b => dict[b - 1]).join("")}`);
     }
     return this.ctcDecode(raw.data, this.dictionary, N);
   }
@@ -1071,8 +1071,16 @@ export class PaddleOcrService {
     let prev = -1;
     let out = "";
     for (let t = 0; t < T; t++) {
-      // argmax over N (ignore blank at index 0 in PP-OCR convention; the rec models
-      // place blank at index 0 of the dict-loaded labels).
+      // PP-OCRv5 rec convention: model output 0 is the CTC blank token and
+      // is NOT part of the loaded character dict. Real characters start at
+      // model output index 1, which maps to dict[0]. So decode with a -1
+      // shift: best=1 → dict[0], best=K → dict[K-1].
+      //
+      // (Older PP-OCR versions embedded the blank as dict[0] and used a
+      // 1:1 mapping; that was the convention the previous code assumed.
+      // Verified empirically 2026-06-03 on PaddlePaddle/PP-OCRv5_{mobile,
+      // server}_rec_onnx: the model outputs the CTC blank at index 0 and
+      // every real character at index+1.)
       let best = 0;
       let bestVal = -Infinity;
       const base = t * N;
@@ -1083,8 +1091,10 @@ export class PaddleOcrService {
           best = i;
         }
       }
-      if (best !== prev && best > 0 && best < dict.length) {
-        out += dict[best];
+      // Skip blank (best === 0) and any index past the end of the dict
+      // (e.g. an "unk" / "eos" tail token some exports keep).
+      if (best !== prev && best > 0 && best - 1 < dict.length) {
+        out += dict[best - 1];
       }
       prev = best;
     }
