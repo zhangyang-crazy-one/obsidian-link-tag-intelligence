@@ -29,9 +29,64 @@ export class LocalOfflineVisionService {
 
   private static IDLE_TIMEOUT_MS = 180000; // 3 minutes of idle before killing the child process
 
-  constructor(app: App, settings?: any) {
+  // ---------------------------------------------------------------------------
+  // Lifecycle / respawn state (added 2026-06-03 — see plan
+  // ~/.claude/plans/misty-kindling-crane.md and
+  // planning/research/vlm-2026-notebooklm-20260603.md).
+  //
+  // The motivation is onnxruntime-node's three known crash modes
+  // (autoregressive malloc, multi-worker concurrency, Session load/release
+  // leak) — none of which the Qwen2-VL model itself can avoid. The fix is
+  // a Sidecar-restart architecture: kill the child cleanly, respawn it.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * If a `processTask` is in flight when the child exits unexpectedly, the
+   * awaiter would hang forever (the original code resolved the promise only
+   * on a `result` message, and there'd never be one if the child is gone).
+   * We stash the reject function here so the exit handler can release it.
+   */
+  private pendingRequestReject: ((err: Error) => void) | null = null;
+
+  /**
+   * Set by `terminateProcess` so the eventual `exit` event classifies as
+   * "graceful" (not "init-failed" or "unexpected"). Prevents a respawn
+   * race when the user explicitly idles out the worker.
+   */
+  private terminating = false;
+
+  /**
+   * Rolling window of recent RSS reports from the child. Used to detect the
+   * gradual onnxruntime-node Session leak (Issue #22271: 325MB → 9.12GB
+   * over 100 cycles) and trigger a proactive respawn before OOM.
+   */
+  private memoryWindow: { at: number; rss: number }[] = [];
+  private static readonly MEMORY_WINDOW_SIZE = 3;
+  private static readonly MEMORY_PRESSURE_BYTES = 6 * 1024 * 1024 * 1024; // 6 GB
+
+  /**
+   * Respawn budget. If the worker dies too often in a short window, the
+   * parent stops auto-respawning and surfaces a persistent Notice — silent
+   * thrash is worse than a loud failure.
+   */
+  private respawnState: {
+    count: number;
+    firstFailureAt: number;
+    lastFailureAt: number;
+    failedPermanently: boolean;
+  } = { count: 0, firstFailureAt: 0, lastFailureAt: 0, failedPermanently: false };
+  private static readonly RESPAWN_WINDOW_MS = 60_000;
+  private static readonly RESPAWN_MAX_IN_WINDOW = 3;
+  private static readonly RESPAWN_HARD_STOP_COUNT = 6;
+  private static readonly RESPAWN_BACKOFF_BASE_MS = 1_000;
+  private static readonly RESPAWN_BACKOFF_MAX_MS = 30_000;
+
+  private readonly onRespawnFailed?: (err: Error) => void;
+
+  constructor(app: App, settings?: any, options?: { onRespawnFailed?: (err: Error) => void }) {
     this.app = app;
     this.settings = settings;
+    this.onRespawnFailed = options?.onRespawnFailed;
 
     const pluginDir = this.getPluginDir();
 
@@ -126,10 +181,16 @@ export class LocalOfflineVisionService {
           throw new Error(`找不到编译后的推理文件: ${workerPath}`);
         }
 
-        // Spawn independent Node.js process to keep UI and Electron renderer sandboxes clean
+        // Spawn independent Node.js process to keep UI and Electron renderer sandboxes clean.
+        // - detached: !isWindows enables process-group kill (process.kill(-pid, ...))
+        // - shell: !isWindows mirrors ai-service.ts:57 for proper PATH resolution
+        // - cwd: pluginDir ensures model-relative paths resolve the same in dev vs. dist
+        const isWindows = process.platform === "win32";
         this.childProcess = cp.spawn("node", [workerPath], {
           env: { ...process.env },
-          detached: false,
+          detached: !isWindows,
+          cwd: pluginDir,
+          shell: !isWindows,
         });
 
         // Set up communication piping
@@ -166,11 +227,55 @@ export class LocalOfflineVisionService {
           console.error("[lti-vision-worker-stderr]", chunk.toString().trim());
         });
 
+        // Mirror speech-recorder.ts:170-177: without an `error` listener a
+        // synchronous spawn failure (ENOENT, EACCES) leaves the parent
+        // awaiting forever — the `exit` event never fires in that case.
+        this.childProcess.on("error", (err) => {
+          console.error("[lti-vision-worker] spawn error:", err.message);
+          this.terminateProcess();
+        });
+
         this.childProcess.on("exit", (code, signal) => {
           console.log(`[lti-vision-worker] Exited with code ${code} (signal: ${signal})`);
+
+          // Release any in-flight request that will never see its result.
+          // Without this, a mid-inference crash hangs the awaiter in
+          // main.ts until the plugin is reloaded.
+          if (this.pendingRequestReject) {
+            const reject = this.pendingRequestReject;
+            this.pendingRequestReject = null;
+            reject(
+              new Error(
+                `Vision worker exited unexpectedly (code=${code}, signal=${signal})`
+              )
+            );
+          }
+
+          const wasTerminating = this.terminating;
+          const wasReady = this.isReady;
+          this.terminating = false;
           this.isReady = false;
           this.childProcess = null;
           this.initPromise = null;
+
+          // Single chokepoint for any worker exit. Decides whether the
+          // respawn policy kicks in and how to categorize the cause.
+          let reason: "init-failed" | "unexpected" | "graceful";
+          if (wasTerminating) {
+            reason = "graceful";
+          } else if (!wasReady) {
+            reason = "init-failed";
+          } else if (
+            code === 0 ||
+            signal === "SIGTERM" ||
+            signal === "SIGKILL" ||
+            signal === "SIGINT"
+          ) {
+            reason = "graceful";
+          } else {
+            reason = "unexpected";
+          }
+          this.onWorkerExit(reason, code, signal);
         });
 
         // Resolve model directory dynamically based on configured path
@@ -344,6 +449,11 @@ export class LocalOfflineVisionService {
     return new Promise((resolve, reject) => {
       this.resetIdleTimer();
 
+      // Stash the reject so the child-process `exit` handler can release
+      // us if the worker dies mid-inference. Without this, a crash during
+      // `process` leaves the caller hanging until the plugin is reloaded.
+      this.pendingRequestReject = reject;
+
       const stdoutHandler = (chunk: Buffer) => {
         try {
           const lines = chunk.toString().trim().split("\n");
@@ -352,6 +462,7 @@ export class LocalOfflineVisionService {
             const res = JSON.parse(line);
             if (res.type === "result") {
               this.childProcess?.stdout?.removeListener("data", stdoutHandler);
+              this.pendingRequestReject = null;
               this.resetIdleTimer();
 
               if (res.success) {
@@ -359,6 +470,11 @@ export class LocalOfflineVisionService {
               } else {
                 reject(new Error(res.error));
               }
+            } else if (res.type === "memory") {
+              // Track RSS for the leak-driven proactive respawn. Silent
+              // here — the parent doesn't act on every report, just
+              // appends to the rolling window.
+              this.recordMemoryReport(res.rss);
             }
           }
         } catch (e) {
@@ -396,24 +512,168 @@ export class LocalOfflineVisionService {
   }
 
   /**
-   * Safe termination of the child process to reclaim 100% CPU and memory resources
+   * Safe termination of the child process with SIGTERM→SIGKILL escalation.
+   *
+   * Mirrors the canonical pattern in speech-recorder.ts:455-487. The old
+   * single-shot `child.kill()` left a window where the worker could be
+   * mid-inference, ignore SIGTERM, and keep leaking memory.
+   *
+   * Stages:
+   *   1. Send graceful `{type:"destroy"}` message + close stdin (EOF).
+   *   2. After 500ms with no exit, SIGTERM via process group (POSIX) with
+   *      `child.kill("SIGTERM")` fallback for non-detached / Windows.
+   *   3. After another 500ms with no exit, SIGKILL via the same pattern.
+   *   4. Both timers `.unref?.()` so they don't keep the Node loop alive
+   *      during plugin unload.
    */
   public terminateProcess(): void {
-    if (this.childProcess) {
-      try {
-        this.childProcess.stdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
-      } catch {
-        this.childProcess.kill();
+    const child = this.childProcess;
+    if (!child) {
+      if (this.idleTimer) {
+        clearTimeout(this.idleTimer);
+        this.idleTimer = null;
       }
-      this.childProcess = null;
-      this.isReady = false;
-      this.initPromise = null;
-      console.log("[lti-vision-service] 离线视觉大模型子进程已闲置杀死，完全释放内存");
+      return;
     }
+
+    // Mark before clearing so the eventual `exit` handler classifies this
+    // as "graceful" (not "init-failed" or "unexpected") and the respawn
+    // policy stays dormant.
+    this.terminating = true;
+    // Detach the field so re-entrant calls (or `getOrBuildWorker` racing
+    // in before the old child actually exits) don't double-act on the
+    // same process. The exit handler will null the field again when the
+    // old child actually exits.
+    this.childProcess = null;
+    this.initPromise = null;
+
+    try {
+      child.stdin?.write(JSON.stringify({ type: "destroy" }) + "\n");
+      child.stdin?.end();
+    } catch {
+      /* pipe may already be closed; SIGTERM escalation will catch it */
+    }
+
+    const pid = child.pid;
+    const sigtermTimer = setTimeout(() => {
+      if (!pid || child.killed || child.exitCode !== null || child.signalCode !== null) return;
+      try { process.kill(-pid, "SIGTERM"); }
+      catch { try { child.kill("SIGTERM"); } catch { /* already dead */ } }
+      const sigkillTimer = setTimeout(() => {
+        if (child.killed || child.exitCode !== null || child.signalCode !== null) return;
+        try { process.kill(-pid, "SIGKILL"); }
+        catch { try { child.kill("SIGKILL"); } catch { /* already dead */ } }
+      }, 500);
+      sigkillTimer.unref?.();
+    }, 500);
+    sigtermTimer.unref?.();
+
     if (this.idleTimer) {
       clearTimeout(this.idleTimer);
       this.idleTimer = null;
     }
+    console.log("[lti-vision-service] 离线视觉大模型子进程已闲置杀死，完全释放内存");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Respawn policy & memory tracking (2026-06-03)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Single chokepoint for any worker exit. Decides whether to:
+   *   - Respawn immediately (next `getOrBuildWorker` will rebuild)
+   *   - Back off and retry (transient failures)
+   *   - Give up and surface a persistent Notice to the user
+   *
+   * Called from the `exit` handler. Must be cheap and synchronous — actual
+   * respawn work is deferred to the next `getOrBuildWorker` call so the
+   * heavy-init mutex can serialize against concurrent operations.
+   */
+  private onWorkerExit(
+    reason: "init-failed" | "unexpected" | "graceful",
+    code: number | null,
+    signal: NodeJS.Signals | null
+  ): void {
+    if (reason === "graceful") {
+      // Reset the failure budget — a clean shutdown should clear any
+      // accumulated thrash signal from prior crashes.
+      this.respawnState.count = 0;
+      this.respawnState.firstFailureAt = 0;
+      this.respawnState.lastFailureAt = 0;
+      this.respawnState.failedPermanently = false;
+      this.memoryWindow = [];
+      return;
+    }
+
+    const now = Date.now();
+    const state = this.respawnState;
+
+    // Reset the rolling window if the last failure was outside it.
+    if (state.firstFailureAt === 0 || now - state.firstFailureAt > LocalOfflineVisionService.RESPAWN_WINDOW_MS) {
+      state.count = 0;
+      state.firstFailureAt = now;
+      state.failedPermanently = false;
+    }
+    state.count += 1;
+    state.lastFailureAt = now;
+
+    console.warn(
+      `[lti-vision-service] Worker exit (${reason}, code=${code}, signal=${signal}); ` +
+      `failure ${state.count} in window of ${LocalOfflineVisionService.RESPAWN_WINDOW_MS}ms`
+    );
+
+    if (state.count >= LocalOfflineVisionService.RESPAWN_HARD_STOP_COUNT) {
+      // Hard stop: persistent failure. Stop auto-respawning and surface to
+      // the user. `failedPermanently` blocks future auto-respawn until the
+      // plugin is reloaded (which resets state).
+      if (!state.failedPermanently) {
+        state.failedPermanently = true;
+        const err = new Error(
+          `Vision worker failed ${state.count} times within ${LocalOfflineVisionService.RESPAWN_WINDOW_MS / 1000}s ` +
+          `(last: ${reason}, code=${code}, signal=${signal})`
+        );
+        this.onRespawnFailed?.(err);
+      }
+    }
+  }
+
+  /**
+   * Record a `memory` report from the child. Maintains a rolling window of
+   * the most recent N reports. If the window shows monotonically rising
+   * RSS AND the latest exceeds the pressure threshold, trigger a
+   * graceful respawn.
+   */
+  private recordMemoryReport(rss: number): void {
+    if (this.respawnState.failedPermanently) return;
+    this.memoryWindow.push({ at: Date.now(), rss });
+    if (this.memoryWindow.length > LocalOfflineVisionService.MEMORY_WINDOW_SIZE) {
+      this.memoryWindow.shift();
+    }
+    if (this.isMemoryPressure()) {
+      console.warn(
+        `[lti-vision-service] RSS pressure detected: latest=${rss}B ` +
+        `>= ${LocalOfflineVisionService.MEMORY_PRESSURE_BYTES}B threshold; ` +
+        `scheduling graceful respawn`
+      );
+      this.terminateProcess();
+      this.memoryWindow = [];
+    }
+  }
+
+  /**
+   * True when the memory window is monotonically rising AND the latest
+   * RSS exceeds the pressure threshold. Catches the onnxruntime-node
+   * Session leak (Issue #22271: 325MB → 9.12GB over 100 cycles) before
+   * the worker OOMs the system.
+   */
+  private isMemoryPressure(): boolean {
+    if (this.memoryWindow.length < LocalOfflineVisionService.MEMORY_WINDOW_SIZE) return false;
+    const latest = this.memoryWindow[this.memoryWindow.length - 1].rss;
+    if (latest < LocalOfflineVisionService.MEMORY_PRESSURE_BYTES) return false;
+    for (let i = 1; i < this.memoryWindow.length; i++) {
+      if (this.memoryWindow[i].rss <= this.memoryWindow[i - 1].rss) return false;
+    }
+    return true;
   }
 
   /**
