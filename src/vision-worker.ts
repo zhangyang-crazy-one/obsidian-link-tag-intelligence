@@ -22,12 +22,18 @@
 //     before pressure becomes pathological.
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
-const {
+import {
   env,
   AutoProcessor,
   Qwen2VLForConditionalGeneration,
   RawImage,
-} = require("@huggingface/transformers");
+} from "@huggingface/transformers";
+// eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+import * as path from "path";
+// eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+import * as readline from "readline";
+// eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+import * as fs from "fs";
 
 // 1. Force 100% offline locks
 env.allowLocalModels = true;
@@ -60,10 +66,6 @@ export function makeInitialState(): WorkerState {
 }
 
 const state: WorkerState = makeInitialState();
-
-const path = require("path");
-const readline = require("readline");
-const fs = require("fs");
 
 // Self-kill on unhandled errors so the parent's respawn path gets a clean
 // `exit` event instead of trying to talk to a corrupted model. Exit codes
