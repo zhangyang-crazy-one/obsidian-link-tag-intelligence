@@ -195,30 +195,77 @@ export class AIService {
   }
 
   /**
-   * Safe wrapper around requestUrl with automatic retry logic and user notices.
+   * Compute the request timeout for a given prompt body. The
+   * default Obsidian requestUrl timeout (~30s) is too short for
+   * long-context models like MiniMax-M3 with 100K+ token inputs —
+   * the server can take 5+ minutes to process + stream back, and
+   * the client gives up before then, surfacing as
+   * `net::ERR_EMPTY_RESPONSE`.
+   *
+   * Heuristic: 1s per 1K input characters (covers CPU + first-byte
+   * latency for typical 100-200 tok/s generation rates), with a
+   * 5-minute minimum. For MiniMax-M3 specifically, double the
+   * heuristic because the model is larger and the request may
+   * include thinking-mode prefill.
+   */
+  private computeRequestTimeout(promptBody: string): number {
+    const base = 300_000; // 5 minutes
+    const perK = 1_000; // 1s per 1K chars
+    const fromSize = perK * Math.ceil((promptBody ?? "").length / 1024);
+    const provider = this.settings.aiProvider;
+    const multiplier = provider === "minimax" ? 2 : 1;
+    return Math.max(base, fromSize) * multiplier;
+  }
+
+  /**
+   * Safe wrapper around requestUrl with automatic retry logic and
+   * user notices. Long-context calls (M3 with 500K input) get a
+   * timeout scaled to the prompt length; default short-context
+   * calls keep the previous 5-minute floor.
    */
   private async requestUrlWithRetry(
     options: any,
-    maxRetries = 3,
-    initialDelayMs = 1500
+    maxRetries = 5,
+    initialDelayMs = 2000,
+    timeoutMs?: number,
   ): Promise<any> {
+    // Inject the timeout into the requestUrl options if not already
+    // set. Obsidian's requestUrl accepts a `timeout` (ms) field; if
+    // the caller's options omit it, we apply our computed default
+    // based on the prompt size and provider.
+    const finalOptions = {
+      ...options,
+      timeout: timeoutMs ?? options.timeout ?? this.computeRequestTimeout(
+        typeof options.body === "string" ? options.body : "",
+      ),
+    };
+
     let lastError: any = null;
-    
+
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const response = await requestUrl(options);
-        
+        const response = await requestUrl(finalOptions);
+
         // Return immediately if it's a successful response (200),
         // or a standard client error (4xx) which we should not retry.
         if (response.status === 200 || (response.status >= 400 && response.status < 500)) {
           return response;
         }
-        
-        throw new Error(`API returned HTTP status ${response.status}`);
+
+        throw new Error(`API 返回了 HTTP status ${response.status}`);
       } catch (err: any) {
         lastError = err;
         const errMsg = err.message || String(err);
-        
+        // Classify the error. EMPTY_RESPONSE / aborted / network
+        // errors are transient → retry. Hard 4xx (other than the
+        // ones requestUrl re-throws) are persistent → don't retry.
+        const isTransient = /EMPTY_RESPONSE|aborted|network|fetch|timeout/i.test(errMsg)
+          || errMsg.includes("status 5")
+          || errMsg.includes("status 429");
+        if (!isTransient && attempt < maxRetries) {
+          throw err;
+        }
+
         if (attempt < maxRetries) {
           const delay = initialDelayMs * Math.pow(2, attempt - 1);
           new Notice(`⚠️ [Local AI] 网络连接异常，正在尝试第 ${attempt} 次重连 (等待 ${Math.round(delay / 1000)}秒)...`, 4000);
@@ -229,7 +276,7 @@ export class AIService {
         }
       }
     }
-    
+
     throw lastError || new Error("Request failed after all retry attempts.");
   }
 
