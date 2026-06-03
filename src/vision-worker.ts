@@ -33,12 +33,33 @@ const {
 env.allowLocalModels = true;
 env.allowRemoteModels = false;
 
-let model: any = null;
-let processor: any = null;
-let activeModelPath = "";
-let activeEngine = "qwen2-vl";
-let processCount = 0;
 const MEMORY_REPORT_PERIOD = 5;
+
+/**
+ * Mutable state owned by the worker. Held in a single object so the
+ * message handler can be a pure function for testability — see
+ * `handleWorkerMessage` below. Production code uses a singleton
+ * `state`; tests construct fresh ones.
+ */
+export type WorkerState = {
+  model: any;
+  processor: any;
+  activeModelPath: string;
+  activeEngine: string;
+  processCount: number;
+};
+
+export function makeInitialState(): WorkerState {
+  return {
+    model: null,
+    processor: null,
+    activeModelPath: "",
+    activeEngine: "qwen2-vl",
+    processCount: 0,
+  };
+}
+
+const state: WorkerState = makeInitialState();
 
 const path = require("path");
 const readline = require("readline");
@@ -57,7 +78,7 @@ process.on("uncaughtException", (err) => {
   process.exit(72);
 });
 
-function emitMemory(label: string): void {
+function emitMemory(processCount: number, label: string): void {
   const mem = process.memoryUsage();
   process.stdout.write(
     JSON.stringify({
@@ -72,6 +93,28 @@ function emitMemory(label: string): void {
 
 const rl = readline.createInterface({ input: process.stdin });
 rl.on("line", async (raw: string) => {
+  const result = await handleWorkerMessage(raw, state, (json) => {
+    process.stdout.write(JSON.stringify(json) + "\n");
+  });
+  if (result === "exit") {
+    process.exit(0);
+  }
+});
+
+/**
+ * Process a single JSON-line message from the parent. Pure-ish function
+ * (mutates `state`) so tests can call it directly without spawning a
+ * child process. `emit` is the channel for all responses; tests can
+ * substitute a `vi.fn()` to assert on outputs.
+ *
+ * Returns "exit" when the handler is done and the parent should call
+ * process.exit (used by `destroy`).
+ */
+export async function handleWorkerMessage(
+  raw: string,
+  state: WorkerState,
+  emit: (json: object) => void
+): Promise<"continue" | "exit"> {
   let msg: {
     type: string;
     modelDir?: string;
@@ -79,29 +122,25 @@ rl.on("line", async (raw: string) => {
     task?: string;
     engine?: string;
   };
-  try { msg = JSON.parse(raw); } catch { return; }
+  try { msg = JSON.parse(raw); } catch { return "continue"; }
 
   try {
     switch (msg.type) {
       case "init": {
         // Refuse re-init unconditionally. The parent owns the kill+respawn
         // policy; this worker must not hot-swap models in-process.
-        if (model) {
-          process.stdout.write(
-            JSON.stringify({
-              type: "ready",
-              ok: false,
-              error:
-                "Already initialized; parent must kill+respawn. " +
-                `(activeModelPath=${activeModelPath}, engine=${activeEngine})`,
-            }) + "\n"
-          );
+        if (state.model) {
+          emit({
+            type: "ready",
+            ok: false,
+            error:
+              "Already initialized; parent must kill+respawn. " +
+              `(activeModelPath=${state.activeModelPath}, engine=${state.activeEngine})`,
+          });
           break;
         }
         if (!msg.modelDir) {
-          process.stdout.write(
-            JSON.stringify({ type: "ready", ok: false, error: "Missing modelDir" }) + "\n"
-          );
+          emit({ type: "ready", ok: false, error: "Missing modelDir" });
           break;
         }
         try {
@@ -109,7 +148,7 @@ rl.on("line", async (raw: string) => {
           const baseDir = path.dirname(fullPath);
           const folderName = path.basename(fullPath);
           env.localModelPath = baseDir;
-          processor = await AutoProcessor.from_pretrained(folderName);
+          state.processor = await AutoProcessor.from_pretrained(folderName);
           // Auto-detect q4/fp16/fp32 by inspecting onnx dir
           let dtype = "fp32";
           const onnxDir = path.join(fullPath, "onnx");
@@ -118,35 +157,27 @@ rl.on("line", async (raw: string) => {
             if (files.some((f: string) => f.includes("_q4"))) dtype = "q4";
             else if (files.some((f: string) => f.includes("_fp16"))) dtype = "fp16";
           }
-          model = await Qwen2VLForConditionalGeneration.from_pretrained(folderName, {
+          state.model = await Qwen2VLForConditionalGeneration.from_pretrained(folderName, {
             device: "cpu",
             dtype: dtype,
           });
-          activeModelPath = msg.modelDir;
-          activeEngine = msg.engine ?? "qwen2-vl";
-          processCount = 0;
-          process.stdout.write(
-            JSON.stringify({ type: "ready", ok: true, engine: activeEngine }) + "\n"
-          );
+          state.activeModelPath = msg.modelDir;
+          state.activeEngine = msg.engine ?? "qwen2-vl";
+          state.processCount = 0;
+          emit({ type: "ready", ok: true, engine: state.activeEngine });
         } catch (e) {
-          process.stdout.write(
-            JSON.stringify({ type: "ready", ok: false, error: String(e) }) + "\n"
-          );
+          emit({ type: "ready", ok: false, error: String(e) });
         }
         break;
       }
 
       case "process": {
-        if (!model || !processor) {
-          process.stdout.write(
-            JSON.stringify({ type: "result", success: false, error: "Model not initialized" }) + "\n"
-          );
+        if (!state.model || !state.processor) {
+          emit({ type: "result", success: false, error: "Model not initialized" });
           break;
         }
         if (!msg.imagePath || !msg.task) {
-          process.stdout.write(
-            JSON.stringify({ type: "result", success: false, error: "Missing imagePath or task" }) + "\n"
-          );
+          emit({ type: "result", success: false, error: "Missing imagePath or task" });
           break;
         }
         try {
@@ -160,37 +191,37 @@ rl.on("line", async (raw: string) => {
           const conversation = [
             { role: "user", content: [{ type: "image" }, { type: "text", text: msg.task }] },
           ];
-          const text = processor.apply_chat_template(conversation, { add_generation_prompt: true });
+          const text = state.processor.apply_chat_template(conversation, { add_generation_prompt: true });
           // Canonical processor call: positional (text, image).
-          const inputs = await processor(text, rawImage);
-          const outputs = await model.generate({ ...inputs, max_new_tokens: 512 });
-          const decoded = processor.batch_decode(outputs, { skip_special_tokens: true })[0];
-          process.stdout.write(
-            JSON.stringify({ type: "result", success: true, text: decoded }) + "\n"
-          );
-          processCount += 1;
+          const inputs = await state.processor(text, rawImage);
+          const outputs = await state.model.generate({ ...inputs, max_new_tokens: 512 });
+          const decoded = state.processor.batch_decode(outputs, { skip_special_tokens: true })[0];
+          emit({ type: "result", success: true, text: decoded });
+          state.processCount += 1;
           // Memory report — let the parent track RSS growth and respawn
           // proactively if the leak rate exceeds its threshold.
-          emitMemory(processCount % MEMORY_REPORT_PERIOD === 0 ? "periodic" : "after-process");
-        } catch (e) {
-          process.stdout.write(
-            JSON.stringify({ type: "result", success: false, error: String(e) }) + "\n"
+          emitMemory(
+            state.processCount,
+            state.processCount % MEMORY_REPORT_PERIOD === 0 ? "periodic" : "after-process"
           );
+        } catch (e) {
+          emit({ type: "result", success: false, error: String(e) });
         }
         break;
       }
 
       case "destroy": {
-        if (model) {
-          try { await model.dispose(); } catch { /* model may already be in a bad state */ }
-          model = null;
-          processor = null;
+        if (state.model) {
+          try { await state.model.dispose(); } catch { /* model may already be in a bad state */ }
+          state.model = null;
+          state.processor = null;
         }
-        process.stdout.write(JSON.stringify({ type: "destroyed" }) + "\n");
-        process.exit(0);
+        emit({ type: "destroyed" });
+        return "exit";
       }
     }
   } catch (e) {
-    process.stdout.write(JSON.stringify({ type: "error", error: String(e) }) + "\n");
+    emit({ type: "error", error: String(e) });
   }
-});
+  return "continue";
+}
