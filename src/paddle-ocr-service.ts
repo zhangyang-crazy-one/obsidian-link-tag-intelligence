@@ -1110,8 +1110,21 @@ export class PaddleOcrService {
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
       return require("onnxruntime-node") as OrtLike;
-    } catch (e) {
-      throw new Error("PaddleOCR 依赖 onnxruntime-node 未安装，请运行 npm install onnxruntime-node");
+    } catch (e: any) {
+      // The lazy require fails in Obsidian's Electron renderer for the
+      // same sandbox reason @kreuzberg/node does — see
+      // vision-kill-respawn-architecture / kreuzberg-ocr-fallback
+      // memory. The actual install is fine (vault has onnxruntime-node
+      // in node_modules/), but the renderer's module resolver blocks
+      // the require. Tell the user the truth rather than suggesting a
+      // misleading `npm install`. The vision-service's runOcrWithFallback
+      // catches this and falls through to Kreuzberg, so OCR still works
+      // for the user — they just don't get PaddleOCR's faster mobile-
+      // tier path until we port the service to a child process (same
+      // pattern as src/kreuzberg-worker.ts).
+      throw new Error(
+        `PaddleOCR 在当前 Obsidian 渲染进程中无法加载 onnxruntime-node（沙箱限制）。已自动回退到 Kreuzberg (Rust)，不影响 OCR。原始错误: ${e?.message ?? e}`,
+      );
     }
   }
 
