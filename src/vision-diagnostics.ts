@@ -13,7 +13,6 @@ import {
   PADDLE_TIER_SPECS,
   type PaddleOcrModelTier,
 } from "./paddle-ocr-types";
-import { TesseractOcrService } from "./tesseract-ocr-service";
 
 /** A single engine's model state. */
 export type ModelState = {

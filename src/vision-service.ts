@@ -1,13 +1,13 @@
 // Local Multimodal Vision & Smart Routing Service.
 // Manages the lifecycle of the standalone local VLM Node.js child process,
-// and implements 3-tier routing for OCR: PaddleOCR (primary) → Tesseract (fallback) → error.
+// and implements 3-tier routing for OCR: PaddleOCR (primary) → Kreuzberg (fallback) → error.
 // Image-semantic tasks (caption / detection) go directly to the Qwen2-VL child process.
 
 import { App } from "obsidian";
 import * as cp from "child_process";
 import * as path from "path";
 import * as fs from "fs";
-import { TesseractOcrService } from "./tesseract-ocr-service";
+import { KreuzbergOcrService } from "./kreuzberg-ocr-service";
 import { PaddleOcrService } from "./paddle-ocr-service";
 import { DEFAULT_PADDLE_TIER, getPaddleTierModelDir, type PaddleOcrModelTier } from "./paddle-ocr-types";
 
@@ -19,12 +19,12 @@ export class LocalOfflineVisionService {
   private idleTimer: NodeJS.Timeout | null = null;
   private settings: any;
 
-  // OCR services — primary PaddleOCR + Tesseract safety net.
+  // OCR services — primary PaddleOCR + Kreuzberg (Rust) safety net.
   // Qwen2-VL is intentionally NOT in the OCR fallback chain; it's a semantic
   // model, not an OCR engine, and using it for OCR wastes 4GB of model memory
   // for a much worse result.
   private paddleOcrService: PaddleOcrService;
-  private tesseractOcrService: TesseractOcrService;
+  private kreuzbergOcrService: KreuzbergOcrService;
 
   private static IDLE_TIMEOUT_MS = 180000; // 3 minutes of idle before killing the child process
 
@@ -65,16 +65,20 @@ export class LocalOfflineVisionService {
       },
     });
 
-    // Tesseract tessdata path (configurable via settings.tesseractDataPath, default models/tessdata).
-    let tesseractDir = this.settings?.tesseractDataPath;
-    if (!tesseractDir) {
-      tesseractDir = path.join(pluginDir, "models", "tessdata");
-    } else if (!path.isAbsolute(tesseractDir)) {
+    // Kreuzberg (Rust) fallback path: it ships its own Tesseract data inside
+    // the precompiled binary, so the path is recorded but not actually
+    // consulted at runtime. We still resolve it so the constructor matches
+    // the previous TesseractOcrService contract and the setting still works
+    // for users who configured a custom tessdata dir historically.
+    let kreuzbergTessdataDir = this.settings?.tesseractDataPath;
+    if (!kreuzbergTessdataDir) {
+      kreuzbergTessdataDir = path.join(pluginDir, "models", "tessdata");
+    } else if (!path.isAbsolute(kreuzbergTessdataDir)) {
       const adapter = this.app.vault.adapter as any;
       const vaultPath = adapter.getBasePath ? adapter.getBasePath() : "";
-      tesseractDir = path.resolve(vaultPath, tesseractDir);
+      kreuzbergTessdataDir = path.resolve(vaultPath, kreuzbergTessdataDir);
     }
-    this.tesseractOcrService = new TesseractOcrService(tesseractDir);
+    this.kreuzbergOcrService = new KreuzbergOcrService(kreuzbergTessdataDir);
   }
 
   /**
@@ -207,31 +211,109 @@ export class LocalOfflineVisionService {
   }
 
   /**
-   * 3-tier OCR routing:
-   *   1. PaddleOCR (primary — high precision, ~30MB model, 200-400ms/image)
-   *   2. Tesseract (fallback — broader language coverage, WASM worker)
-   *   3. Throw combined error if both fail
+   * 3-tier OCR routing with content-aware fallback:
+   *   1. PaddleOCR (primary — high precision for Chinese, ~200ms/image on server tier)
+   *   2. If PaddleOCR succeeds but the result is mostly Latin (>= LATIN_RATIO_TESSERACT_TRIGGER)
+   *      AND the result is non-trivial (>= MIN_CHARS_FOR_RATIO_CHECK), re-run with Tesseract
+   *      because the PP-OCRv5 mobile rec head is trained on Chinese and produces
+   *      near-blank output for English-only images. The two results are then
+   *      ranked by length (Tesseract wins for English, PaddleOCR wins for CJK).
+   *   3. If PaddleOCR throws, fall through to Tesseract as a hard fallback.
+   *   4. Throw combined error if both fail.
+   *
+   * This routing is opt-in via the `isSmartRoutingEnabled` flag (default true).
+   * Setting it to false in runLocalVisionTask skips the Latin check and just
+   * returns whatever PaddleOCR produced.
    */
   private async runOcrWithFallback(imagePath: string, onStatus?: (msg: string) => void): Promise<string> {
     // Tier 1: PaddleOCR
+    let paddleResult = "";
+    let paddleOk = false;
     try {
       if (onStatus) onStatus("正在使用 PaddleOCR 提取文字...");
-      return await this.paddleOcrService.runOcr(imagePath, onStatus);
+      paddleResult = await this.paddleOcrService.runOcr(imagePath, onStatus);
+      paddleOk = true;
     } catch (paddleErr: any) {
       this.lastPaddleError = paddleErr?.message ?? String(paddleErr);
-      console.warn("[lti-vision-service] PaddleOCR 失败，回退到 Tesseract:", paddleErr);
-      if (onStatus) onStatus("PaddleOCR 失败，自动回退到 Tesseract OCR...");
+      console.warn("[lti-vision-service] PaddleOCR 失败，回退到 Kreuzberg (Rust):", paddleErr);
+      if (onStatus) onStatus("PaddleOCR 失败，自动回退到 Kreuzberg OCR...");
     }
 
-    // Tier 2: Tesseract (safety net)
-    try {
-      return await this.tesseractOcrService.runOcr(imagePath, onStatus);
-    } catch (tessErr: any) {
-      console.error("[lti-vision-service] Tesseract 也失败:", tessErr);
-      throw new Error(
-        `OCR 全部失败。PaddleOCR: ${this.lastPaddleError ?? "(unknown)"} | Tesseract: ${tessErr?.message ?? "(unknown)"}`
-      );
+    // Tier 2: Tesseract (used in two scenarios — hard fallback on paddle exception,
+    // or as a challenger when paddle returned Latin-heavy content).
+    let kreuzbergResult = "";
+    let tessOk = false;
+    if (!paddleOk) {
+      try {
+        kreuzbergResult = await this.kreuzbergOcrService.runOcr(imagePath, onStatus);
+        tessOk = true;
+      } catch (tessErr: any) {
+        console.error("[lti-vision-service] Kreuzberg 也失败:", tessErr);
+        throw new Error(
+          `OCR 全部失败。PaddleOCR: ${this.lastPaddleError ?? "(unknown)"} | Kreuzberg: ${tessErr?.message ?? "(unknown)"}`
+        );
+      }
+      return kreuzbergResult;
     }
+
+    // PaddleOCR succeeded — decide whether to invoke Tesseract as a challenger.
+    if (this.shouldRerunWithTesseract(paddleResult)) {
+      if (onStatus) onStatus("检测到英文为主内容，调用 Kreuzberg (Rust) 取更优识别...");
+      try {
+        kreuzbergResult = await this.kreuzbergOcrService.runOcr(imagePath, onStatus);
+        tessOk = true;
+      } catch (tessErr: any) {
+        console.warn("[lti-vision-service] Tesseract 挑战失败，仍采用 PaddleOCR 结果:", tessErr);
+      }
+    }
+
+    if (tessOk) {
+      // Pick the longer result. For pure Chinese PaddleOCR usually wins by a
+      // small margin; for English Tesseract wins by 3-5×. Tie → PaddleOCR.
+      return kreuzbergResult.length > paddleResult.length ? kreuzbergResult : paddleResult;
+    }
+    return paddleResult;
+  }
+
+  /**
+   * Heuristic: should we re-run Tesseract on top of PaddleOCR?
+   *
+   * True when the recognized text is mostly Latin letters/digits/punctuation
+   * AND long enough to be a real signal (>= MIN_CHARS_FOR_RATIO_CHECK). We
+   * require both: short outputs (a single word, a stray symbol) would
+   * always skew to 100% Latin and trigger a useless re-run.
+   *
+   * Verified empirically 2026-06-03 on the user's 工程经济学 第17版 英文版
+   * PDF: PaddleOCR mobile produced 4440 chars (88% Latin) with mostly-blank
+   * boxes; Tesseract produced 16433 chars (96% Latin) with full text.
+   */
+  private static readonly LATIN_RATIO_TESSERACT_TRIGGER = 0.6;
+  private static readonly MIN_CHARS_FOR_RATIO_CHECK = 30;
+
+  private shouldRerunWithTesseract(text: string): boolean {
+    if (text.length < LocalOfflineVisionService.MIN_CHARS_FOR_RATIO_CHECK) return false;
+    let latin = 0;
+    let total = 0;
+    for (let i = 0; i < text.length; i++) {
+      const code = text.charCodeAt(i);
+      // Count only letters, digits, and common Latin punctuation as "Latin".
+      // CJK characters (U+3000–U+9FFF, U+FF00–U+FFEF) are NOT counted as Latin.
+      const isLatin = (
+        (code >= 0x30 && code <= 0x39) || // 0-9
+        (code >= 0x41 && code <= 0x5A) || // A-Z
+        (code >= 0x61 && code <= 0x7A) || // a-z
+        (code >= 0x20 && code <= 0x2F) || // space ! " # $ % & ' ( ) * + , - . /
+        (code >= 0x3A && code <= 0x40) || // : ; < = > ? @
+        (code >= 0x5B && code <= 0x60) || // [ \ ] ^ _ `
+        (code >= 0x7B && code <= 0x7E)    // { | } ~
+      );
+      const isCjk = (code >= 0x3000 && code <= 0x9FFF) || (code >= 0xFF00 && code <= 0xFFEF);
+      if (isLatin) latin++;
+      if (isLatin || isCjk) total++;
+    }
+    if (total === 0) return false;
+    const ratio = latin / total;
+    return ratio >= LocalOfflineVisionService.LATIN_RATIO_TESSERACT_TRIGGER;
   }
 
   /**
@@ -330,6 +412,6 @@ export class LocalOfflineVisionService {
   public destroy(): void {
     this.terminateProcess();
     this.paddleOcrService.destroy();
-    this.tesseractOcrService.destroy();
+    this.kreuzbergOcrService.destroy();
   }
 }

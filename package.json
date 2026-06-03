@@ -19,6 +19,8 @@
     "vitest": "^2.1.8"
   },
   "dependencies": {
-    "sherpa-onnx-node": "^1.13.1"
+    "@huggingface/transformers": "^3.0.2",
+    "sherpa-onnx-node": "^1.13.1",
+    "@kreuzberg/node": "^4.9.8"
   }
 }
