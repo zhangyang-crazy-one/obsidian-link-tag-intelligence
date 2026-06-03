@@ -93,10 +93,25 @@ export class KreuzbergOcrService {
       }
       let result;
       try {
-        // Lazy require — see top-of-file note. Hoisting this to module
-        // scope breaks Obsidian's renderer module resolution.
+        // Lazy require — see top-of-file note. Obsidian's Electron
+        // renderer can't resolve a bare specifier like "@kreuzberg/node"
+        // even from inside a method (third failure, 2026-06-03). The
+        // bundler preserves runtime require()s as-is, so a relative
+        // path that joins with the calling file's directory (the plugin
+        // root where main.js lives) works in production. But the smoke
+        // test bundle lives in tests/, where that relative path doesn't
+        // exist — try the explicit relative path first (production
+        // hit), then fall back to the bare specifier (test hit), so a
+        // single source works in both contexts.
         // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { extractFile } = require("@kreuzberg/node") as typeof import("@kreuzberg/node");
+        let kreuzbergEntry: typeof import("@kreuzberg/node");
+        try {
+          kreuzbergEntry = require("./node_modules/@kreuzberg/node/dist/index.js");
+        } catch {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          kreuzbergEntry = require("@kreuzberg/node");
+        }
+        const { extractFile } = kreuzbergEntry;
         result = await extractFile(imageSource, null, config);
       } finally {
         if (prevTessdataPrefix === undefined) {
