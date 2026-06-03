@@ -8,6 +8,7 @@ import * as cp from "child_process";
 import * as path from "path";
 import * as fs from "fs";
 import { KreuzbergOcrService } from "./kreuzberg-ocr-service";
+import { withHeavyInit } from "./heavy-init-mutex";
 import { PaddleOcrService } from "./paddle-ocr-service";
 import { DEFAULT_PADDLE_TIER, getPaddleTierModelDir, type PaddleOcrModelTier } from "./paddle-ocr-types";
 
@@ -93,24 +94,33 @@ export class LocalOfflineVisionService {
   }
 
   /**
-   * Lazily spawn and initialize the Node.js child process offline
+   * Lazily spawn and initialize the Node.js child process offline.
+   *
+   * Wrapped in the heavy-init mutex so a concurrent speech-model
+   * download or PaddleOCR download doesn't compete for disk + CPU at
+   * the same instant. The spawn itself is a quick fork+exec, but the
+   * child then takes 5-30s to load the 4.3GB Qwen2-VL weights — the
+   * mutex guarantees that nothing else is touching disk during that
+   * window.
    */
   private async getOrBuildWorker(onStatus?: (msg: string) => void): Promise<boolean> {
     this.resetIdleTimer();
-
     if (this.isReady && this.childProcess) {
       return true;
     }
-
     if (this.initPromise) {
       return this.initPromise;
     }
+    this.initPromise = withHeavyInit("vlm-spawn", () => this.buildWorker(onStatus));
+    return this.initPromise;
+  }
 
-    this.initPromise = new Promise((resolve) => {
+  private buildWorker(onStatus?: (msg: string) => void): Promise<boolean> {
+    return new Promise((resolve) => {
       try {
         if (onStatus) onStatus("正在按需拉起离线多模态视觉子进程...");
         const pluginDir = this.getPluginDir();
-        const workerPath = path.join(pluginDir, "vision-worker.js");
+        const workerPath = path.join(pluginDir, "vision-worker.cjs");
 
         if (!fs.existsSync(workerPath)) {
           throw new Error(`找不到编译后的推理文件: ${workerPath}`);

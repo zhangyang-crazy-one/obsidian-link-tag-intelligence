@@ -52,6 +52,7 @@ import {
 } from "./paddle-model";
 import { DEFAULT_PADDLE_TIER, getPaddleTierModelDir, type PaddleOcrModelTier } from "./paddle-ocr-types";
 import { LocalOfflineVisionService } from "./vision-service";
+import { withHeavyInit } from "./heavy-init-mutex";
 
 const SENTENCE_END_PUNCTUATION = /[。！？\.!\?]$/;
 
@@ -1142,6 +1143,14 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   }
 
   private async ensurePunctuationModel(): Promise<boolean> {
+    // Serialized via the heavy-init mutex so a concurrent OCR or VLM
+    // download doesn't compete for disk + CPU.
+    return withHeavyInit("punc-download", async () => {
+      return this.ensurePunctuationModelImpl();
+    });
+  }
+
+  private async ensurePunctuationModelImpl(): Promise<boolean> {
     const fs = this.getFs();
     if (!fs) return false;
 
@@ -1213,6 +1222,14 @@ export default class LinkTagIntelligencePlugin extends Plugin {
    * must pick them via the settings UI (提交3) first.
    */
   private async ensurePaddleModel(): Promise<boolean> {
+    // Serialized via the heavy-init mutex so a concurrent speech or
+    // VLM model download doesn't compete for disk + CPU.
+    return withHeavyInit("paddle-download", async () => {
+      return this.ensurePaddleModelImpl();
+    });
+  }
+
+  private async ensurePaddleModelImpl(): Promise<boolean> {
     const fs = this.getFs();
     if (!fs) {
       new Notice("PaddleOCR 模型管理需要桌面端 fs API (仅 Obsidian Desktop 可用)。", 8000);
@@ -1301,6 +1318,16 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   }
 
   private async ensureSpeechModel(): Promise<boolean> {
+    // Serialized via the heavy-init mutex so a concurrent OCR or VLM
+    // model download doesn't compete for disk + CPU. The actual
+    // sherpa-onnx WASM load happens inside speechRecorder anyway; this
+    // gate is specifically for the model-file download.
+    return withHeavyInit("speech-download", async () => {
+      return this.ensureSpeechModelImpl();
+    });
+  }
+
+  private async ensureSpeechModelImpl(): Promise<boolean> {
     const fs = this.getFs();
     const modelDir = this.speechRecorder.getModelDirInternal();
     const lang = this.settings.speechLanguage;
