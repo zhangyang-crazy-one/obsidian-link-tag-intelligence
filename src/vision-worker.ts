@@ -203,8 +203,10 @@ export async function handleWorkerMessage(
           // workflows must invoke `process` once per image at the
           // call-site (vision-service.runImageSemanticTask).
           const absoluteImgPath = path.resolve(msg.imagePath);
+          emit({ type: "progress", message: "正在加载图像..." });
           // v3+/v4 unified entry: RawImage.read accepts string path / Blob / URL.
           const rawImage = await RawImage.read(absoluteImgPath);
+          emit({ type: "progress", message: "正在编码图像 (vision encoder)..." });
           // Canonical chat template: typed content entries; the processor
           // handles <|vision_start|><|image_pad|><|vision_end|> expansion
           // automatically. Do NOT hand-write the literal — expansion math
@@ -229,10 +231,12 @@ export async function handleWorkerMessage(
             imageProcessor.max_pixels = state.maxPixels;
           }
           const inputs = await state.processor(text, rawImage);
+          emit({ type: "progress", message: "正在生成描述 (Qwen2-VL 自回归推理)..." });
           // Cap autoregressive decode length. 64 tokens ≈ 50 words, plenty
           // for DETAILED_CAPTION. The 512 default was chosen for chat,
           // not single-image captioning.
           const outputs = await state.model.generate({ ...inputs, max_new_tokens: 64 });
+          emit({ type: "progress", message: "正在解码输出..." });
           const decoded = state.processor.batch_decode(outputs, { skip_special_tokens: true })[0];
           emit({ type: "result", success: true, text: decoded });
           state.processCount += 1;

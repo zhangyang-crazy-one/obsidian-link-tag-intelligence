@@ -29,6 +29,7 @@ import { randomUUID } from "crypto";
 
 type WorkerResponse =
   | { type: "ready" }
+  | { type: "progress"; jobId: string; stage: string; message: string }
   | { type: "result"; jobId: string; success: true; text: string }
   | { type: "error"; jobId: string; error: string };
 
@@ -44,6 +45,10 @@ export class KreuzbergOcrService {
   private readonly pending = new Map<string, {
     resolve: (text: string) => void;
     reject: (err: Error) => void;
+    /** Optional onStatus callback forwarded from runOcr's caller;
+     *  fired for each `{type:"progress",...}` message the child emits
+     *  so the UI shows live status while the worker is busy. */
+    onStatus?: (msg: string) => void;
   }>();
   /** Resolves when the worker has emitted its first "ready" message. */
   private readyPromise: Promise<void> | null = null;
@@ -141,6 +146,14 @@ export class KreuzbergOcrService {
         this.readyResolve = null;
         return;
       }
+      if (msg.type === "progress") {
+        // Forward the worker's progress message to the runOcr caller's
+        // onStatus callback. Don't touch the pending entry — the
+        // extract is still in flight.
+        const job = this.pending.get(msg.jobId);
+        if (job?.onStatus) job.onStatus(msg.message);
+        return;
+      }
       if (msg.type === "result" || msg.type === "error") {
         const job = this.pending.get(msg.jobId);
         if (!job) return;
@@ -185,6 +198,13 @@ export class KreuzbergOcrService {
           return;
         }
         this.pending.set(jobId, { resolve, reject });
+        // Save the onStatus callback so the response handler can
+        // forward progress messages from the child. The pending entry
+        // already carries the resolve/reject pair; we just append the
+        // callback. When the entry is consumed (response received),
+        // the callback goes out of scope with it.
+        const entry = this.pending.get(jobId)!;
+        entry.onStatus = onStatus;
         this.child.stdin?.write(
           JSON.stringify({
             type: "extract",

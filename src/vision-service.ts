@@ -489,6 +489,11 @@ export class LocalOfflineVisionService {
               // here — the parent doesn't act on every report, just
               // appends to the rolling window.
               this.recordMemoryReport(res.rss);
+            } else if (res.type === "progress") {
+              // Forward worker's live-status messages to the caller
+              // (e.g. main.ts Notice updates) so the user sees the
+              // vision task is still running, not hung.
+              if (onStatus) onStatus(res.message);
             }
           }
         } catch (e) {

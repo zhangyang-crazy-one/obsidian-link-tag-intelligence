@@ -36,6 +36,11 @@ type ExtractRequest = {
 
 type IncomingMessage = ExtractRequest;
 
+// Response type: | { type: "ready" }
+//               | { type: "progress", jobId, stage, message }
+//               | { type: "result",   jobId, success: true, text: string }
+//               | { type: "error",    jobId, error: string }
+
 function emit(json: object): void {
   process.stdout.write(JSON.stringify(json) + "\n");
 }
@@ -66,11 +71,14 @@ async function runExtract(req: ExtractRequest): Promise<void> {
     process.env.TESSDATA_PREFIX = tessdataPath;
   }
   try {
+    emit({ type: "progress", jobId, stage: "loading", message: "正在加载 Tesseract 语言模型..." });
+    emit({ type: "progress", jobId, stage: "extracting", message: "正在通过 Kreuzberg 提取文字..." });
     const result = await kreuzberg.extractFile(filePath, null, {
       outputFormat: "plain",
       useCache: false,
       layout: undefined,
     });
+    emit({ type: "progress", jobId, stage: "done", message: `提取完成（${result.content.length} 字符）` });
     emit({ type: "result", jobId, success: true, text: result.content });
   } catch (e: any) {
     emit({ type: "error", jobId, error: String(e?.message ?? e) });
