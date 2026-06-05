@@ -456,18 +456,22 @@ async function cleanWindowWithFallback(
     if (!isTransientAiWindowError(error) || windowText.length <= MIN_TEXTBOOK_WINDOW_CHARS) {
       throw error;
     }
-    const [left, right] = splitTextbookWindows(
+    const retryWindows = splitTextbookWindows(
       windowText,
       Math.max(MIN_TEXTBOOK_WINDOW_CHARS, Math.ceil(windowText.length / 2)),
       Math.min(DEFAULT_TEXTBOOK_WINDOW_OVERLAP_CHARS, 300),
     );
-    if (!left || !right) {
+    if (retryWindows.length < 2) {
       throw error;
     }
-    const leftParts = await cleanWindowWithFallback(ai, promptTemplate, context, left.text, effectivePrevWindowTail);
-    const leftTail = leftParts.at(-1)?.slice(-DEFAULT_TEXTBOOK_WINDOW_OVERLAP_CHARS) ?? effectivePrevWindowTail;
-    const rightParts = await cleanWindowWithFallback(ai, promptTemplate, context, right.text, leftTail);
-    return [...leftParts, ...rightParts];
+    const cleanedParts: string[] = [];
+    let prevWindowTail = effectivePrevWindowTail;
+    for (const retryWindow of retryWindows) {
+      const parts = await cleanWindowWithFallback(ai, promptTemplate, context, retryWindow.text, prevWindowTail);
+      cleanedParts.push(...parts);
+      prevWindowTail = parts.at(-1)?.slice(-DEFAULT_TEXTBOOK_WINDOW_OVERLAP_CHARS) ?? prevWindowTail;
+    }
+    return cleanedParts;
   }
 }
 

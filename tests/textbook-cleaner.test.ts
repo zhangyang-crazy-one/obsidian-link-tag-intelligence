@@ -322,6 +322,32 @@ describe("cleanBook (end-to-end with mocked vault + AI)", () => {
     expect(aiPrompts.length).toBeGreaterThan(1);
   });
 
+  it("processes every retry split window when a transient failure creates more than two chunks", async () => {
+    aiFailures.push(new Error("Failed to request Anthropic API: net::ERR_EMPTY_RESPONSE"));
+    const mockApp = makeMockVault({
+      "Books/foo/raw/retry-tail.md": "三段重试窗口文本 ".repeat(430),
+    });
+
+    const result = await cleanBook(mockApp as any, {
+      aiProvider: "minimax" as const,
+      aiModel: "MiniMax-M3",
+      aiApiKey: "fake",
+      aiBaseUrl: "x",
+      aiMaxTokens: 8192,
+    } as any, {
+      book_title: "Retry Tail", ocr_source: "hybrid", output_dir: "Books/foo/chapters",
+      window_chars: 4_000,
+      window_overlap_chars: 300,
+      chapters: [
+        { id: "retry-tail", number: 1, title: "Retry Tail", source_note: "Books/foo/raw/retry-tail.md" },
+      ],
+    });
+
+    expect(result.succeeded).toBe(1);
+    expect(result.failed).toBe(0);
+    expect(aiPrompts).toHaveLength(4);
+  });
+
   it("preserves failed window OCR text and continues the chapter", async () => {
     aiFailures.push(new Error("permanent provider error"));
     const sourceText = "第一窗口原始 OCR ".repeat(1_200);

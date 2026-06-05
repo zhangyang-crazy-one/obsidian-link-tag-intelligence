@@ -97,6 +97,7 @@ if (production) {
   // misinterpreted by Node 24 as ESM. Rename to .cjs to force CommonJS
   // resolution. Both the project root (where Obsidian loads from in dev)
   // and the dist/ directory (production) need the .cjs extension.
+  copyOcrWorkers(path.resolve("."));
   copyOcrWorkers(distDir);
   // Copy native/runtime dependencies that esbuild leaves as runtime
   // require()s. Follow package dependency closures so clean dist installs
