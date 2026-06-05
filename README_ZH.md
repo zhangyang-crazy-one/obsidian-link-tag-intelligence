@@ -17,7 +17,8 @@
 - 引用感知的元数据标签（citekey、作者、年份、来源类型、定位符、证据类型）
 - 原生标签管理与双语标签建议
 - 外部摄入 CLI，支持 DOI、arXiv 和 PDF，集成 OpenAlex 引用增强
-- 可选的外部语义桥检索
+- 本地中文语音转写、离线图片/PDF OCR，以及教材整理清理
+- 可选的外部语义桥检索；不再内置本地视觉理解模型
 
 ## 语音识别
 
@@ -242,6 +243,9 @@ node cli/lti-research.mjs paper \
 
 支持的语义占位符：`{{query}}`、`{{vault}}`、`{{file}}`、`{{selection}}`。
 
+## 更新日志
+`0.2.9`：移除本地图片语义功能和模型路径，保留离线 OCR，增强 Paddle/Kreuzberg worker 生命周期，放大教材整理上下文窗口，失败 OCR 窗口保留原文，并刷新侧边栏/设置文案。
+
 ## 构建
 
 ```bash
@@ -252,8 +256,4 @@ npm test
 
 ## 手动安装
 
-将以下文件复制到 `<笔记库>/.obsidian/plugins/link-tag-intelligence/`：
-
-- `manifest.json`
-- `main.js`
-- `styles.css`
+将 `manifest.json`、`main.js` 和 `styles.css` 复制到 `<笔记库>/.obsidian/plugins/link-tag-intelligence/`。
