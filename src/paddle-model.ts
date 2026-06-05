@@ -7,9 +7,8 @@
 //
 // All PaddleOCR model files live on HuggingFace under
 // `huggingface.co/PaddlePaddle/PP-OCRv5_<tier>_<task>_onnx`. The
-// dictionary is NOT a separate download — server / hybrid bundles
-// embed it inside the rec model's `inference.yml` (parsed by
-// PaddleOcrService.loadDictionary).
+// dictionary metadata is downloaded with each tier: server / hybrid use
+// the rec model's `inference.yml`, and mobile uses `ppocr_keys_v5.txt`.
 // ---------------------------------------------------------------------------
 
 import {
@@ -26,7 +25,7 @@ export interface PaddleDownloadProgress {
 
 export interface PaddleFileResult {
   filename: string;
-  role: "det" | "rec";
+  role: PaddleDownloadRole;
   success: boolean;
   bytes?: number;
   /** Filled on success. The caller writes this to disk. */
@@ -43,7 +42,7 @@ export interface PaddleTierDownloadResult {
 
 export interface PaddleBatchProgress {
   currentFile: string;
-  role: "det" | "rec";
+  role: PaddleDownloadRole;
   fileIndex: number;
   totalFiles: number;
   fileProgress: PaddleDownloadProgress;
@@ -60,6 +59,8 @@ export interface PaddleBatchProgress {
  */
 export const DEFAULT_HF_BASE_URL = "https://hf-mirror.com";
 
+export type PaddleDownloadRole = "det" | "rec" | "dict";
+
 export function getPaddleHfBaseUrl(): string {
   const override = (globalThis as unknown as { __LTI_PADDLE_HF_BASE__?: string }).__LTI_PADDLE_HF_BASE__;
   if (typeof override === "string" && override.length > 0) return override;
@@ -72,18 +73,19 @@ export function buildPaddleFileUrl(spec: { repo: string; filename: string }, bas
 }
 
 /** Return the file list (in download order) for the given tier. */
-export function getPaddleTierFileList(tier: PaddleOcrModelTier): Array<{ role: "det" | "rec"; spec: { repo: string; filename: string; sha256: string; sizeBytes: number } }> {
+export function getPaddleTierFileList(tier: PaddleOcrModelTier): Array<{ role: PaddleDownloadRole; spec: { repo: string; filename: string; sha256: string; sizeBytes: number } }> {
   const s = PADDLE_TIER_SPECS[tier];
   return [
     { role: "det", spec: s.det },
     { role: "rec", spec: s.rec },
+    { role: s.dict.role, spec: s.dict },
   ];
 }
 
 /** Total bytes the tier will download (used to pre-format progress UI). */
 export function getPaddleTierTotalBytes(tier: PaddleOcrModelTier): number {
   const s = PADDLE_TIER_SPECS[tier];
-  return s.det.sizeBytes + s.rec.sizeBytes;
+  return s.det.sizeBytes + s.rec.sizeBytes + s.dict.sizeBytes;
 }
 
 // ---------------------------------------------------------------------------
@@ -137,7 +139,7 @@ export async function downloadPaddleFile(
 // ---------------------------------------------------------------------------
 
 export async function downloadPaddleFileWithRetry(
-  role: "det" | "rec",
+  role: PaddleDownloadRole,
   spec: { repo: string; filename: string; sha256: string },
   onFileProgress?: (p: PaddleDownloadProgress) => void,
   maxRetries = 3
@@ -194,7 +196,7 @@ export async function downloadPaddleFileWithRetry(
  * matching the layout PaddleOcrService.checkModelFiles() expects
  * (`det/inference.onnx`, `rec/inference.onnx`).
  */
-export type PaddleWriteTarget = { role: "det" | "rec"; filename: string };
+export type PaddleWriteTarget = { role: PaddleDownloadRole; filename: string };
 
 /**
  * Download the full PaddleOCR bundle for a given tier and write each

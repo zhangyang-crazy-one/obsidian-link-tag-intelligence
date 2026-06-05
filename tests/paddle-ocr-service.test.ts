@@ -81,6 +81,7 @@ function allModelFiles(): Set<string> {
   for (const sub of [PADDLE_MODEL_SUBDIRS.det, PADDLE_MODEL_SUBDIRS.rec, PADDLE_MODEL_SUBDIRS.cls]) {
     set.add(realPath.join(MODEL_DIR, sub, PADDLE_MODEL_FILES.det));
   }
+  set.add(realPath.join(MODEL_DIR, PADDLE_MODEL_SUBDIRS.rec, "inference.yml"));
   set.add(realPath.join(MODEL_DIR, PADDLE_MODEL_SUBDIRS.dict, PADDLE_MODEL_FILES.dict));
   return set;
 }
@@ -146,9 +147,10 @@ describe("PaddleOcrEngine.checkModelFiles", () => {
     const svc = new PaddleOcrEngine(MODEL_DIR, { fs, path: realPath });
     const result = svc.checkModelFiles();
     expect(result.present).toBe(false);
-    expect(result.missing).toHaveLength(2);
+    expect(result.missing).toHaveLength(3);
     expect(result.missing.some((item) => item.includes(PADDLE_MODEL_SUBDIRS.det))).toBe(true);
     expect(result.missing.some((item) => item.includes(PADDLE_MODEL_SUBDIRS.rec))).toBe(true);
+    expect(result.missing).toContain(realPath.join(PADDLE_MODEL_SUBDIRS.rec, "inference.yml"));
     expect(result.missingOptional).toHaveLength(1);
   });
 
@@ -439,18 +441,28 @@ describe("PaddleOcrEngine constructor with tier option", () => {
     expect((svc as unknown as { tier: string }).tier).toBe("hybrid");
   });
 
-  it("checkModelFiles uses server-tier paths when tier=server", () => {
+  it("checkModelFiles requires server-tier rec inference yml when tier=server", () => {
     const existing = new Set<string>([
       realPath.join(MODEL_DIR, "det", "inference.onnx"),
       realPath.join(MODEL_DIR, "rec", "inference.onnx"),
-      // server tier has dict embedded in rec/inference.yml, no separate dict/
+      realPath.join(MODEL_DIR, "rec", "inference.yml"),
     ]);
     const fs = makeFsMock({ existing, dictText: "" });
     const svc = new PaddleOcrEngine(MODEL_DIR, { tier: "server", fs });
     const result = svc.checkModelFiles();
-    // For server tier the rec/inference.yml is required instead of dict/
     expect(result.missing).toEqual([]); // both det + rec present
     expect(result.modelDir).toBe(MODEL_DIR);
+  });
+
+  it("checkModelFiles reports missing server-tier rec inference yml", () => {
+    const existing = new Set<string>([
+      realPath.join(MODEL_DIR, "det", "inference.onnx"),
+      realPath.join(MODEL_DIR, "rec", "inference.onnx"),
+    ]);
+    const fs = makeFsMock({ existing, dictText: "" });
+    const svc = new PaddleOcrEngine(MODEL_DIR, { tier: "server", fs });
+    const result = svc.checkModelFiles();
+    expect(result.missing).toEqual([realPath.join("rec", "inference.yml")]);
   });
 });
 

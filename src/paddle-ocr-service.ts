@@ -138,6 +138,8 @@ export class PaddleOcrEngine {
     // dictionary inside rec/inference.yml (handled in loadDictionary()).
     if (this.tier === "mobile") {
       required.push(this.pathLib.join(PADDLE_MODEL_SUBDIRS.dict, PADDLE_MODEL_FILES.dict));
+    } else {
+      required.push(this.pathLib.join(PADDLE_MODEL_SUBDIRS.rec, "inference.yml"));
     }
     const optional = [
       this.pathLib.join(PADDLE_MODEL_SUBDIRS.cls, PADDLE_MODEL_FILES.cls),

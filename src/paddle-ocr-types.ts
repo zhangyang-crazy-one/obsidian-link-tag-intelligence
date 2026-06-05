@@ -97,6 +97,13 @@ export type PaddleTierSpec = {
     sha256: string;
     sizeBytes: number;
   };
+  dict: {
+    repo: string;
+    filename: string;
+    sha256: string;
+    sizeBytes: number;
+    role: "rec" | "dict";
+  };
   /** Sub-directory under models/ocr/pp-ocrv5/. */
   dirName: "mobile" | "server" | "hybrid";
   /** Short human-readable summary for the Settings dropdown. */
@@ -109,18 +116,21 @@ export const PADDLE_TIER_SPECS: Record<PaddleOcrModelTier, PaddleTierSpec> = {
   mobile: {
     det: { repo: "PaddlePaddle/PP-OCRv5_mobile_det_onnx", filename: "inference.onnx", sha256: PLACEHOLDER, sizeBytes: 5_063_518 },
     rec: { repo: "PaddlePaddle/PP-OCRv5_mobile_rec_onnx", filename: "inference.onnx", sha256: PLACEHOLDER, sizeBytes: 17_297_408 },
+    dict: { repo: "PaddlePaddle/PP-OCRv5_mobile_rec_onnx", filename: "ppocr_keys_v5.txt", sha256: PLACEHOLDER, sizeBytes: 128_000, role: "dict" },
     dirName: "mobile",
     summary: "Mobile (fast, ~22 MB)",
   },
   server: {
     det: { repo: "PaddlePaddle/PP-OCRv5_server_det_onnx", filename: "inference.onnx", sha256: PLACEHOLDER, sizeBytes: 92_408_575 },
     rec: { repo: "PaddlePaddle/PP-OCRv5_server_rec_onnx", filename: "inference.onnx", sha256: PLACEHOLDER, sizeBytes: 88_602_496 },
+    dict: { repo: "PaddlePaddle/PP-OCRv5_server_rec_onnx", filename: "inference.yml", sha256: PLACEHOLDER, sizeBytes: 512_000, role: "rec" },
     dirName: "server",
     summary: "Server (precise, ~181 MB, default)",
   },
   hybrid: {
     det: { repo: "PaddlePaddle/PP-OCRv5_mobile_det_onnx", filename: "inference.onnx", sha256: PLACEHOLDER, sizeBytes: 5_063_518 },
     rec: { repo: "PaddlePaddle/PP-OCRv5_server_rec_onnx", filename: "inference.onnx", sha256: PLACEHOLDER, sizeBytes: 88_602_496 },
+    dict: { repo: "PaddlePaddle/PP-OCRv5_server_rec_onnx", filename: "inference.yml", sha256: PLACEHOLDER, sizeBytes: 512_000, role: "rec" },
     dirName: "hybrid",
     summary: "Hybrid (mobile det + server rec, ~94 MB)",
   },

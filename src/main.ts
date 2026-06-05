@@ -1428,8 +1428,10 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     const path = require("path") as typeof import("path");
     const detDir = path.join(modelDir, "det");
     const recDir = path.join(modelDir, "rec");
+    const dictDir = path.join(modelDir, "dict");
     fs.mkdirSync(detDir, { recursive: true });
     fs.mkdirSync(recDir, { recursive: true });
+    fs.mkdirSync(dictDir, { recursive: true });
 
     const totalBytes = getPaddleTierTotalBytes(tier);
     const totalMB = (totalBytes / (1024 * 1024)).toFixed(0);
@@ -1442,7 +1444,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       const result = await downloadPaddleTier(
         tier,
         async ({ role, filename }, data) => {
-          const sub = role === "det" ? detDir : recDir;
+          const sub = role === "det" ? detDir : role === "dict" ? dictDir : recDir;
           await fsAsync.writeFile(path.join(sub, filename), new Uint8Array(data));
         },
         (p) => {
