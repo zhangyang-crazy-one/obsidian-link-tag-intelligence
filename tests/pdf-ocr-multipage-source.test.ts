@@ -14,12 +14,17 @@ describe("PDF OCR source guard", () => {
     expect(source).toContain("已按页写入当前文档");
     expect(source).toContain("assessPdfTextExtraction(text, pageCount)");
     expect(source).toContain('const { execFile } = require("child_process")');
+    expect(source).toContain('const os = require("os")');
+    expect(source).toContain("const tempDir = os.tmpdir()");
+    expect(source).toContain("path.join(tempDir");
     expect(source).toContain('runPdfCommand("pdfinfo", [absolutePath])');
     expect(source).toContain('runPdfCommand("pdftotext", [absolutePath, "-"]');
     expect(source).toContain('runPdfCommand("pdftoppm", [');
     expect(source).not.toContain('exec(`pdfinfo "${absolutePath}"');
     expect(source).not.toContain('exec(`pdftotext "${absolutePath}"');
     expect(source).not.toContain("exec(`pdftoppm");
+    expect(source).not.toContain("fs.readdirSync(\"/tmp\")");
+    expect(source).not.toContain("`/tmp/${tmpFile}`");
     expect(source).not.toContain("text.trim().length >= 10");
   });
 });

@@ -5,6 +5,33 @@ import process from "node:process";
 
 const production = process.argv.includes("production");
 
+function copyPackageClosure(packageNames, distNodeModulesDir) {
+  const copied = new Set();
+  const queue = [...packageNames];
+
+  while (queue.length > 0) {
+    const packageName = queue.shift();
+    if (!packageName || copied.has(packageName)) continue;
+
+    const packageDir = path.resolve("node_modules", packageName);
+    const packageJsonPath = path.join(packageDir, "package.json");
+    if (!fs.existsSync(packageJsonPath)) continue;
+
+    const destDir = path.join(distNodeModulesDir, packageName);
+    fs.mkdirSync(path.dirname(destDir), { recursive: true });
+    fs.cpSync(packageDir, destDir, { recursive: true });
+    copied.add(packageName);
+
+    const pkg = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+    for (const depName of Object.keys(pkg.dependencies ?? {})) {
+      queue.push(depName);
+    }
+    for (const depName of Object.keys(pkg.optionalDependencies ?? {})) {
+      queue.push(depName);
+    }
+  }
+}
+
 const context = await esbuild.context({
   // Note: PaddleOCR runs in-process via onnxruntime-node (src/paddle-ocr-service.ts),
   // so there is no separate paddle-ocr-worker entry point. This keeps memory
@@ -67,35 +94,18 @@ if (production) {
       );
     }
   }
-  // Copy sherpa-onnx (JS + WASM) as runtime dependency
-  fs.cpSync(
-    path.resolve("node_modules/sherpa-onnx"),
-    path.join(distDir, "node_modules", "sherpa-onnx"),
-    { recursive: true }
-  );
-
-  // Copy local OCR runtime dependencies for PaddleOCR / Kreuzberg services.
+  // Copy native/runtime dependencies that esbuild leaves as runtime
+  // require()s. Follow package dependency closures so clean dist installs
+  // do not miss small helpers such as sharp's detect-libc / semver.
   // `external` above already tells esbuild to leave these as runtime
   // require()s, so the actual files must exist in dist/node_modules/
   // for Obsidian's Electron renderer to find them at load time.
-  // Native bindings (@kreuzberg/node-*-*) are picked up automatically
-  // because @kreuzberg's npm package ships them as optionalDependencies.
-  const ocrDeps = [
-    "@img",
-    "@kreuzberg",
+  copyPackageClosure([
+    "sherpa-onnx",
+    "@kreuzberg/node",
     "onnxruntime-node",
-    "onnxruntime-web",
-    "onnxruntime-common",
     "sharp",
-    "global-agent",
-    "tar"
-  ];
-  for (const dep of ocrDeps) {
-    const srcPath = path.resolve("node_modules", dep);
-    if (fs.existsSync(srcPath)) {
-      fs.cpSync(srcPath, path.join(distDir, "node_modules", dep), { recursive: true });
-    }
-  }
+  ], path.join(distDir, "node_modules"));
 
   // Download and bundle the Chinese transducer ASR model (~132MB INT8).
   // Uses greedy_search with dither=0.00003 — no modified_beam_search hallucination.

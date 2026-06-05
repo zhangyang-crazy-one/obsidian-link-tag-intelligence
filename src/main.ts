@@ -2203,11 +2203,14 @@ export default class LinkTagIntelligencePlugin extends Plugin {
           notice.setMessage("⏳ [Local AI] 检测到扫描版 PDF，正在准备逐页离线 OCR...");
           console.warn("[lti-pdf-text-quality] pdftotext output rejected; falling back to page OCR", textQuality);
           const fs = require("fs");
+          const os = require("os") as typeof import("os");
+          const path = require("path") as typeof import("path");
 
           type PdfPageOcrResult =
             | { page: number; ok: true; text: string }
             | { page: number; ok: false; error: string };
           const tempPrefix = `lti_pdf_page_${Date.now()}`;
+          const tempDir = os.tmpdir();
           const concurrency = Math.max(1, Math.min(
             this.settings.paddleOcrPdfConcurrency || 2,
             pageCount,
@@ -2244,7 +2247,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
               pageNumbers,
               concurrency,
               async (page, workerIndex) => {
-                const tempPattern = `/tmp/${tempPrefix}_${page}`;
+                const tempPattern = path.join(tempDir, `${tempPrefix}_${page}`);
                 notice.setMessage(`⏳ [Local AI] 正在渲染扫描版 PDF 第 ${page}/${pageCount} 页（并发 ${concurrency}，DPI ${dpi}）...`);
 
                 try {
@@ -2265,7 +2268,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
                   return { page, ok: false, error };
                 }
 
-                const tmpFiles = fs.readdirSync("/tmp")
+                const tmpFiles = fs.readdirSync(tempDir)
                   .filter((f: string) => f.startsWith(`${tempPrefix}_${page}`) && f.endsWith(".png"))
                   .sort();
                 if (tmpFiles.length === 0) {
@@ -2274,7 +2277,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
                   return { page, ok: false, error };
                 }
 
-                const tempImagePath = `/tmp/${tmpFiles[0]}`;
+                const tempImagePath = path.join(tempDir, tmpFiles[0]);
                 try {
                   const onStatusUpdate = (msg: string) => {
                     notice.setMessage(
@@ -2306,7 +2309,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
                   notice.setMessage(`⏳ [Local AI] 扫描版 PDF OCR 进度：${completedPages}/${pageCount} 页完成，${successfulPages} 页已写入当前文档...`);
                   for (const tmpFile of tmpFiles) {
                     try {
-                      fs.unlinkSync(`/tmp/${tmpFile}`);
+                      fs.unlinkSync(path.join(tempDir, tmpFile));
                     } catch (cleanErr) {
                       console.warn("Failed to clean up temp PDF page image:", cleanErr);
                     }
