@@ -20,6 +20,11 @@ describe("PDF OCR source guard", () => {
     expect(source).toContain('runPdfCommand("pdfinfo", [absolutePath])');
     expect(source).toContain('runPdfCommand("pdftotext", [absolutePath, "-"]');
     expect(source).toContain('runPdfCommand("pdftoppm", [');
+    expect(source).toContain("PaddleOCR 模型未就绪，无法继续执行扫描版 PDF OCR。");
+    expect(source).toContain("PaddleOCR 模型未就绪，无法继续执行图片 OCR。");
+    expect(source.indexOf('runPdfCommand("pdftotext", [absolutePath, "-"]')).toBeLessThan(
+      source.indexOf("PaddleOCR 模型未就绪，无法继续执行扫描版 PDF OCR。")
+    );
     expect(source).not.toContain('exec(`pdfinfo "${absolutePath}"');
     expect(source).not.toContain('exec(`pdftotext "${absolutePath}"');
     expect(source).not.toContain("exec(`pdftoppm");

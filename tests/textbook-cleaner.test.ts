@@ -8,6 +8,7 @@
 //     Verifies per-chapter flow, cross-chapter context wiring, output
 //     file naming, and failure isolation.
 
+import { readFileSync } from "node:fs";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Per-test AI prompt capture. Reset in beforeEach; each test's
@@ -143,6 +144,16 @@ describe("sanitizeForFilename", () => {
   });
   it("preserves Chinese characters and digits", () => {
     expect(sanitizeForFilename("工程经济学 第17版")).toBe("工程经济学 第17版");
+  });
+});
+
+describe("pickManifestFile source guard", () => {
+  it("stores the selected manifest as a vault-relative path when possible", () => {
+    const source = readFileSync("src/textbook-cleaner.ts", "utf8");
+    expect(source).toContain("resolvePickedManifestVaultPath(app, f)");
+    expect(source).toContain("absolutePath.slice(vaultBase.length + 1)");
+    expect(source).toContain("return file.name;");
+    expect(source).not.toContain("if (f) chosen = f.name;");
   });
 });
 

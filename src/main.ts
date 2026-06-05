@@ -2147,12 +2147,6 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       isPdf = selection.isPdf;
     }
 
-    const paddleOk = await this.ensurePaddleModel();
-    if (!paddleOk) {
-      new Notice("PaddleOCR 模型未就绪，无法继续执行 OCR。", 8000);
-      return;
-    }
-
     const editor = view.editor;
     const cursor = editor.getCursor();
     const notice = new Notice(`⏳ [Local AI] 准备处理: ${fileName}...`, 0);
@@ -2207,6 +2201,10 @@ export default class LinkTagIntelligencePlugin extends Plugin {
         } else {
           notice.setMessage("⏳ [Local AI] 检测到扫描版 PDF，正在准备逐页离线 OCR...");
           console.warn("[lti-pdf-text-quality] pdftotext output rejected; falling back to page OCR", textQuality);
+          const paddleOk = await this.ensurePaddleModel();
+          if (!paddleOk) {
+            throw new Error("PaddleOCR 模型未就绪，无法继续执行扫描版 PDF OCR。");
+          }
           const fs = require("fs");
           const os = require("os") as typeof import("os");
           const path = require("path") as typeof import("path");
@@ -2354,6 +2352,10 @@ export default class LinkTagIntelligencePlugin extends Plugin {
           }
         }
       } else {
+        const paddleOk = await this.ensurePaddleModel();
+        if (!paddleOk) {
+          throw new Error("PaddleOCR 模型未就绪，无法继续执行图片 OCR。");
+        }
         const onStatusUpdate = (msg: string) => {
           notice.setMessage(`[Local AI] ${msg}`);
         };

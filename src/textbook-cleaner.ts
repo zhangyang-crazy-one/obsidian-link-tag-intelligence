@@ -48,7 +48,7 @@
 // etc.) since computing by page range alone is brittle for
 // textbooks that have prefaces/appendices/indexes in between.
 
-import { App, TFile, Notice } from "obsidian";
+import { App, TFile, Notice, normalizePath } from "obsidian";
 import { AIService } from "./ai-service";
 import type { LinkTagIntelligenceSettings } from "./settings";
 
@@ -668,7 +668,7 @@ export async function pickManifestFile(app: App): Promise<string | null> {
     input.style.display = "none";
     input.addEventListener("change", () => {
       const f = input.files?.[0];
-      if (f) chosen = f.name;
+      if (f) chosen = resolvePickedManifestVaultPath(app, f);
       document.body.removeChild(input);
       resolve(chosen);
     });
@@ -682,4 +682,14 @@ export async function pickManifestFile(app: App): Promise<string | null> {
       }
     }, 60_000);
   });
+}
+
+function resolvePickedManifestVaultPath(app: App, file: File): string {
+  const absolutePath = normalizePath((file as any).path ?? "");
+  const adapter = app.vault.adapter as { getBasePath?: () => string };
+  const vaultBase = normalizePath(adapter.getBasePath?.() ?? "").replace(/\/$/, "");
+  if (absolutePath && vaultBase && absolutePath.startsWith(`${vaultBase}/`)) {
+    return absolutePath.slice(vaultBase.length + 1);
+  }
+  return file.name;
 }
