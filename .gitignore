@@ -15,10 +15,17 @@ release/
 *.swo
 
 # AI assistant config (local/sensitive)
+.agent/
+.agents/
 .claude/
 .codex/
+.learnings/
 .planning/
 planning/
+
+# Local research / helper checkouts
+docs/research/
+tools/notebooklm-mcp-cli/
 
 # OS
 *.icloud
