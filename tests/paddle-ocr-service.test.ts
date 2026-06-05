@@ -160,7 +160,7 @@ describe("PaddleOcrEngine.checkModelFiles", () => {
     const result = svc.checkModelFiles();
     expect(result.present).toBe(false);
     expect(result.missing).toHaveLength(3);
-    expect(result.missing.some((item) => item.includes(PADDLE_MODEL_SUBDIRS.dict))).toBe(true);
+    expect(result.missing).toContain(realPath.join(PADDLE_MODEL_SUBDIRS.rec, "inference.yml"));
     expect(result.missingOptional).toHaveLength(1);
   });
 });

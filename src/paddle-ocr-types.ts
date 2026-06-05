@@ -73,9 +73,9 @@ export const PADDLE_MODEL_SUBDIRS = {
 //     when memory is tight but rec quality matters more than det quality.
 //
 // Files are stored in <pluginRoot>/models/ocr/pp-ocrv5/<tier>/.
-// Each tier has its own det + rec files (and, for mobile, an optional
-// ppocr_keys_v5.txt; for server, the dictionary is embedded inside
-// the rec model's inference.yml).
+// Each tier has its own det + rec files. The recognition companion
+// `inference.yml` carries the character dictionary for mobile, server,
+// and hybrid tiers.
 //
 // All SHAs are placeholders ("e3b0c44…b855", the SHA256 of an empty
 // string) — see `PLACEHOLDER_SHA256` in speech-model.ts. downloadWithRetry
@@ -116,7 +116,7 @@ export const PADDLE_TIER_SPECS: Record<PaddleOcrModelTier, PaddleTierSpec> = {
   mobile: {
     det: { repo: "PaddlePaddle/PP-OCRv5_mobile_det_onnx", filename: "inference.onnx", sha256: PLACEHOLDER, sizeBytes: 5_063_518 },
     rec: { repo: "PaddlePaddle/PP-OCRv5_mobile_rec_onnx", filename: "inference.onnx", sha256: PLACEHOLDER, sizeBytes: 17_297_408 },
-    dict: { repo: "PaddlePaddle/PP-OCRv5_mobile_rec_onnx", filename: "ppocr_keys_v5.txt", sha256: PLACEHOLDER, sizeBytes: 128_000, role: "dict" },
+    dict: { repo: "PaddlePaddle/PP-OCRv5_mobile_rec_onnx", filename: "inference.yml", sha256: PLACEHOLDER, sizeBytes: 148_345, role: "rec" },
     dirName: "mobile",
     summary: "Mobile (fast, ~22 MB)",
   },
@@ -195,7 +195,7 @@ export const PADDLE_DET_DEFAULTS: PaddleDetConfig = {
   useDilation: true,
 };
 
-/** Filenames for PP-OCRv5 mobile ONNX bundle. */
+/** Filenames for PP-OCRv5 ONNX bundles. */
 export const PADDLE_MODEL_FILES = {
   det: "inference.onnx",
   rec: "inference.onnx",

@@ -125,22 +125,16 @@ export class PaddleOcrEngine {
    * published a PP-OCRv5 mobile cls ONNX export as of this writing, so we accept
    * its absence. When missing, runPipeline() simply skips the cls branch.
    *
-   * Tier-aware: server / hybrid bundles embed the character dictionary inside
-   * the rec model's `inference.yml`, so the standalone `dict/ppocr_keys_v5.txt`
-   * is NOT required for those tiers. The mobile bundle still requires the .txt.
+   * Tier-aware: all managed bundles embed the character dictionary inside
+   * the rec model's `inference.yml`. The standalone `dict/ppocr_keys_v5.txt`
+   * remains supported as a back-compat fallback but is not required.
    */
   public checkModelFiles(): { present: boolean; missing: string[]; missingOptional: string[]; modelDir: string } {
     const required = [
       this.pathLib.join(PADDLE_MODEL_SUBDIRS.det, PADDLE_MODEL_FILES.det),
       this.pathLib.join(PADDLE_MODEL_SUBDIRS.rec, PADDLE_MODEL_FILES.rec),
     ];
-    // Only mobile requires the standalone dict file. Server/hybrid embed the
-    // dictionary inside rec/inference.yml (handled in loadDictionary()).
-    if (this.tier === "mobile") {
-      required.push(this.pathLib.join(PADDLE_MODEL_SUBDIRS.dict, PADDLE_MODEL_FILES.dict));
-    } else {
-      required.push(this.pathLib.join(PADDLE_MODEL_SUBDIRS.rec, "inference.yml"));
-    }
+    required.push(this.pathLib.join(PADDLE_MODEL_SUBDIRS.rec, "inference.yml"));
     const optional = [
       this.pathLib.join(PADDLE_MODEL_SUBDIRS.cls, PADDLE_MODEL_FILES.cls),
     ];
@@ -203,7 +197,7 @@ export class PaddleOcrEngine {
       if (this.dictionary.length === 0) {
         throw new Error(
           `PaddleOCR 字典加载失败：未在 ${this.modelDir} 找到字典。` +
-          "mobile 档位下应存在 dict/ppocr_keys_v5.txt；server/hybrid 档位下应存在 rec/inference.yml（含 character_dict 字段）。"
+          "应存在 rec/inference.yml（含 character_dict 字段）；旧版 mobile 目录也可使用 dict/ppocr_keys_v5.txt。"
         );
       }
 
@@ -1195,7 +1189,7 @@ export class PaddleOcrEngine {
    * (caller is expected to treat that as a hard error).
    */
   private async loadDictionary(): Promise<string[]> {
-    // Mobile: try the .txt file first (back-compat with old data).
+    // Legacy mobile directories may still have the standalone .txt file.
     const txtPath = this.pathLib.join(this.modelDir, PADDLE_MODEL_SUBDIRS.dict, PADDLE_MODEL_FILES.dict);
     if (this.fs.existsSync(txtPath)) {
       const raw = await this.fs.promises.readFile(txtPath, "utf-8");
@@ -1402,6 +1396,7 @@ export class PaddleOcrService {
       for (const job of this.pending.values()) job.reject(err);
       this.pending.clear();
       this.child = null;
+      this.initialized = false;
       this.readyPromise = null;
       this.readyResolve = null;
       this.readyReject = null;
@@ -1416,6 +1411,7 @@ export class PaddleOcrService {
         this.pending.clear();
       }
       this.child = null;
+      this.initialized = false;
       this.readyPromise = null;
       this.readyResolve = null;
       this.readyReject = null;

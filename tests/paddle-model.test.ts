@@ -38,7 +38,7 @@ describe("PaddleOCR tier model metadata", () => {
     expect(files.map((item) => `${item.role}/${item.spec.filename}`)).toEqual([
       "det/inference.onnx",
       "rec/inference.onnx",
-      "dict/ppocr_keys_v5.txt",
+      "rec/inference.yml",
     ]);
   });
 
@@ -72,7 +72,7 @@ describe("PaddleOCR tier model metadata", () => {
     ]);
   });
 
-  it("detects missing mobile dictionary file", () => {
+  it("detects missing mobile recognition metadata file", () => {
     const modelDir = "/models/ocr/pp-ocrv5/mobile";
     const existing = new Set([
       `${modelDir}/det/inference.onnx`,
@@ -80,7 +80,7 @@ describe("PaddleOCR tier model metadata", () => {
     ]);
     const result = isPaddleTierInstalled("mobile", (path) => existing.has(path), modelDir);
     expect(result.installed).toBe(false);
-    expect(result.missing).toEqual([`${modelDir}/dict/ppocr_keys_v5.txt`]);
+    expect(result.missing).toEqual([`${modelDir}/rec/inference.yml`]);
   });
 
   it("server tier is substantially larger than mobile tier", () => {

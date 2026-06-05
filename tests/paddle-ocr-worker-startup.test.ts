@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import * as cp from "child_process";
@@ -51,6 +52,14 @@ describe("PaddleOcrService worker startup", () => {
       "node",
       ["/workers/My Vault/paddle-ocr-worker.cjs"],
       expect.objectContaining({ shell: false }),
+    );
+  });
+
+  it("resets initialization state when the worker exits or spawn fails", () => {
+    const source = readFileSync("src/paddle-ocr-service.ts", "utf8");
+    expect(source.match(/this\.initialized = false;/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(source.indexOf('this.child.on("error"')).toBeLessThan(
+      source.indexOf('this.child.on("exit"')
     );
   });
 });

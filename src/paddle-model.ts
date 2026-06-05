@@ -142,13 +142,14 @@ export async function downloadPaddleFileWithRetry(
   role: PaddleDownloadRole,
   spec: { repo: string; filename: string; sha256: string },
   onFileProgress?: (p: PaddleDownloadProgress) => void,
-  maxRetries = 3
+  maxRetries = 3,
+  baseUrl = getPaddleHfBaseUrl(),
 ): Promise<PaddleFileResult> {
   const backoffDelays = [1000, 2000, 4000];
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const url = buildPaddleFileUrl(spec);
+      const url = buildPaddleFileUrl(spec, baseUrl);
       const buffer = await downloadPaddleFile(url, spec.filename, onFileProgress);
       const skipVerify = spec.sha256 === PLACEHOLDER_SHA256;
       if (skipVerify) {
@@ -236,7 +237,8 @@ export async function downloadPaddleTier(
         totalFiles: files.length,
         fileProgress: p,
       }),
-      3
+      3,
+      baseUrl
     );
     if (result.success && result.buffer) {
       try {
