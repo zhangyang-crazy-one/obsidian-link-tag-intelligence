@@ -1392,7 +1392,7 @@ export class PaddleOcrService {
       env: childEnv,
       detached: !isWindows,
       cwd: childDir,
-      shell: !isWindows,
+      shell: false,
     });
     this.child.on("error", (e) => {
       const err = new Error(`paddle-ocr-worker spawn failed: ${e.message}`);

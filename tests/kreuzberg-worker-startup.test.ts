@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import * as cp from "child_process";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PaddleOcrService } from "../src/paddle-ocr-service";
+import { KreuzbergOcrService } from "../src/kreuzberg-ocr-service";
 
 vi.mock("child_process", () => ({
   spawn: vi.fn(),
@@ -23,17 +23,17 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("PaddleOcrService worker startup", () => {
-  it("rejects init when the worker exits before it emits ready", async () => {
+describe("KreuzbergOcrService worker startup", () => {
+  it("rejects runOcr when the worker exits before it emits ready", async () => {
     const child = makeFakeChild();
     vi.mocked(cp.spawn).mockReturnValue(child);
 
-    const service = new PaddleOcrService("/models", "/workers/paddle-ocr-worker.cjs");
-    const initPromise = service.init();
+    const service = new KreuzbergOcrService("/tessdata", "/workers/kreuzberg-worker.cjs");
+    const ocrPromise = service.runOcr("/input.png");
 
     child.emit("exit", 1, null);
 
-    await expect(initPromise).rejects.toThrow(/paddle-ocr-worker exited unexpectedly/);
+    await expect(ocrPromise).rejects.toThrow(/kreuzberg-worker exited unexpectedly/);
     expect(child.stdin?.write).not.toHaveBeenCalled();
   });
 
@@ -41,15 +41,15 @@ describe("PaddleOcrService worker startup", () => {
     const child = makeFakeChild();
     vi.mocked(cp.spawn).mockReturnValue(child);
 
-    const service = new PaddleOcrService("/models", "/workers/My Vault/paddle-ocr-worker.cjs");
-    const initPromise = service.init();
+    const service = new KreuzbergOcrService("/tessdata", "/workers/My Vault/kreuzberg-worker.cjs");
+    const ocrPromise = service.runOcr("/input.png");
 
     child.emit("exit", 1, null);
-    await expect(initPromise).rejects.toThrow(/paddle-ocr-worker exited unexpectedly/);
+    await expect(ocrPromise).rejects.toThrow(/kreuzberg-worker exited unexpectedly/);
 
     expect(cp.spawn).toHaveBeenCalledWith(
       "node",
-      ["/workers/My Vault/paddle-ocr-worker.cjs"],
+      ["/workers/My Vault/kreuzberg-worker.cjs"],
       expect.objectContaining({ shell: false }),
     );
   });

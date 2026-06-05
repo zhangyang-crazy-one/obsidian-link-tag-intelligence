@@ -53,6 +53,7 @@ export class KreuzbergOcrService {
   /** Resolves when the worker has emitted its first "ready" message. */
   private readyPromise: Promise<void> | null = null;
   private readyResolve: (() => void) | null = null;
+  private readyReject: ((err: Error) => void) | null = null;
 
   /**
    * @param tessdataPath  Directory containing the official Tesseract
@@ -87,12 +88,12 @@ export class KreuzbergOcrService {
    */
   private ensureWorker(): Promise<void> {
     if (this.readyPromise) return this.readyPromise;
-    this.readyPromise = new Promise<void>((resolve) => {
+    this.readyPromise = new Promise<void>((resolve, reject) => {
       this.readyResolve = resolve;
+      this.readyReject = reject;
     });
-    // Match ocr-service.ts spawn flags: detached on POSIX for
-    // process-group kill, pluginDir as cwd, shell on POSIX. These
-    // mirror the asr-worker invocation in src/ai-service.ts:53-58.
+    // Direct spawn keeps worker paths with spaces or shell metacharacters
+    // as a single argv entry while still allowing POSIX process-group kill.
     const isWindows = process.platform === "win32";
     const projectNodeModules = "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/node_modules";
     const childEnv = { ...process.env };
@@ -104,31 +105,35 @@ export class KreuzbergOcrService {
       env: childEnv,
       detached: !isWindows,
       cwd: childDir,
-      shell: !isWindows,
+      shell: false,
     });
     this.child.on("error", (e) => {
       // Spawn-time failure (ENOENT, EACCES, etc.) — mirror speech-recorder
       // pattern. Reject every pending job and force a respawn on next call.
       const err = new Error(`kreuzberg-worker spawn failed: ${e.message}`);
+      this.readyReject?.(err);
       for (const job of this.pending.values()) job.reject(err);
       this.pending.clear();
       this.child = null;
       this.readyPromise = null;
       this.readyResolve = null;
+      this.readyReject = null;
     });
     this.child.on("exit", (code, signal) => {
       // If we didn't initiate this exit, the child died unexpectedly.
       // Reject every pending job; next runOcr will respawn.
+      const err = new Error(
+        `kreuzberg-worker exited unexpectedly (code=${code}, signal=${signal})`,
+      );
+      this.readyReject?.(err);
       if (this.pending.size > 0) {
-        const err = new Error(
-          `kreuzberg-worker exited unexpectedly (code=${code}, signal=${signal})`,
-        );
         for (const job of this.pending.values()) job.reject(err);
         this.pending.clear();
       }
       this.child = null;
       this.readyPromise = null;
       this.readyResolve = null;
+      this.readyReject = null;
     });
     this.child.on("error", () => {/* handled above; suppress unhandled */});
 
@@ -144,6 +149,7 @@ export class KreuzbergOcrService {
       if (msg.type === "ready") {
         this.readyResolve?.();
         this.readyResolve = null;
+        this.readyReject = null;
         return;
       }
       if (msg.type === "progress") {
@@ -259,5 +265,9 @@ export class KreuzbergOcrService {
       job.reject(new Error("KreuzbergOcrService 已被销毁"));
     }
     this.pending.clear();
+    this.readyReject?.(new Error("KreuzbergOcrService 已被销毁"));
+    this.readyPromise = null;
+    this.readyResolve = null;
+    this.readyReject = null;
   }
 }
