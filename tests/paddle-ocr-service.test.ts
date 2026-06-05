@@ -275,6 +275,30 @@ describe("PaddleOcrEngine.destroy", () => {
     // 3 (initial) + 3 (after dispose) = 6
     expect(ort.InferenceSession.create).toHaveBeenCalledTimes(6);
   });
+
+  it("does not dispose sessions while OCR is still running", async () => {
+    vi.useFakeTimers();
+    const fs = makeFsMock({ existing: allModelFiles(), dictText: DICT_LINES.join("\n") });
+    const ort = makeOrtMock();
+    const sharp = makeSharpMock();
+    const svc = new PaddleOcrEngine(MODEL_DIR, { fs, path: realPath, ort: ort as never, sharp });
+    let finishPipeline!: () => void;
+    vi.spyOn(svc as unknown as { runPipeline: () => Promise<Array<{ text: string }>> }, "runPipeline")
+      .mockReturnValue(new Promise((resolve) => {
+        finishPipeline = () => resolve([{ text: "done" }]);
+      }));
+
+    const ocrPromise = svc.runOcr("/slow.png");
+    await vi.advanceTimersByTimeAsync(181_000);
+    const sessionsBeforeFinish = ort.__sessions.slice();
+    expect(sessionsBeforeFinish).toHaveLength(3);
+    expect(sessionsBeforeFinish.every((session) => session.release.mock.calls.length === 0)).toBe(true);
+
+    finishPipeline();
+    await expect(ocrPromise).resolves.toBe("done");
+    await vi.advanceTimersByTimeAsync(181_000);
+    expect(sessionsBeforeFinish.every((session) => session.release.mock.calls.length === 1)).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

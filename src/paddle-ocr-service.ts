@@ -219,22 +219,25 @@ export class PaddleOcrEngine {
    * Throws if init or inference fails — caller is expected to fall back to Tesseract.
    */
   public async runOcr(imagePath: string, onStatus?: (msg: string) => void): Promise<string> {
-    this.resetIdleTimer();
-    await this.init();
+    this.clearIdleTimer();
+    try {
+      await this.init();
 
-    if (!this.detSession || !this.recSession || this.dictionary.length === 0) {
-      throw new Error("PaddleOCR 引擎未就绪 (sessions not loaded)");
+      if (!this.detSession || !this.recSession || this.dictionary.length === 0) {
+        throw new Error("PaddleOCR 引擎未就绪 (sessions not loaded)");
+      }
+
+      if (onStatus) onStatus("正在使用 PaddleOCR 识别图像...");
+
+      const sharp = this.resolveSharp();
+      const image = sharp(imagePath);
+      const { data, info } = await image.raw({ ensureAlpha: false }).toBuffer({ resolveWithObject: true });
+      const regions = await this.runPipeline(new Uint8Array(data.buffer, data.byteOffset, data.byteLength), info.width, info.height, info.channels, onStatus);
+
+      return regions.map((r) => r.text).join("\n");
+    } finally {
+      this.resetIdleTimer();
     }
-
-    if (onStatus) onStatus("正在使用 PaddleOCR 识别图像...");
-
-    const sharp = this.resolveSharp();
-    const image = sharp(imagePath);
-    const { data, info } = await image.raw({ ensureAlpha: false }).toBuffer({ resolveWithObject: true });
-    const regions = await this.runPipeline(new Uint8Array(data.buffer, data.byteOffset, data.byteLength), info.width, info.height, info.channels, onStatus);
-
-    this.resetIdleTimer();
-    return regions.map((r) => r.text).join("\n");
   }
 
   /**
@@ -1170,10 +1173,17 @@ export class PaddleOcrEngine {
   // ---------------------------------------------------------------------------
 
   private resetIdleTimer(): void {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.clearIdleTimer();
     this.idleTimer = setTimeout(() => {
       void this.dispose();
     }, PaddleOcrEngine.IDLE_TIMEOUT_MS);
+  }
+
+  private clearIdleTimer(): void {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
   }
 
   // ---------------------------------------------------------------------------

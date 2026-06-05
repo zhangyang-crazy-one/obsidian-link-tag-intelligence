@@ -10966,18 +10966,21 @@ var _PaddleOcrEngine = class _PaddleOcrEngine {
    * Throws if init or inference fails — caller is expected to fall back to Tesseract.
    */
   async runOcr(imagePath, onStatus) {
-    this.resetIdleTimer();
-    await this.init();
-    if (!this.detSession || !this.recSession || this.dictionary.length === 0) {
-      throw new Error("PaddleOCR \u5F15\u64CE\u672A\u5C31\u7EEA (sessions not loaded)");
+    this.clearIdleTimer();
+    try {
+      await this.init();
+      if (!this.detSession || !this.recSession || this.dictionary.length === 0) {
+        throw new Error("PaddleOCR \u5F15\u64CE\u672A\u5C31\u7EEA (sessions not loaded)");
+      }
+      if (onStatus) onStatus("\u6B63\u5728\u4F7F\u7528 PaddleOCR \u8BC6\u522B\u56FE\u50CF...");
+      const sharp = this.resolveSharp();
+      const image = sharp(imagePath);
+      const { data, info } = await image.raw({ ensureAlpha: false }).toBuffer({ resolveWithObject: true });
+      const regions = await this.runPipeline(new Uint8Array(data.buffer, data.byteOffset, data.byteLength), info.width, info.height, info.channels, onStatus);
+      return regions.map((r) => r.text).join("\n");
+    } finally {
+      this.resetIdleTimer();
     }
-    if (onStatus) onStatus("\u6B63\u5728\u4F7F\u7528 PaddleOCR \u8BC6\u522B\u56FE\u50CF...");
-    const sharp = this.resolveSharp();
-    const image = sharp(imagePath);
-    const { data, info } = await image.raw({ ensureAlpha: false }).toBuffer({ resolveWithObject: true });
-    const regions = await this.runPipeline(new Uint8Array(data.buffer, data.byteOffset, data.byteLength), info.width, info.height, info.channels, onStatus);
-    this.resetIdleTimer();
-    return regions.map((r) => r.text).join("\n");
   }
   /**
    * Release all ONNX sessions and clear cached dictionary. Idempotent.
@@ -11769,10 +11772,16 @@ var _PaddleOcrEngine = class _PaddleOcrEngine {
   // Idle timer — auto-dispose to reclaim memory when idle.
   // ---------------------------------------------------------------------------
   resetIdleTimer() {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.clearIdleTimer();
     this.idleTimer = setTimeout(() => {
       void this.dispose();
     }, _PaddleOcrEngine.IDLE_TIMEOUT_MS);
+  }
+  clearIdleTimer() {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
   }
   // ---------------------------------------------------------------------------
   // Dictionary loading — tier-aware
