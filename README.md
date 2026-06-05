@@ -19,7 +19,8 @@ The plugin is now designed around a CLI-first ingestion model:
 - Citation-aware metadata pills for citekey, author, year, source type, locator, and evidence kind
 - Native tag management and bilingual tag suggestions
 - External ingestion CLI for DOI, arXiv, and PDF capture with OpenAlex citation enrichment
-- Optional external semantic bridge for retrieval
+- Local Chinese voice transcription plus offline image/PDF OCR with textbook cleanup
+- Optional external semantic bridge for retrieval; no local visual-understanding model is bundled
 
 ## Plugin Workflow
 
@@ -492,6 +493,10 @@ Recommended semantic JSON shape:
 }
 ```
 
+## Changelog
+
+`0.2.9`: removes local image-semantic features and model paths, keeps offline OCR, hardens Paddle/Kreuzberg worker lifecycles, raises textbook-cleaner context windows, preserves failed OCR windows, and refreshes sidebar/settings wording.
+
 ## Build
 
 ```bash
@@ -502,12 +507,4 @@ npm test
 
 ## Manual Install
 
-Copy these files into:
-
-```text
-<vault>/.obsidian/plugins/link-tag-intelligence/
-```
-
-- `manifest.json`
-- `main.js`
-- `styles.css`
+Copy `manifest.json`, `main.js`, and `styles.css` into `<vault>/.obsidian/plugins/link-tag-intelligence/`.
