@@ -464,6 +464,19 @@ describe("PaddleOcrEngine constructor with tier option", () => {
     const result = svc.checkModelFiles();
     expect(result.missing).toEqual([realPath.join("rec", "inference.yml")]);
   });
+
+  it("checkModelFiles accepts the legacy standalone dictionary without rec inference yml", () => {
+    const existing = new Set<string>([
+      realPath.join(MODEL_DIR, "det", "inference.onnx"),
+      realPath.join(MODEL_DIR, "rec", "inference.onnx"),
+      realPath.join(MODEL_DIR, "dict", "ppocr_keys_v5.txt"),
+    ]);
+    const fs = makeFsMock({ existing, dictText: DICT_LINES.join("\n") });
+    const svc = new PaddleOcrEngine(MODEL_DIR, { tier: "mobile", fs });
+    const result = svc.checkModelFiles();
+    expect(result.present).toBe(true);
+    expect(result.missing).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------

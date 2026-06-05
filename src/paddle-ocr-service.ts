@@ -125,20 +125,27 @@ export class PaddleOcrEngine {
    * published a PP-OCRv5 mobile cls ONNX export as of this writing, so we accept
    * its absence. When missing, runPipeline() simply skips the cls branch.
    *
-   * Tier-aware: all managed bundles embed the character dictionary inside
+   * Tier-aware: managed bundles embed the character dictionary inside
    * the rec model's `inference.yml`. The standalone `dict/ppocr_keys_v5.txt`
-   * remains supported as a back-compat fallback but is not required.
+   * remains supported as a back-compat fallback, so either dictionary source
+   * is sufficient.
    */
   public checkModelFiles(): { present: boolean; missing: string[]; missingOptional: string[]; modelDir: string } {
     const required = [
       this.pathLib.join(PADDLE_MODEL_SUBDIRS.det, PADDLE_MODEL_FILES.det),
       this.pathLib.join(PADDLE_MODEL_SUBDIRS.rec, PADDLE_MODEL_FILES.rec),
     ];
-    required.push(this.pathLib.join(PADDLE_MODEL_SUBDIRS.rec, "inference.yml"));
+    const ymlDictionary = this.pathLib.join(PADDLE_MODEL_SUBDIRS.rec, "inference.yml");
+    const legacyDictionary = this.pathLib.join(PADDLE_MODEL_SUBDIRS.dict, PADDLE_MODEL_FILES.dict);
     const optional = [
       this.pathLib.join(PADDLE_MODEL_SUBDIRS.cls, PADDLE_MODEL_FILES.cls),
     ];
     const missing = required.filter((rel) => !this.fs.existsSync(this.pathLib.join(this.modelDir, rel)));
+    const hasDictionary = this.fs.existsSync(this.pathLib.join(this.modelDir, ymlDictionary))
+      || this.fs.existsSync(this.pathLib.join(this.modelDir, legacyDictionary));
+    if (!hasDictionary) {
+      missing.push(ymlDictionary);
+    }
     const missingOptional = optional.filter((rel) => !this.fs.existsSync(this.pathLib.join(this.modelDir, rel)));
     return { present: missing.length === 0, missing, missingOptional, modelDir: this.modelDir };
   }

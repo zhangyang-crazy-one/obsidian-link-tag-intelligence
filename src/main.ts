@@ -37,6 +37,7 @@ import { ReferencePreviewPopover, type ReferencePreviewData } from "./reference-
 import { getReadingReferenceHoverController } from "./reading-hover-controller";
 import { formatFacetName, parseTagAliasMap, parseTagFacetMap, type TagFacetMap } from "./shared";
 import { appendTagsToFrontmatter } from "./tags";
+import { pickLocalOcrFileWithHtmlInput } from "./local-ocr-picker";
 import {
   DEFAULT_SETTINGS,
   LinkTagIntelligenceSettingTab,
@@ -2107,35 +2108,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     }
 
     if (!openedViaElectron) {
-      const fileInput = document.createElement("input");
-      fileInput.type = "file";
-      fileInput.accept = "image/*,application/pdf";
-      fileInput.style.display = "none";
-      document.body.appendChild(fileInput);
-
-      const fileSelectedPromise = new Promise<{ absolutePath: string; fileName: string; isPdf: boolean } | null>((resolve) => {
-        fileInput.addEventListener("change", () => {
-          const file = fileInput.files?.[0];
-          if (!file) {
-            resolve(null);
-            return;
-          }
-          const pathVal = (file as any).path;
-          if (!pathVal) {
-            resolve(null);
-            return;
-          }
-          resolve({
-            absolutePath: pathVal,
-            fileName: file.name,
-            isPdf: file.name.toLowerCase().endsWith(".pdf")
-          });
-        });
-      });
-
-      fileInput.click();
-      const selection = await fileSelectedPromise;
-      document.body.removeChild(fileInput);
+      const selection = await pickLocalOcrFileWithHtmlInput();
 
       if (!selection) {
         new Notice("无法获取选中文件的绝对物理路径，请重试！");

@@ -8360,6 +8360,66 @@ function getReadingReferenceHoverController(app, containerEl, ctx, getPreviewDat
   return controller;
 }
 
+// src/local-ocr-picker.ts
+function pickLocalOcrFileWithHtmlInput(options = {}) {
+  const doc = options.doc ?? document;
+  const win = options.win ?? window;
+  const cancelDelayMs = options.cancelDelayMs ?? 250;
+  const timeoutMs = options.timeoutMs ?? 6e4;
+  return new Promise((resolve2) => {
+    const fileInput = doc.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = "image/*,application/pdf";
+    fileInput.style.display = "none";
+    doc.body.appendChild(fileInput);
+    let settled = false;
+    let cancelTimer = null;
+    let timeoutTimer = null;
+    const cleanup = () => {
+      if (cancelTimer) clearTimeout(cancelTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      win.removeEventListener("focus", onFocus);
+      if (fileInput.parentNode) {
+        fileInput.parentNode.removeChild(fileInput);
+      }
+    };
+    const settle = (selection) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve2(selection);
+    };
+    const resolveCurrentFile = () => {
+      const file = fileInput.files?.[0];
+      if (!file) {
+        settle(null);
+        return;
+      }
+      const pathVal = file.path;
+      if (!pathVal) {
+        settle(null);
+        return;
+      }
+      settle({
+        absolutePath: pathVal,
+        fileName: file.name,
+        isPdf: file.name.toLowerCase().endsWith(".pdf")
+      });
+    };
+    const onFocus = () => {
+      cancelTimer = setTimeout(() => {
+        if (!fileInput.files || fileInput.files.length === 0) {
+          settle(null);
+        }
+      }, cancelDelayMs);
+    };
+    fileInput.addEventListener("change", resolveCurrentFile);
+    win.addEventListener("focus", onFocus);
+    timeoutTimer = setTimeout(() => settle(null), timeoutMs);
+    fileInput.click();
+  });
+}
+
 // src/view.ts
 var import_obsidian12 = require("obsidian");
 
@@ -10827,20 +10887,26 @@ var _PaddleOcrEngine = class _PaddleOcrEngine {
    * published a PP-OCRv5 mobile cls ONNX export as of this writing, so we accept
    * its absence. When missing, runPipeline() simply skips the cls branch.
    *
-   * Tier-aware: all managed bundles embed the character dictionary inside
+   * Tier-aware: managed bundles embed the character dictionary inside
    * the rec model's `inference.yml`. The standalone `dict/ppocr_keys_v5.txt`
-   * remains supported as a back-compat fallback but is not required.
+   * remains supported as a back-compat fallback, so either dictionary source
+   * is sufficient.
    */
   checkModelFiles() {
     const required = [
       this.pathLib.join(PADDLE_MODEL_SUBDIRS.det, PADDLE_MODEL_FILES.det),
       this.pathLib.join(PADDLE_MODEL_SUBDIRS.rec, PADDLE_MODEL_FILES.rec)
     ];
-    required.push(this.pathLib.join(PADDLE_MODEL_SUBDIRS.rec, "inference.yml"));
+    const ymlDictionary = this.pathLib.join(PADDLE_MODEL_SUBDIRS.rec, "inference.yml");
+    const legacyDictionary = this.pathLib.join(PADDLE_MODEL_SUBDIRS.dict, PADDLE_MODEL_FILES.dict);
     const optional = [
       this.pathLib.join(PADDLE_MODEL_SUBDIRS.cls, PADDLE_MODEL_FILES.cls)
     ];
     const missing = required.filter((rel) => !this.fs.existsSync(this.pathLib.join(this.modelDir, rel)));
+    const hasDictionary = this.fs.existsSync(this.pathLib.join(this.modelDir, ymlDictionary)) || this.fs.existsSync(this.pathLib.join(this.modelDir, legacyDictionary));
+    if (!hasDictionary) {
+      missing.push(ymlDictionary);
+    }
     const missingOptional = optional.filter((rel) => !this.fs.existsSync(this.pathLib.join(this.modelDir, rel)));
     return { present: missing.length === 0, missing, missingOptional, modelDir: this.modelDir };
   }
@@ -13842,33 +13908,7 @@ ${windowLabel}
       console.warn("[lti-electron-dialog-failed], falling back to HTML input", dialogErr);
     }
     if (!openedViaElectron) {
-      const fileInput = document.createElement("input");
-      fileInput.type = "file";
-      fileInput.accept = "image/*,application/pdf";
-      fileInput.style.display = "none";
-      document.body.appendChild(fileInput);
-      const fileSelectedPromise = new Promise((resolve2) => {
-        fileInput.addEventListener("change", () => {
-          const file = fileInput.files?.[0];
-          if (!file) {
-            resolve2(null);
-            return;
-          }
-          const pathVal = file.path;
-          if (!pathVal) {
-            resolve2(null);
-            return;
-          }
-          resolve2({
-            absolutePath: pathVal,
-            fileName: file.name,
-            isPdf: file.name.toLowerCase().endsWith(".pdf")
-          });
-        });
-      });
-      fileInput.click();
-      const selection = await fileSelectedPromise;
-      document.body.removeChild(fileInput);
+      const selection = await pickLocalOcrFileWithHtmlInput();
       if (!selection) {
         new import_obsidian14.Notice("\u65E0\u6CD5\u83B7\u53D6\u9009\u4E2D\u6587\u4EF6\u7684\u7EDD\u5BF9\u7269\u7406\u8DEF\u5F84\uFF0C\u8BF7\u91CD\u8BD5\uFF01");
         return;
