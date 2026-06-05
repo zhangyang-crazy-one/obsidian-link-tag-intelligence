@@ -32,6 +32,17 @@ function copyPackageClosure(packageNames, distNodeModulesDir) {
   }
 }
 
+function copyOcrWorkers(targetDir) {
+  for (const workerName of ["kreuzberg-worker", "paddle-ocr-worker"]) {
+    if (fs.existsSync(path.resolve(workerName + ".js"))) {
+      fs.copyFileSync(
+        path.resolve(workerName + ".js"),
+        path.join(targetDir, workerName + ".cjs")
+      );
+    }
+  }
+}
+
 const context = await esbuild.context({
   // Note: PaddleOCR runs in-process via onnxruntime-node (src/paddle-ocr-service.ts),
   // so there is no separate paddle-ocr-worker entry point. This keeps memory
@@ -86,14 +97,7 @@ if (production) {
   // misinterpreted by Node 24 as ESM. Rename to .cjs to force CommonJS
   // resolution. Both the project root (where Obsidian loads from in dev)
   // and the dist/ directory (production) need the .cjs extension.
-  for (const workerName of ["kreuzberg-worker", "paddle-ocr-worker"]) {
-    if (fs.existsSync(path.resolve(workerName + ".js"))) {
-      fs.copyFileSync(
-        path.resolve(workerName + ".js"),
-        path.join(distDir, workerName + ".cjs")
-      );
-    }
-  }
+  copyOcrWorkers(distDir);
   // Copy native/runtime dependencies that esbuild leaves as runtime
   // require()s. Follow package dependency closures so clean dist installs
   // do not miss small helpers such as sharp's detect-libc / semver.
@@ -173,5 +177,7 @@ if (production) {
 
   console.log("  dist/ ready: main.js + asr-worker.js + model + punc + sherpa-onnx");
 } else {
+  await context.rebuild();
+  copyOcrWorkers(path.resolve("."));
   await context.watch();
 }
