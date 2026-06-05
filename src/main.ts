@@ -2153,17 +2153,29 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     try {
       let insertText = "";
       let insertedDuringProcessing = false;
-      const { exec } = require("child_process");
+      const { execFile } = require("child_process") as {
+        execFile: (
+          file: string,
+          args: string[],
+          options: { maxBuffer?: number } | undefined,
+          callback: (error: Error | null, stdout: string) => void,
+        ) => void;
+      };
+      const runPdfCommand = (
+        command: string,
+        args: string[],
+        options?: { maxBuffer?: number },
+      ): Promise<string> => new Promise((resolve, reject) => {
+        execFile(command, args, options, (error, stdout) => {
+          if (error) reject(error);
+          else resolve(stdout);
+        });
+      });
 
       if (isPdf) {
         let pageCount = 1;
         try {
-          const info = await new Promise<string>((resolve, reject) => {
-            exec(`pdfinfo "${absolutePath}"`, (error: any, stdout: string) => {
-              if (error) reject(error);
-              else resolve(stdout);
-            });
-          });
+          const info = await runPdfCommand("pdfinfo", [absolutePath]);
           const match = info.match(/^Pages:\s+(\d+)/m);
           if (match) {
             pageCount = Math.max(1, Number.parseInt(match[1], 10));
@@ -2176,19 +2188,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
         let text = "";
         try {
-          text = await new Promise<string>((resolve, reject) => {
-            exec(
-              `pdftotext "${absolutePath}" -`,
-              { maxBuffer: 50 * 1024 * 1024 },
-              (error: any, stdout: string) => {
-                if (error) {
-                  reject(new Error(`PDF 文字提取失败: ${error.message}`));
-                } else {
-                  resolve(stdout);
-                }
-              },
-            );
-          });
+          text = await runPdfCommand("pdftotext", [absolutePath, "-"], { maxBuffer: 50 * 1024 * 1024 });
         } catch (textErr) {
           console.warn("Digital PDF text extraction failed:", textErr);
         }
@@ -2246,15 +2246,17 @@ export default class LinkTagIntelligencePlugin extends Plugin {
                 notice.setMessage(`⏳ [Local AI] 正在渲染扫描版 PDF 第 ${page}/${pageCount} 页（并发 ${concurrency}，DPI ${dpi}）...`);
 
                 try {
-                  await new Promise<void>((resolve, reject) => {
-                    exec(`pdftoppm -png -r ${dpi} -f ${page} -l ${page} "${absolutePath}" "${tempPattern}"`, (error: any) => {
-                      if (error) {
-                        reject(new Error(`PDF 第 ${page} 页渲染失败: ${error.message}`));
-                      } else {
-                        resolve();
-                      }
-                    });
-                  });
+                  await runPdfCommand("pdftoppm", [
+                    "-png",
+                    "-r",
+                    String(dpi),
+                    "-f",
+                    String(page),
+                    "-l",
+                    String(page),
+                    absolutePath,
+                    tempPattern,
+                  ]);
                 } catch (renderErr: any) {
                   const error = renderErr?.message ?? String(renderErr);
                   writePageResult(page, `> [!warning] PDF 页面渲染失败：${error}`);
