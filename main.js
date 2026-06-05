@@ -10758,7 +10758,7 @@ var _KreuzbergOcrService = class _KreuzbergOcrService {
    */
   async runOcr(imageSource, onStatus) {
     if (this.destroyed) throw new Error("KreuzbergOcrService \u5DF2\u88AB\u9500\u6BC1");
-    this.resetIdleTimer();
+    this.clearIdleTimer();
     if (onStatus) onStatus("\u6B63\u5728\u901A\u8FC7 Kreuzberg (Rust) \u63D0\u53D6\u6587\u5B57...");
     try {
       const worker = await this.ensureWorker();
@@ -10784,19 +10784,26 @@ var _KreuzbergOcrService = class _KreuzbergOcrService {
           }) + "\n"
         );
       });
-      this.resetIdleTimer();
       return text;
     } catch (e) {
       console.error("[lti-kreuzberg-ocr] extract failed:", e);
       throw new Error(`Kreuzberg OCR \u63A8\u7406\u5F02\u5E38: ${e?.message ?? e}`);
+    } finally {
+      this.resetIdleTimer();
     }
   }
   resetIdleTimer() {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.clearIdleTimer();
     this.idleTimer = setTimeout(() => {
       this.idleTimer = null;
       this.stopWorker();
     }, _KreuzbergOcrService.IDLE_TIMEOUT_MS);
+  }
+  clearIdleTimer() {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
   }
   stopWorker() {
     if (!this.child) {
@@ -10838,10 +10845,7 @@ var _KreuzbergOcrService = class _KreuzbergOcrService {
    */
   destroy() {
     this.destroyed = true;
-    if (this.idleTimer) {
-      clearTimeout(this.idleTimer);
-      this.idleTimer = null;
-    }
+    this.clearIdleTimer();
     this.stopWorker();
     for (const job of this.pending.values()) {
       job.reject(new Error("KreuzbergOcrService \u5DF2\u88AB\u9500\u6BC1"));

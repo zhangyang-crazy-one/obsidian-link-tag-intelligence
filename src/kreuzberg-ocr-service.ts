@@ -187,7 +187,7 @@ export class KreuzbergOcrService {
     onStatus?: (msg: string) => void,
   ): Promise<string> {
     if (this.destroyed) throw new Error("KreuzbergOcrService 已被销毁");
-    this.resetIdleTimer();
+    this.clearIdleTimer();
     if (onStatus) onStatus("正在通过 Kreuzberg (Rust) 提取文字...");
 
     try {
@@ -220,20 +220,28 @@ export class KreuzbergOcrService {
           }) + "\n",
         );
       });
-      this.resetIdleTimer();
       return text;
     } catch (e: any) {
       console.error("[lti-kreuzberg-ocr] extract failed:", e);
       throw new Error(`Kreuzberg OCR 推理异常: ${e?.message ?? e}`);
+    } finally {
+      this.resetIdleTimer();
     }
   }
 
   private resetIdleTimer(): void {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.clearIdleTimer();
     this.idleTimer = setTimeout(() => {
       this.idleTimer = null;
       this.stopWorker();
     }, KreuzbergOcrService.IDLE_TIMEOUT_MS);
+  }
+
+  private clearIdleTimer(): void {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
   }
 
   private stopWorker(): void {
@@ -268,10 +276,7 @@ export class KreuzbergOcrService {
    */
   public destroy(): void {
     this.destroyed = true;
-    if (this.idleTimer) {
-      clearTimeout(this.idleTimer);
-      this.idleTimer = null;
-    }
+    this.clearIdleTimer();
     this.stopWorker();
     // Reject any pending jobs so callers don't hang on plugin unload.
     for (const job of this.pending.values()) {
