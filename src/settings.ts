@@ -2151,7 +2151,7 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
       this.plugin.settings.paddleOcrTier,
       async (value) => {
         this.plugin.settings.paddleOcrTier = value as PaddleOcrModelTier;
-        await this.plugin.saveSettings();
+        await this.saveSettingsAndRecreateOcrService();
       }
     );
 
@@ -2185,7 +2185,7 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     paddleInput.placeholder = "models/ocr/pp-ocrv5/mobile";
     paddleInput.addEventListener("change", () => {
       this.plugin.settings.paddleOcrModelPath = paddleInput.value.trim();
-      void this.plugin.saveSettings();
+      void this.saveSettingsAndRecreateOcrService();
     });
 
     // Tesseract tessdata path (fallback OCR)
@@ -2201,7 +2201,7 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     tessInput.placeholder = "models/tessdata";
     tessInput.addEventListener("change", () => {
       this.plugin.settings.tesseractDataPath = tessInput.value.trim();
-      void this.plugin.saveSettings();
+      void this.saveSettingsAndRecreateOcrService();
     });
 
     // ── Advanced PaddleOCR detection parameters (collapsible) ─────────
@@ -2265,7 +2265,11 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
           const clamped = Math.max(min, Math.min(max, raw));
           (this.plugin.settings as unknown as Record<string, number>)[key] = clamped;
           if (clamped !== raw) input.value = String(clamped);
-          void this.plugin.saveSettings();
+          if (key === "paddleOcrPdfConcurrency" || key === "paddleOcrPdfDpi") {
+            void this.plugin.saveSettings();
+          } else {
+            void this.saveSettingsAndRecreateOcrService();
+          }
         }
       });
     };
@@ -2295,7 +2299,7 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     }
     scoreSelect.addEventListener("change", () => {
       this.plugin.settings.paddleDetScoreMode = scoreSelect.value as "fast" | "slow";
-      void this.plugin.saveSettings();
+      void this.saveSettingsAndRecreateOcrService();
     });
 
     // useDilation: toggle
@@ -2306,7 +2310,7 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
       this.plugin.settings.paddleDetUseDilation,
       async (value) => {
         this.plugin.settings.paddleDetUseDilation = value;
-        await this.plugin.saveSettings();
+        await this.saveSettingsAndRecreateOcrService();
       }
     );
 
@@ -2332,11 +2336,16 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
       this.plugin.settings.paddleOcrCpuThreads = 0;
       this.plugin.settings.paddleOcrPdfConcurrency = 2;
       this.plugin.settings.paddleOcrPdfDpi = 240;
-      void this.plugin.saveSettings().then(() => {
+      void this.saveSettingsAndRecreateOcrService().then(() => {
         // Re-render the entire settings tab to refresh the input values
         this.display();
       });
     });
+  }
+
+  private async saveSettingsAndRecreateOcrService(): Promise<void> {
+    await this.plugin.saveSettings();
+    this.plugin.recreateOcrService();
   }
 
   private renderAiSection(containerEl: HTMLElement): void {

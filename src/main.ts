@@ -446,6 +446,11 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     this.referencePreview.destroy();
   }
 
+  recreateOcrService(): void {
+    this.ocrService.destroy();
+    this.ocrService = new LocalOfflineOcrService(this.app, this.settings);
+  }
+
   async loadSettings(): Promise<void> {
     this.settings = normalizeLoadedSettings(await this.loadData(), this.app.vault.configDir);
   }
