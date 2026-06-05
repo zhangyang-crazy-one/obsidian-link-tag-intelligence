@@ -5,6 +5,8 @@ import { debugLog } from "./debug-log";
 
 export type AIProgressCallback = (statusKey: string, detail?: string) => void;
 
+type ChatFlavor = "openai" | "anthropic";
+
 /**
  * Accumulates Server-Sent Events from a streaming chat completion and
  * reassembles them into the SAME JSON shape the non-streaming endpoint
@@ -25,7 +27,7 @@ export class StreamAccumulator {
   private usage: any = null;
   private raw = "";
 
-  constructor(private readonly flavor: "openai" | "anthropic") {}
+  constructor(private readonly flavor: ChatFlavor) {}
 
   /** Feed a single line (without trailing newline) from the SSE stream. */
   pushLine(line: string): void {
@@ -99,6 +101,50 @@ export class AIService {
   constructor(app: App, settings: LinkTagIntelligenceSettings) {
     this.app = app;
     this.settings = settings;
+  }
+
+  private extractChatText(json: any, flavor: ChatFlavor): string {
+    if (flavor === "openai") {
+      return String(json?.choices?.[0]?.message?.content ?? "").trim();
+    }
+
+    if (Array.isArray(json?.content)) {
+      let content = json.content
+        .filter((item: any) => item && item.type === "text" && typeof item.text === "string")
+        .map((item: any) => item.text)
+        .join("")
+        .trim();
+
+      if (!content) {
+        content = json.content
+          .filter((item: any) => item && typeof item.text === "string" && item.text.trim())
+          .map((item: any) => item.text)
+          .join("")
+          .trim();
+      }
+      return content;
+    }
+
+    if (typeof json?.content === "string") {
+      return json.content.trim();
+    }
+
+    return "";
+  }
+
+  private isTransientEmptyChatResponse(json: any, flavor: ChatFlavor): boolean {
+    if (this.extractChatText(json, flavor)) return false;
+    const usage = json?.usage ?? {};
+    const outputTokens = Number(
+      usage.output_tokens
+      ?? usage.completion_tokens
+      ?? usage.outputTokens
+      ?? 0
+    );
+    const stopReason = flavor === "openai"
+      ? json?.choices?.[0]?.finish_reason
+      : json?.stop_reason;
+    return !stopReason || outputTokens === 0;
   }
 
   /**
@@ -321,6 +367,7 @@ export class AIService {
     maxRetries?: number,
     initialDelayMs?: number,
     execute?: (options: any) => Promise<{ status: number; text: string; json: any }>,
+    validate?: (response: { status: number; text: string; json: any }) => void,
   ): Promise<any> {
     // Resolve retry config from settings (user-tunable) so they can
     // bump retries / base delay for unstable providers like M3
@@ -338,6 +385,7 @@ export class AIService {
         // Return immediately if it's a successful response (200),
         // or a standard client error (4xx) which we should not retry.
         if (response.status === 200 || (response.status >= 400 && response.status < 500)) {
+          if (response.status === 200) validate?.(response);
           return response;
         }
 
@@ -348,7 +396,7 @@ export class AIService {
         // Classify the error. EMPTY_RESPONSE / aborted / network
         // errors are transient → retry. Hard 4xx (other than the
         // ones requestUrl re-throws) are persistent → don't retry.
-        const isTransient = /EMPTY_RESPONSE|CONNECTION_CLOSED|CONNECTION_RESET|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ERR_|aborted|network|fetch|timeout/i.test(errMsg)
+        const isTransient = /EMPTY_RESPONSE|CONNECTION_CLOSED|CONNECTION_RESET|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ERR_|aborted|network|fetch|timeout|empty chat response|接口响应内容为空/i.test(errMsg)
           || errMsg.includes("status 5")
           || errMsg.includes("status 429");
         if (!isTransient && attempt < maxRetries) {
@@ -617,7 +665,12 @@ export class AIService {
           stream: true
         }),
         throw: false
-      }, undefined, undefined, (opts) => this.streamChatRequest(opts, "openai"));
+      }, undefined, undefined, (opts) => this.streamChatRequest(opts, "openai"), (res) => {
+        const json = typeof res.json === "object" && res.json !== null ? res.json : JSON.parse(res.text);
+        if (this.isTransientEmptyChatResponse(json, "openai")) {
+          throw new Error(`empty chat response: ${JSON.stringify(json)}`);
+        }
+      });
     } catch (err: any) {
       debugLog(this.app, "ai.openai.request-failed", {
         provider: this.settings.aiProvider,
@@ -645,7 +698,7 @@ export class AIService {
     if (json.error) {
       throw new Error(json.error.message || JSON.stringify(json.error));
     }
-    const content = json.choices?.[0]?.message?.content || "";
+    const content = this.extractChatText(json, "openai");
     if (!content.trim()) {
       debugLog(this.app, "ai.openai.empty-content", {
         provider: this.settings.aiProvider,
@@ -707,7 +760,12 @@ export class AIService {
           stream: true
         }),
         throw: false
-      }, undefined, undefined, (opts) => this.streamChatRequest(opts, "anthropic"));
+      }, undefined, undefined, (opts) => this.streamChatRequest(opts, "anthropic"), (res) => {
+        const json = typeof res.json === "object" && res.json !== null ? res.json : JSON.parse(res.text);
+        if (this.isTransientEmptyChatResponse(json, "anthropic")) {
+          throw new Error(`empty chat response: ${JSON.stringify(json)}`);
+        }
+      });
     } catch (err: any) {
       debugLog(this.app, "ai.anthropic.request-failed", {
         provider: this.settings.aiProvider,
@@ -740,32 +798,11 @@ export class AIService {
       throw new Error(json.error.message || JSON.stringify(json.error));
     }
     
-    // Parse content array robustly, extracting and joining all parts with multi-tier fallbacks
-    let content = "";
-    if (Array.isArray(json.content)) {
-      // Tier 1: Extract all structured type === "text" parts
-      content = json.content
-        .filter((item: any) => item && item.type === "text" && typeof item.text === "string")
-        .map((item: any) => item.text)
-        .join("")
-        .trim();
-
-      // Tier 2: Extract any field named "text" if type-filtering yielded nothing
-      if (!content) {
-        content = json.content
-          .filter((item: any) => item && typeof item.text === "string" && item.text.trim())
-          .map((item: any) => item.text)
-          .join("")
-          .trim();
-      }
-
-      // Deliberately do not fall back to `thinking` blocks. MiniMax's
-      // Anthropic-compatible endpoint may return structured reasoning
-      // blocks before the final text; those are not user-facing content
-      // and must not be inserted into notes.
-    } else if (typeof json.content === "string") {
-      content = json.content.trim();
-    }
+    // Deliberately do not fall back to `thinking` blocks. MiniMax's
+    // Anthropic-compatible endpoint may return structured reasoning
+    // blocks before the final text; those are not user-facing content
+    // and must not be inserted into notes.
+    const content = this.extractChatText(json, "anthropic");
 
     if (!content.trim()) {
       debugLog(this.app, "ai.anthropic.empty-content", {
