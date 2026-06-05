@@ -37,7 +37,6 @@ models/sensevoice/
 *.traineddata
 
 # Build artifacts produced by esbuild at the repo root
-main.js
 asr-worker.js
 vision-worker.js
 kreuzberg-worker.js
