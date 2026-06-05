@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import * as cp from "child_process";
@@ -52,5 +53,13 @@ describe("KreuzbergOcrService worker startup", () => {
       ["/workers/My Vault/kreuzberg-worker.cjs"],
       expect.objectContaining({ shell: false }),
     );
+  });
+
+  it("releases the worker when the idle timer fires", () => {
+    const source = readFileSync("src/kreuzberg-ocr-service.ts", "utf8");
+    expect(source).toContain("this.stopWorker();");
+    expect(source).toContain("private stopWorker(): void");
+    expect(source).toContain("this.child = null;");
+    expect(source).toContain('process.kill(-(child.pid ?? 0), "SIGTERM")');
   });
 });

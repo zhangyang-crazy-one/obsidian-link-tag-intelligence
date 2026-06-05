@@ -6916,11 +6916,10 @@ var AIService = class {
   isTransientEmptyChatResponse(json, flavor) {
     if (this.extractChatText(json, flavor)) return false;
     const usage = json?.usage ?? {};
-    const outputTokens = Number(
-      usage.output_tokens ?? usage.completion_tokens ?? usage.outputTokens ?? 0
-    );
+    const outputTokenValue = usage.output_tokens ?? usage.completion_tokens ?? usage.outputTokens;
+    const outputTokens = Number(outputTokenValue ?? 0);
     const stopReason = flavor === "openai" ? json?.choices?.[0]?.finish_reason : json?.stop_reason;
-    return !stopReason || outputTokens === 0;
+    return !stopReason || outputTokenValue === void 0 || outputTokens === 0;
   }
   /**
    * Decode any browser-supported audio file inside the vault into raw mono Float32Array PCM samples at 16kHz.
@@ -10669,7 +10668,41 @@ var _KreuzbergOcrService = class _KreuzbergOcrService {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => {
       this.idleTimer = null;
+      this.stopWorker();
     }, _KreuzbergOcrService.IDLE_TIMEOUT_MS);
+  }
+  stopWorker() {
+    if (!this.child) {
+      this.readyPromise = null;
+      this.readyResolve = null;
+      this.readyReject = null;
+      return;
+    }
+    const child = this.child;
+    this.child = null;
+    this.readyPromise = null;
+    this.readyResolve = null;
+    this.readyReject = null;
+    try {
+      child.stdin?.end();
+    } catch {
+    }
+    setTimeout(() => {
+      if (!child.killed) {
+        try {
+          process.kill(-(child.pid ?? 0), "SIGTERM");
+        } catch {
+        }
+        setTimeout(() => {
+          if (!child.killed) {
+            try {
+              process.kill(-(child.pid ?? 0), "SIGKILL");
+            } catch {
+            }
+          }
+        }, 500).unref?.();
+      }
+    }, 100).unref?.();
   }
   /**
    * Destroy lifecycle for plugin unload. Terminates the child with
@@ -10682,37 +10715,12 @@ var _KreuzbergOcrService = class _KreuzbergOcrService {
       clearTimeout(this.idleTimer);
       this.idleTimer = null;
     }
-    if (this.child) {
-      const child = this.child;
-      try {
-        child.stdin?.end();
-      } catch {
-      }
-      setTimeout(() => {
-        if (!child.killed) {
-          try {
-            process.kill(-(child.pid ?? 0), "SIGTERM");
-          } catch {
-          }
-          setTimeout(() => {
-            if (!child.killed) {
-              try {
-                process.kill(-(child.pid ?? 0), "SIGKILL");
-              } catch {
-              }
-            }
-          }, 500).unref?.();
-        }
-      }, 100).unref?.();
-    }
+    this.stopWorker();
     for (const job of this.pending.values()) {
       job.reject(new Error("KreuzbergOcrService \u5DF2\u88AB\u9500\u6BC1"));
     }
     this.pending.clear();
     this.readyReject?.(new Error("KreuzbergOcrService \u5DF2\u88AB\u9500\u6BC1"));
-    this.readyPromise = null;
-    this.readyResolve = null;
-    this.readyReject = null;
   }
 };
 _KreuzbergOcrService.IDLE_TIMEOUT_MS = 12e4;
@@ -13841,8 +13849,12 @@ ${windowLabel}
           notice.setMessage("\u23F3 [Local AI] \u68C0\u6D4B\u5230\u626B\u63CF\u7248 PDF\uFF0C\u6B63\u5728\u51C6\u5907\u9010\u9875\u79BB\u7EBF OCR...");
           console.warn("[lti-pdf-text-quality] pdftotext output rejected; falling back to page OCR", textQuality);
           const paddleOk = await this.ensurePaddleModel();
-          if (!paddleOk) {
+          if (!paddleOk && !this.settings.ocrSmartRouting) {
             throw new Error("PaddleOCR \u6A21\u578B\u672A\u5C31\u7EEA\uFF0C\u65E0\u6CD5\u7EE7\u7EED\u6267\u884C\u626B\u63CF\u7248 PDF OCR\u3002");
+          }
+          if (!paddleOk) {
+            console.warn("[lti-local-ocr] PaddleOCR model is unavailable; continuing scanned PDF OCR with Kreuzberg fallback.");
+            notice.setMessage("\u23F3 [Local AI] PaddleOCR \u6A21\u578B\u672A\u5C31\u7EEA\uFF0C\u7EE7\u7EED\u4F7F\u7528 Kreuzberg/Tesseract \u626B\u63CF\u7248 PDF OCR...");
           }
           const fs = require("fs");
           const os = require("os");
@@ -13979,8 +13991,12 @@ ${failedPages.map((p) => `- Page ${p.page}: ${p.error}`).join("\n")}` : ""
         }
       } else {
         const paddleOk = await this.ensurePaddleModel();
-        if (!paddleOk) {
+        if (!paddleOk && !this.settings.ocrSmartRouting) {
           throw new Error("PaddleOCR \u6A21\u578B\u672A\u5C31\u7EEA\uFF0C\u65E0\u6CD5\u7EE7\u7EED\u6267\u884C\u56FE\u7247 OCR\u3002");
+        }
+        if (!paddleOk) {
+          console.warn("[lti-local-ocr] PaddleOCR model is unavailable; continuing image OCR with Kreuzberg fallback.");
+          notice.setMessage("\u23F3 [Local AI] PaddleOCR \u6A21\u578B\u672A\u5C31\u7EEA\uFF0C\u7EE7\u7EED\u4F7F\u7528 Kreuzberg/Tesseract \u56FE\u7247 OCR...");
         }
         const onStatusUpdate = (msg) => {
           notice.setMessage(`[Local AI] ${msg}`);

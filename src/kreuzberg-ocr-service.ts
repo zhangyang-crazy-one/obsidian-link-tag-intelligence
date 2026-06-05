@@ -232,7 +232,33 @@ export class KreuzbergOcrService {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => {
       this.idleTimer = null;
+      this.stopWorker();
     }, KreuzbergOcrService.IDLE_TIMEOUT_MS);
+  }
+
+  private stopWorker(): void {
+    if (!this.child) {
+      this.readyPromise = null;
+      this.readyResolve = null;
+      this.readyReject = null;
+      return;
+    }
+    const child = this.child;
+    this.child = null;
+    this.readyPromise = null;
+    this.readyResolve = null;
+    this.readyReject = null;
+    try { child.stdin?.end(); } catch { /* ignore */ }
+    setTimeout(() => {
+      if (!child.killed) {
+        try { process.kill(-(child.pid ?? 0), "SIGTERM"); } catch { /* ignore */ }
+        setTimeout(() => {
+          if (!child.killed) {
+            try { process.kill(-(child.pid ?? 0), "SIGKILL"); } catch { /* ignore */ }
+          }
+        }, 500).unref?.();
+      }
+    }, 100).unref?.();
   }
 
   /**
@@ -246,28 +272,12 @@ export class KreuzbergOcrService {
       clearTimeout(this.idleTimer);
       this.idleTimer = null;
     }
-    if (this.child) {
-      const child = this.child;
-      try { child.stdin?.end(); } catch { /* ignore */ }
-      setTimeout(() => {
-        if (!child.killed) {
-          try { process.kill(-(child.pid ?? 0), "SIGTERM"); } catch { /* ignore */ }
-          setTimeout(() => {
-            if (!child.killed) {
-              try { process.kill(-(child.pid ?? 0), "SIGKILL"); } catch { /* ignore */ }
-            }
-          }, 500).unref?.();
-        }
-      }, 100).unref?.();
-    }
+    this.stopWorker();
     // Reject any pending jobs so callers don't hang on plugin unload.
     for (const job of this.pending.values()) {
       job.reject(new Error("KreuzbergOcrService 已被销毁"));
     }
     this.pending.clear();
     this.readyReject?.(new Error("KreuzbergOcrService 已被销毁"));
-    this.readyPromise = null;
-    this.readyResolve = null;
-    this.readyReject = null;
   }
 }

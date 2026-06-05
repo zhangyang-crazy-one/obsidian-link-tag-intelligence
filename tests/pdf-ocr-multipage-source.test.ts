@@ -22,6 +22,9 @@ describe("PDF OCR source guard", () => {
     expect(source).toContain('runPdfCommand("pdftoppm", [');
     expect(source).toContain("PaddleOCR 模型未就绪，无法继续执行扫描版 PDF OCR。");
     expect(source).toContain("PaddleOCR 模型未就绪，无法继续执行图片 OCR。");
+    expect(source).toContain("!paddleOk && !this.settings.ocrSmartRouting");
+    expect(source).toContain("continuing scanned PDF OCR with Kreuzberg fallback");
+    expect(source).toContain("continuing image OCR with Kreuzberg fallback");
     expect(source.indexOf('runPdfCommand("pdftotext", [absolutePath, "-"]')).toBeLessThan(
       source.indexOf("PaddleOCR 模型未就绪，无法继续执行扫描版 PDF OCR。")
     );

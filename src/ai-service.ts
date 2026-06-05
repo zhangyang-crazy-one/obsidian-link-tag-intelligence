@@ -135,16 +135,14 @@ export class AIService {
   private isTransientEmptyChatResponse(json: any, flavor: ChatFlavor): boolean {
     if (this.extractChatText(json, flavor)) return false;
     const usage = json?.usage ?? {};
-    const outputTokens = Number(
-      usage.output_tokens
+    const outputTokenValue = usage.output_tokens
       ?? usage.completion_tokens
-      ?? usage.outputTokens
-      ?? 0
-    );
+      ?? usage.outputTokens;
+    const outputTokens = Number(outputTokenValue ?? 0);
     const stopReason = flavor === "openai"
       ? json?.choices?.[0]?.finish_reason
       : json?.stop_reason;
-    return !stopReason || outputTokens === 0;
+    return !stopReason || outputTokenValue === undefined || outputTokens === 0;
   }
 
   /**

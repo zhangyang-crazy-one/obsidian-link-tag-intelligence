@@ -2202,8 +2202,12 @@ export default class LinkTagIntelligencePlugin extends Plugin {
           notice.setMessage("⏳ [Local AI] 检测到扫描版 PDF，正在准备逐页离线 OCR...");
           console.warn("[lti-pdf-text-quality] pdftotext output rejected; falling back to page OCR", textQuality);
           const paddleOk = await this.ensurePaddleModel();
-          if (!paddleOk) {
+          if (!paddleOk && !this.settings.ocrSmartRouting) {
             throw new Error("PaddleOCR 模型未就绪，无法继续执行扫描版 PDF OCR。");
+          }
+          if (!paddleOk) {
+            console.warn("[lti-local-ocr] PaddleOCR model is unavailable; continuing scanned PDF OCR with Kreuzberg fallback.");
+            notice.setMessage("⏳ [Local AI] PaddleOCR 模型未就绪，继续使用 Kreuzberg/Tesseract 扫描版 PDF OCR...");
           }
           const fs = require("fs");
           const os = require("os") as typeof import("os");
@@ -2353,8 +2357,12 @@ export default class LinkTagIntelligencePlugin extends Plugin {
         }
       } else {
         const paddleOk = await this.ensurePaddleModel();
-        if (!paddleOk) {
+        if (!paddleOk && !this.settings.ocrSmartRouting) {
           throw new Error("PaddleOCR 模型未就绪，无法继续执行图片 OCR。");
+        }
+        if (!paddleOk) {
+          console.warn("[lti-local-ocr] PaddleOCR model is unavailable; continuing image OCR with Kreuzberg fallback.");
+          notice.setMessage("⏳ [Local AI] PaddleOCR 模型未就绪，继续使用 Kreuzberg/Tesseract 图片 OCR...");
         }
         const onStatusUpdate = (msg: string) => {
           notice.setMessage(`[Local AI] ${msg}`);

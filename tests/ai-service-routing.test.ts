@@ -216,6 +216,39 @@ describe("AIService endpoint routing", () => {
     expect(calls).toHaveLength(2);
   });
 
+  it("retries empty Anthropic text responses that only report cache tokens", async () => {
+    const calls: any[] = [];
+    installStreamMock(calls, async () => {
+      if (calls.length === 1) {
+        return {
+          status: 200,
+          text: "",
+          json: {
+            content: [{ type: "text", text: "" }],
+            stop_reason: null,
+            usage: {
+              input_tokens: 0,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 15061,
+            },
+          },
+        };
+      }
+      return {
+        status: 200,
+        text: "retry ok",
+        json: { content: [{ type: "text", text: "retry ok" }], stop_reason: "end_turn" },
+      };
+    });
+
+    const service = new AIService(makeApp() as any, makeSettings({
+      aiRequestRetries: 2,
+      aiRequestRetryBaseMs: 1,
+    }) as any);
+    await expect(service.runRefinement("hello")).resolves.toBe("retry ok");
+    expect(calls).toHaveLength(2);
+  });
+
   it("uses the OpenAI chat endpoint and stream flag for openai wire format", async () => {
     const calls: any[] = [];
     installStreamMock(calls);
