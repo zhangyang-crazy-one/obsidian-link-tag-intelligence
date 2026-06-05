@@ -1,4 +1,4 @@
-import { App, FileSystemAdapter, FileView, MarkdownView, Notice, Plugin, resolveSubpath, TFile, type HoverParent, WorkspaceLeaf } from "obsidian";
+import { App, FileSystemAdapter, FileView, MarkdownView, Notice, Plugin, resolveSubpath, TFile, type Editor, type HoverParent, WorkspaceLeaf } from "obsidian";
 
 // Internal Obsidian app interface for accessing plugins (not part of public API)
 type InternalApp = App & { plugins?: { plugins?: Record<string, { ea?: unknown }> } };
@@ -9,6 +9,7 @@ import { runIngestionCommand, type ResearchIngestionRequest } from "./ingestion"
 import { LINK_TAG_INTELLIGENCE_ICON_ID } from "./icons";
 import { relationKeyLabel, tr, resolveLanguage, type UILanguage } from "./i18n";
 import { LinkInsertModal, ReferenceInsertModal, RelationKeyModal, ResearchIngestionModal, SemanticSearchModal, TagManagerModal, TagSuggestionModal } from "./modals";
+import { assessPdfTextExtraction } from "./ocr-quality";
 import {
   appendTextToMarkdownSection,
   isExcalidrawFile,
@@ -17,6 +18,7 @@ import {
   type ResearchSourceMetadata,
   resolveNoteTarget
 } from "./notes";
+import { cleanBook, parseManifest, pickManifestFile } from "./textbook-cleaner";
 import {
   applyCompanionPresetToVault,
   buildResearchWorkbenchProfile,
@@ -35,6 +37,7 @@ import { ReferencePreviewPopover, type ReferencePreviewData } from "./reference-
 import { getReadingReferenceHoverController } from "./reading-hover-controller";
 import { formatFacetName, parseTagAliasMap, parseTagFacetMap, type TagFacetMap } from "./shared";
 import { appendTagsToFrontmatter } from "./tags";
+import { pickLocalOcrFileWithHtmlInput } from "./local-ocr-picker";
 import {
   DEFAULT_SETTINGS,
   LinkTagIntelligenceSettingTab,
@@ -45,8 +48,45 @@ import { LINK_TAG_INTELLIGENCE_VIEW, LinkTagIntelligenceView } from "./view";
 import type { ViewRefreshRequest } from "./view-refresh";
 import { SpeechRecorder, type RecorderSnapshot } from "./speech-recorder";
 import { downloadModelFiles, getModelFileList, getModelRepo, isArchiveDownload } from "./speech-model";
+import {
+  downloadPaddleTier,
+  getPaddleTierTotalBytes,
+  isPaddleTierInstalled,
+} from "./paddle-model";
+import { DEFAULT_PADDLE_TIER, getPaddleTierModelDir, type PaddleOcrModelTier } from "./paddle-ocr-types";
+import { LocalOfflineOcrService } from "./ocr-service";
+import { withHeavyInit } from "./heavy-init-mutex";
 
 const SENTENCE_END_PUNCTUATION = /[。！？\.!\?]$/;
+
+async function runWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, workerIndex: number) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, async (_, workerIndex) => {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await worker(items[index], workerIndex);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+function replaceFirstEditorMarker(editor: Editor, marker: string, replacement: string): boolean {
+  const value = editor.getValue();
+  const index = value.indexOf(marker);
+  if (index < 0) return false;
+  editor.replaceRange(replacement, editor.offsetToPos(index), editor.offsetToPos(index + marker.length));
+  return true;
+}
+
+function buildPdfOcrPageMarker(runId: string, page: number): string {
+  return `<!-- lti-pdf-ocr:${runId}:page:${page} -->`;
+}
 
 export class SentenceManager {
   private partialText = "";
@@ -92,6 +132,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   private readonly referencePreview = new ReferencePreviewPopover();
   private referencePreviewToken = 0;
   speechRecorder: SpeechRecorder = new SpeechRecorder();
+  ocrService: LocalOfflineOcrService;
   private _sentenceManager: SentenceManager | null = null;
   private speechInsertBuffer = "";
   private speechInsertTimer: ReturnType<typeof setTimeout> | null = null;
@@ -100,6 +141,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    this.ocrService = new LocalOfflineOcrService(this.app, this.settings);
     this.speechRecorder.setApp(this.app);
     this.speechRecorder.setSettingsLanguage(this.settings.speechLanguage);
     this.speechRecorder.setSettingsVadSensitivity(this.settings.speechVadSensitivity);
@@ -246,6 +288,31 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       callback: () => this.openSemanticSearch()
     });
 
+    // Textbook OCR cleaner — splits a 700-page book into per-chapter
+    // AI calls. First invocation prompts for the manifest JSON via
+    // a file input; subsequent invocations reuse the path stored
+    // in settings. See src/textbook-cleaner.ts for the manifest
+    // schema. The cleaner runs sequentially (MiniMax-M3 rate-limits
+    // per-account) and writes each cleaned chapter to the path
+    // declared in the manifest's `output_dir`.
+    this.addCommand({
+      id: "clean-textbook",
+      name: "清理教材 OCR（按章拆分 AI 整理）",
+      callback: () => {
+        void this.runTextbookCleaner("manifest");
+      },
+    });
+
+    this.addCommand({
+      id: "reset-textbook-manifest",
+      name: "重置教材清理 manifest 路径",
+      callback: async () => {
+        this.settings.textbookManifestPath = "";
+        await this.saveSettings();
+        new Notice("已重置 manifest 路径。下次 `clean-textbook` 将重新弹出文件选择器");
+      },
+    });
+
     this.addCommand({
       id: "toggle-speech-recording",
       name: this.t("speechToggleCommand"),
@@ -376,7 +443,13 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     this.flushSpeechInsertBuffer();
     this._sentenceManager = null;
     this.speechRecorder.destroy();
+    this.ocrService.destroy();
     this.referencePreview.destroy();
+  }
+
+  recreateOcrService(): void {
+    this.ocrService.destroy();
+    this.ocrService = new LocalOfflineOcrService(this.app, this.settings);
   }
 
   async loadSettings(): Promise<void> {
@@ -1105,6 +1178,107 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     new SemanticSearchModal(this).open();
   }
 
+  async runTextbookCleaner(source: "current-note" | "manifest" = "current-note"): Promise<void> {
+    try {
+      let manifest;
+      if (source === "current-note") {
+        const currentFile = this.getContextMarkdownFile();
+        if (!(currentFile instanceof TFile)) {
+          new Notice("请先打开包含教材 OCR 原文的 Markdown 文件。", 8000);
+          return;
+        }
+        const parentDir = currentFile.path.includes("/")
+          ? currentFile.path.slice(0, currentFile.path.lastIndexOf("/"))
+          : "";
+        const outputDir = parentDir ? `${parentDir}/整理` : "整理";
+        manifest = {
+          book_title: currentFile.basename,
+          ocr_source: "hybrid" as const,
+          output_dir: outputDir,
+          chapters: [
+            {
+              id: "current-note",
+              number: 1,
+              title: currentFile.basename,
+              source_note: currentFile.path,
+            },
+          ],
+        };
+      } else {
+        let manifestPath = this.settings.textbookManifestPath;
+        if (!manifestPath) {
+          const picked = await pickManifestFile(this.app);
+          if (!picked) {
+            new Notice("未选择 manifest，已取消");
+            return;
+          }
+          manifestPath = picked;
+          this.settings.textbookManifestPath = manifestPath;
+          await this.saveSettings();
+        }
+        manifest = await parseManifest(this.app, manifestPath);
+      }
+
+      const progressNotice = new Notice(
+        `📚 教材整理准备中：《${manifest.book_title}》共 ${manifest.chapters.length} 章\n` +
+        `AI 配置：${this.settings.aiProvider} / ${this.settings.aiModel}`,
+        0
+      );
+
+      const result = await cleanBook(this.app, this.settings, manifest, {
+        onProgress: (info) => {
+          const chapterLabel = `第 ${info.chapter.number} 章 ${info.chapter.title} (${info.index + 1}/${info.total})`;
+          const windowLabel = info.windowTotal && info.windowTotal > 1 && info.windowIndex !== undefined
+            ? `\n窗口：${info.windowIndex + 1}/${info.windowTotal}`
+            : "";
+          if (info.phase === "started") {
+            progressNotice.setMessage(
+              `⏳ 教材整理正在调用 AI...\n` +
+              `书籍：${manifest.book_title}\n` +
+              `当前：${chapterLabel}\n` +
+              `${windowLabel}\n` +
+              `AI：${this.settings.aiProvider} / ${this.settings.aiModel}\n` +
+              `输出目录：${manifest.output_dir}`
+            );
+            return;
+          }
+          if (info.phase === "succeeded" && info.result?.ok) {
+            progressNotice.setMessage(
+              `✅ 已完成 ${info.index + 1}/${info.total}：${chapterLabel}\n` +
+              `${windowLabel}\n` +
+              `输出：${info.result.outputPath}\n` +
+              `继续处理剩余章节...`
+            );
+            return;
+          }
+          if (info.phase === "failed" && info.result && !info.result.ok) {
+            progressNotice.setMessage(
+              `⚠️ 章节失败 ${info.index + 1}/${info.total}：${chapterLabel}\n` +
+              `${windowLabel}\n` +
+              `错误：${info.result.error}\n` +
+              `继续处理剩余章节...`
+            );
+          }
+        },
+      });
+      if (result.failed === 0) {
+        progressNotice.setMessage(`✅ 教材整理完成：${result.succeeded}/${result.total} 章已保存到 ${manifest.output_dir}`);
+        setTimeout(() => progressNotice.hide(), 3000);
+        return;
+      }
+
+      progressNotice.setMessage(
+        `⚠️ 清理部分失败：${result.succeeded} 成功 / ${result.failed} 失败。` +
+        `失败章节：${result.failures.map((f) => f.chapter.id).join(", ")}`
+      );
+      setTimeout(() => progressNotice.hide(), 8000);
+      console.error("[textbook-cleaner] failures:", result.failures);
+    } catch (e: any) {
+      new Notice(`❌ 清理失败: ${e?.message ?? e}`, 8000);
+      console.error("[textbook-cleaner]", e);
+    }
+  }
+
   /**
    * Ensure model files exist for the current language.
    * Called before starting recording. Returns true if ready, false if download needed.
@@ -1116,7 +1290,26 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     } catch { return null; }
   }
 
+  /**
+   * Lazily get the Node fs.promises API (only on desktop). Used by
+   * PaddleOCR model download to write large files asynchronously.
+   */
+  private getFsAsync(): { writeFile(path: string, data: Uint8Array): Promise<void> } | null {
+    try {
+      const r = (globalThis as Record<string, unknown>).require as ((m: string) => Record<string, unknown>) | undefined;
+      return r?.("fs").promises as { writeFile: (p: string, d: Uint8Array) => Promise<void> } | null;
+    } catch { return null; }
+  }
+
   private async ensurePunctuationModel(): Promise<boolean> {
+    // Serialized via the heavy-init mutex so a concurrent OCR or speech-model
+    // download doesn't compete for disk + CPU.
+    return withHeavyInit("punc-download", async () => {
+      return this.ensurePunctuationModelImpl();
+    });
+  }
+
+  private async ensurePunctuationModelImpl(): Promise<boolean> {
     const fs = this.getFs();
     if (!fs) return false;
 
@@ -1177,7 +1370,125 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     }
   }
 
+  /**
+   * Ensure the PaddleOCR model files for `tier` are present on disk
+   * under `<pluginDir>/models/ocr/pp-ocrv5/<tier>/{det,rec}/inference.onnx`.
+   * If not, download them from HuggingFace via the paddle-model helper.
+   * Returns true iff every required file is present (post-download).
+   *
+   * Called by runLocalOcrTask() before the first OCR invocation per
+   * session. Tiers beyond the default are not auto-downloaded — the user
+   * must pick them via the settings UI (提交3) first.
+   */
+  private async ensurePaddleModel(): Promise<boolean> {
+    // Serialized via the heavy-init mutex so a concurrent speech-model
+    // download doesn't compete for disk + CPU.
+    return withHeavyInit("paddle-download", async () => {
+      return this.ensurePaddleModelImpl();
+    });
+  }
+
+  private async ensurePaddleModelImpl(): Promise<boolean> {
+    const fs = this.getFs();
+    if (!fs) {
+      new Notice("PaddleOCR 模型管理需要桌面端 fs API (仅 Obsidian Desktop 可用)。", 8000);
+      return false;
+    }
+    // If the user has supplied a custom model path, we don't try to manage
+    // it — that's their responsibility. The OCR service will use it as-is.
+    if (this.settings.paddleOcrModelPath && this.settings.paddleOcrModelPath.trim()) {
+      return true;
+    }
+    const tier = this.settings.paddleOcrTier ?? DEFAULT_PADDLE_TIER;
+    const modelDir = this.getPaddleModelDir(tier);
+    const installed = isPaddleTierInstalled(
+      tier,
+      (p) => fs.existsSync(p),
+      modelDir
+    );
+    if (installed.installed) return true;
+    return this.downloadPaddleModel(tier, modelDir);
+  }
+
+  /** Resolve the absolute path of the model dir for a given PaddleOCR tier. */
+  private getPaddleModelDir(tier: PaddleOcrModelTier): string {
+    const path = require("path") as typeof import("path");
+    return path.join(this.getPluginInstallDir(), getPaddleTierModelDir(tier));
+  }
+
+  /**
+   * Download det + rec for a given PaddleOCR tier into `modelDir`.
+   * Emits progress via a long-lived Notice. Returns true iff all files
+   * wrote successfully (network errors or write failures resolve to false).
+   */
+  private async downloadPaddleModel(
+    tier: PaddleOcrModelTier,
+    modelDir: string
+  ): Promise<boolean> {
+    const fs = this.getFs();
+    const fsAsync = this.getFsAsync();
+    if (!fs || !fsAsync) {
+      new Notice("PaddleOCR 下载需要桌面端 fs.promises (仅 Obsidian Desktop 可用)。", 8000);
+      return false;
+    }
+    const path = require("path") as typeof import("path");
+    const detDir = path.join(modelDir, "det");
+    const recDir = path.join(modelDir, "rec");
+    const dictDir = path.join(modelDir, "dict");
+    fs.mkdirSync(detDir, { recursive: true });
+    fs.mkdirSync(recDir, { recursive: true });
+    fs.mkdirSync(dictDir, { recursive: true });
+
+    const totalBytes = getPaddleTierTotalBytes(tier);
+    const totalMB = (totalBytes / (1024 * 1024)).toFixed(0);
+    const notice = new Notice(
+      `⏳ [Local AI] 正在下载 PaddleOCR ${tier} 模型 (~${totalMB} MB)...`,
+      0
+    );
+
+    try {
+      const result = await downloadPaddleTier(
+        tier,
+        async ({ role, filename }, data) => {
+          const sub = role === "det" ? detDir : role === "dict" ? dictDir : recDir;
+          await fsAsync.writeFile(path.join(sub, filename), new Uint8Array(data));
+        },
+        (p) => {
+          const mb = (p.fileProgress.loadedBytes / (1024 * 1024)).toFixed(1);
+          const total = (p.fileProgress.totalBytes / (1024 * 1024)).toFixed(0);
+          const pct = (p.fileProgress.percent * 100).toFixed(0);
+          notice.setMessage(
+            `⏳ [Local AI] 下载 PaddleOCR ${tier} (${p.fileIndex + 1}/${p.totalFiles}) ` +
+            `${p.role}/${p.currentFile}: ${mb}/${total} MB (${pct}%)`
+          );
+        }
+      );
+      notice.hide();
+      if (result.anyFailed) {
+        const failedNames = result.files.filter((f) => !f.success).map((f) => `${f.role}/${f.filename}`);
+        new Notice(`❌ PaddleOCR 模型下载失败: ${failedNames.join(", ")}。请检查网络或稍后重试。`, 10000);
+        return false;
+      }
+      new Notice(`✅ PaddleOCR ${tier} 模型就绪 (~${totalMB} MB)。`);
+      return true;
+    } catch (e) {
+      notice.hide();
+      new Notice(`❌ PaddleOCR 模型下载异常: ${String(e)}`, 10000);
+      return false;
+    }
+  }
+
   private async ensureSpeechModel(): Promise<boolean> {
+    // Serialized via the heavy-init mutex so a concurrent OCR or speech-model
+    // model download doesn't compete for disk + CPU. The actual
+    // sherpa-onnx WASM load happens inside speechRecorder anyway; this
+    // gate is specifically for the model-file download.
+    return withHeavyInit("speech-download", async () => {
+      return this.ensureSpeechModelImpl();
+    });
+  }
+
+  private async ensureSpeechModelImpl(): Promise<boolean> {
     const fs = this.getFs();
     const modelDir = this.speechRecorder.getModelDirInternal();
     const lang = this.settings.speechLanguage;
@@ -1748,5 +2059,363 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
   getAutoStopSecondsRemaining(): number {
     return this.autoStopSecondsRemaining;
+  }
+
+  async runLocalOcrTask(): Promise<void> {
+    if (!this.settings.ocrEnabled) {
+      new Notice("请先在插件设置中开启「本地 OCR」！");
+      return;
+    }
+
+    const view = this.getContextMarkdownView();
+    if (!view) {
+      new Notice("请先打开一篇可编辑的 Markdown 笔记以运行 OCR。");
+      return;
+    }
+
+    let absolutePath = "";
+    let fileName = "";
+    let isPdf = false;
+
+    let openedViaElectron = false;
+    try {
+      const desktopRequire = (globalThis as any).require;
+      const electron = desktopRequire?.("electron");
+      const remote = electron?.remote || desktopRequire?.("@electron/remote");
+      const dialog = remote?.dialog;
+
+      if (dialog?.showOpenDialog) {
+        const result = await dialog.showOpenDialog({
+          title: "选择本地图片或 PDF 进行 OCR 提取",
+          properties: ["openFile"],
+          filters: [
+            { name: "Images and PDFs", extensions: ["png", "jpg", "jpeg", "webp", "bmp", "pdf"] }
+          ]
+        });
+
+        if (result.canceled || result.filePaths.length === 0) {
+          return;
+        }
+
+        absolutePath = result.filePaths[0];
+        const pathModule = require("path");
+        fileName = pathModule.basename(absolutePath);
+        isPdf = fileName.toLowerCase().endsWith(".pdf");
+        openedViaElectron = true;
+      }
+    } catch (dialogErr) {
+      console.warn("[lti-electron-dialog-failed], falling back to HTML input", dialogErr);
+    }
+
+    if (!openedViaElectron) {
+      const selection = await pickLocalOcrFileWithHtmlInput();
+
+      if (!selection) {
+        new Notice("无法获取选中文件的绝对物理路径，请重试！");
+        return;
+      }
+
+      absolutePath = selection.absolutePath;
+      fileName = selection.fileName;
+      isPdf = selection.isPdf;
+    }
+
+    const editor = view.editor;
+    const cursor = editor.getCursor();
+    const notice = new Notice(`⏳ [Local AI] 准备处理: ${fileName}...`, 0);
+
+    try {
+      let insertText = "";
+      let insertedDuringProcessing = false;
+      const { execFile } = require("child_process") as {
+        execFile: (
+          file: string,
+          args: string[],
+          options: { maxBuffer?: number } | undefined,
+          callback: (error: Error | null, stdout: string) => void,
+        ) => void;
+      };
+      const runPdfCommand = (
+        command: string,
+        args: string[],
+        options?: { maxBuffer?: number },
+      ): Promise<string> => new Promise((resolve, reject) => {
+        execFile(command, args, options, (error, stdout) => {
+          if (error) reject(error);
+          else resolve(stdout);
+        });
+      });
+
+      if (isPdf) {
+        let pageCount = 1;
+        try {
+          const info = await runPdfCommand("pdfinfo", [absolutePath]);
+          const match = info.match(/^Pages:\s+(\d+)/m);
+          if (match) {
+            pageCount = Math.max(1, Number.parseInt(match[1], 10));
+          }
+        } catch (pageErr) {
+          console.warn("Failed to read PDF page count, falling back to first page:", pageErr);
+        }
+
+        notice.setMessage("⏳ [Local AI] 正在调用系统提取 PDF 文字...");
+
+        let text = "";
+        try {
+          text = await runPdfCommand("pdftotext", [absolutePath, "-"], { maxBuffer: 50 * 1024 * 1024 });
+        } catch (textErr) {
+          console.warn("Digital PDF text extraction failed:", textErr);
+        }
+
+        const textQuality = assessPdfTextExtraction(text, pageCount);
+        if (textQuality.usable) {
+          insertText = text.trim();
+          notice.setMessage("✅ [Local AI] PDF 文本提取成功！已插入当前文档。");
+        } else {
+          notice.setMessage("⏳ [Local AI] 检测到扫描版 PDF，正在准备逐页离线 OCR...");
+          console.warn("[lti-pdf-text-quality] pdftotext output rejected; falling back to page OCR", textQuality);
+          const paddleOk = await this.ensurePaddleModel();
+          if (!paddleOk && !this.settings.ocrSmartRouting) {
+            throw new Error("PaddleOCR 模型未就绪，无法继续执行扫描版 PDF OCR。");
+          }
+          if (!paddleOk) {
+            console.warn("[lti-local-ocr] PaddleOCR model is unavailable; continuing scanned PDF OCR with Kreuzberg fallback.");
+            notice.setMessage("⏳ [Local AI] PaddleOCR 模型未就绪，继续使用 Kreuzberg/Tesseract 扫描版 PDF OCR...");
+          }
+          const fs = require("fs");
+          const os = require("os") as typeof import("os");
+          const path = require("path") as typeof import("path");
+
+          type PdfPageOcrResult =
+            | { page: number; ok: true; text: string }
+            | { page: number; ok: false; error: string };
+          const tempPrefix = `lti_pdf_page_${Date.now()}`;
+          const tempDir = os.tmpdir();
+          const concurrency = Math.max(1, Math.min(
+            this.settings.paddleOcrPdfConcurrency || 2,
+            pageCount,
+          ));
+          const dpi = Math.max(96, Math.min(300, this.settings.paddleOcrPdfDpi || 150));
+          const pageNumbers = Array.from({ length: pageCount }, (_, i) => i + 1);
+          const pdfOcrServices = Array.from({ length: concurrency }, () =>
+            new LocalOfflineOcrService(this.app, this.settings)
+          );
+          let completedPages = 0;
+          let successfulPages = 0;
+          const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const endMarker = `<!-- lti-pdf-ocr:${runId}:end -->`;
+          const initialPdfOcrText = [
+            `<!-- OCR source: ${fileName}; pages: 0/${pageCount}; streaming: true -->`,
+            ...pageNumbers.map((page) => `## Page ${page}\n\n${buildPdfOcrPageMarker(runId, page)}`),
+            endMarker
+          ].join("\n\n");
+
+          editor.replaceRange(`${initialPdfOcrText}\n\n`, cursor);
+          insertedDuringProcessing = true;
+
+          const writePageResult = (page: number, body: string): void => {
+            const marker = buildPdfOcrPageMarker(runId, page);
+            if (replaceFirstEditorMarker(editor, marker, body)) {
+              return;
+            }
+            const fallback = `## Page ${page}\n\n${body}\n\n${endMarker}`;
+            replaceFirstEditorMarker(editor, endMarker, fallback);
+          };
+
+          try {
+            const pageResults = await runWithConcurrency<number, PdfPageOcrResult>(
+              pageNumbers,
+              concurrency,
+              async (page, workerIndex) => {
+                const tempPattern = path.join(tempDir, `${tempPrefix}_${page}`);
+                notice.setMessage(`⏳ [Local AI] 正在渲染扫描版 PDF 第 ${page}/${pageCount} 页（并发 ${concurrency}，DPI ${dpi}）...`);
+
+                try {
+                  await runPdfCommand("pdftoppm", [
+                    "-png",
+                    "-r",
+                    String(dpi),
+                    "-f",
+                    String(page),
+                    "-l",
+                    String(page),
+                    absolutePath,
+                    tempPattern,
+                  ]);
+                } catch (renderErr: any) {
+                  const error = renderErr?.message ?? String(renderErr);
+                  writePageResult(page, `> [!warning] PDF 页面渲染失败：${error}`);
+                  return { page, ok: false, error };
+                }
+
+                const tmpFiles = fs.readdirSync(tempDir)
+                  .filter((f: string) => f.startsWith(`${tempPrefix}_${page}`) && f.endsWith(".png"))
+                  .sort();
+                if (tmpFiles.length === 0) {
+                  const error = "无法定位转换后的 PDF 页面图片";
+                  writePageResult(page, `> [!warning] ${error}。`);
+                  return { page, ok: false, error };
+                }
+
+                const tempImagePath = path.join(tempDir, tmpFiles[0]);
+                try {
+                  const onStatusUpdate = (msg: string) => {
+                    notice.setMessage(
+                      `[Local AI] PDF 第 ${page}/${pageCount} 页 · 已完成 ${completedPages}/${pageCount} · worker ${workerIndex + 1}/${concurrency} · ${msg}`
+                    );
+                  };
+
+                  const ocrResult = await pdfOcrServices[workerIndex].processTask(
+                    tempImagePath,
+                    "<OCR>",
+                    this.settings.ocrSmartRouting,
+                    onStatusUpdate
+                  );
+
+                  if (ocrResult && ocrResult.trim()) {
+                    successfulPages++;
+                    writePageResult(page, ocrResult.trim());
+                    return { page, ok: true, text: ocrResult.trim() };
+                  }
+                  writePageResult(page, "> [!warning] OCR 未提取出有效内容。");
+                  return { page, ok: false, error: "OCR 未提取出有效内容" };
+                } catch (pageErr: any) {
+                  console.warn(`[lti-local-ocr] PDF page ${page} OCR failed:`, pageErr);
+                  const error = pageErr?.message ?? String(pageErr);
+                  writePageResult(page, `> [!warning] OCR 失败：${error}`);
+                  return { page, ok: false, error };
+                } finally {
+                  completedPages++;
+                  notice.setMessage(`⏳ [Local AI] 扫描版 PDF OCR 进度：${completedPages}/${pageCount} 页完成，${successfulPages} 页已写入当前文档...`);
+                  for (const tmpFile of tmpFiles) {
+                    try {
+                      fs.unlinkSync(path.join(tempDir, tmpFile));
+                    } catch (cleanErr) {
+                      console.warn("Failed to clean up temp PDF page image:", cleanErr);
+                    }
+                  }
+                }
+              }
+            );
+
+            const pageOutputs = pageResults
+              .filter((result): result is Extract<PdfPageOcrResult, { ok: true }> => result.ok)
+              .sort((a, b) => a.page - b.page)
+              .map((result) => `## Page ${result.page}\n\n${result.text}`);
+            const failedPages = pageResults
+              .filter((result): result is Extract<PdfPageOcrResult, { ok: false }> => !result.ok)
+              .sort((a, b) => a.page - b.page);
+
+            if (pageOutputs.length === 0) {
+              throw new Error(
+                `扫描版 PDF OCR 未提取出有效内容。失败页：${
+                  failedPages.map((p) => `${p.page}(${p.error})`).join(", ") || "全部"
+                }`
+              );
+            }
+
+            replaceFirstEditorMarker(
+              editor,
+              endMarker,
+              failedPages.length
+                ? `## OCR Failed Pages\n\n${failedPages.map((p) => `- Page ${p.page}: ${p.error}`).join("\n")}`
+                : ""
+            );
+            notice.setMessage(`✅ [Local AI] 扫描版 PDF OCR 完成：${pageOutputs.length}/${pageCount} 页已按页写入当前文档。`);
+          } finally {
+            for (const service of pdfOcrServices) {
+              service.destroy();
+            }
+          }
+        }
+      } else {
+        const paddleOk = await this.ensurePaddleModel();
+        if (!paddleOk && !this.settings.ocrSmartRouting) {
+          throw new Error("PaddleOCR 模型未就绪，无法继续执行图片 OCR。");
+        }
+        if (!paddleOk) {
+          console.warn("[lti-local-ocr] PaddleOCR model is unavailable; continuing image OCR with Kreuzberg fallback.");
+          notice.setMessage("⏳ [Local AI] PaddleOCR 模型未就绪，继续使用 Kreuzberg/Tesseract 图片 OCR...");
+        }
+        const onStatusUpdate = (msg: string) => {
+          notice.setMessage(`[Local AI] ${msg}`);
+        };
+
+        const result = await this.ocrService.processTask(
+          absolutePath,
+          "<OCR>",
+          this.settings.ocrSmartRouting,
+          onStatusUpdate
+        );
+
+        if (!result || !result.trim()) {
+          throw new Error("识别完成，但未提取出有效内容。");
+        }
+
+        insertText = result.trim();
+        notice.setMessage("✅ [Local AI] 图片 OCR 提取成功！已插入当前文档。");
+      }
+
+      if (!insertedDuringProcessing) {
+        editor.replaceRange(insertText, cursor);
+      }
+
+      setTimeout(() => notice.hide(), 1500);
+    } catch (err: any) {
+      notice.hide();
+      console.error("[lti-local-ocr-error]", err);
+      new Notice(`❌ 本地 OCR 失败: ${err.message}`, 8000);
+    }
+  }
+
+  /**
+   * Public entry point used by the "Download PaddleOCR model now" button
+   * in the settings panel. Downloads the user's selected tier; if a custom
+   * paddleOcrModelPath is set we notify the user that the path is theirs
+   * to manage and exit early (no auto-overwrite).
+   */
+  async downloadPaddleModelFromSettings(): Promise<void> {
+    if (this.settings.paddleOcrModelPath && this.settings.paddleOcrModelPath.trim()) {
+      new Notice(
+        "已设置自定义 PaddleOCR 路径；下载功能仅管理默认 tier 子目录。\n" +
+        `当前路径: ${this.settings.paddleOcrModelPath}`,
+        8000
+      );
+      return;
+    }
+    const tier = this.settings.paddleOcrTier ?? DEFAULT_PADDLE_TIER;
+    const modelDir = this.getPaddleModelDir(tier);
+    const fs = this.getFs();
+    if (!fs) {
+      new Notice("PaddleOCR 下载需要桌面端 fs API (仅 Obsidian Desktop 可用)。", 8000);
+      return;
+    }
+    const installed = isPaddleTierInstalled(
+      tier,
+      (p) => fs.existsSync(p),
+      modelDir
+    );
+    if (installed.installed) {
+      new Notice(`PaddleOCR ${tier} 模型已存在 (~${(getPaddleTierTotalBytes(tier) / 1024 / 1024).toFixed(0)} MB)。无需重复下载。`, 6000);
+      return;
+    }
+    await this.downloadPaddleModel(tier, modelDir);
+  }
+
+  /**
+   * Resolve the absolute path of the plugin's install directory.
+   * Mirrors getPluginDir() in ocr-service.ts.
+   */
+  private getPluginInstallDir(): string {
+    const adapter = this.app.vault.adapter as { getBasePath?: () => string };
+    const vaultPath = adapter.getBasePath ? adapter.getBasePath() : "";
+    const manifestDir = this.app.vault.configDir + "/plugins/link-tag-intelligence";
+    return require("path").resolve(vaultPath, manifestDir);
+  }
+
+  /** Resolve the absolute path of the vault root for relative-path resolution. */
+  private getVaultRoot(): string | null {
+    const adapter = this.app.vault.adapter as { getBasePath?: () => string };
+    return adapter.getBasePath ? adapter.getBasePath() : null;
   }
 }

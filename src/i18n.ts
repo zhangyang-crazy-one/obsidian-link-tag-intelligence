@@ -14,6 +14,45 @@ type TranslationKey =
   | "suggestTags"
   | "ingestionCapture"
   | "semanticSearch"
+  | "ocr"
+  | "textbookCleanup"
+  | "paddleOcrTierLabel"
+  | "paddleOcrTierDesc"
+  | "paddleOcrTierMobileLabel"
+  | "paddleOcrTierServerLabel"
+  | "paddleOcrTierHybridLabel"
+  | "paddleOcrDownloadButton"
+  | "paddleOcrDownloadInProgress"
+  | "paddleOcrDownloadDone"
+  | "paddleOcrDownloadFailed"
+  | "paddleDetAdvancedHeading"
+  | "paddleDetAdvancedDesc"
+  | "paddleDetReset"
+  | "paddleDetResetConfirm"
+  | "paddleDetDbThreshLabel"
+  | "paddleDetDbThreshDesc"
+  | "paddleDetBoxThreshLabel"
+  | "paddleDetBoxThreshDesc"
+  | "paddleDetUnclipRatioLabel"
+  | "paddleDetUnclipRatioDesc"
+  | "paddleDetMinSizeLabel"
+  | "paddleDetMinSizeDesc"
+  | "paddleDetNmsIouThreshLabel"
+  | "paddleDetNmsIouThreshDesc"
+  | "paddleDetMaxCandidatesLabel"
+  | "paddleDetMaxCandidatesDesc"
+  | "paddleDetLimitSideLenLabel"
+  | "paddleDetLimitSideLenDesc"
+  | "paddleOcrCpuThreadsLabel"
+  | "paddleOcrCpuThreadsDesc"
+  | "paddleOcrPdfConcurrencyLabel"
+  | "paddleOcrPdfConcurrencyDesc"
+  | "paddleOcrPdfDpiLabel"
+  | "paddleOcrPdfDpiDesc"
+  | "paddleDetScoreModeLabel"
+  | "paddleDetScoreModeDesc"
+  | "paddleDetUseDilationLabel"
+  | "paddleDetUseDilationDesc"
   | "currentNote"
   | "outgoingLinks"
   | "backlinks"
@@ -298,10 +337,18 @@ type TranslationKey =
   | "aiProviderDescription"
   | "aiModel"
   | "aiModelDescription"
+  | "aiMaxTokens"
+  | "aiMaxTokensDescription"
+  | "aiTemperature"
+  | "aiTemperatureDescription"
   | "aiApiKey"
   | "aiApiKeyDescription"
   | "aiBaseUrl"
   | "aiBaseUrlDescription"
+  | "aiApiStyle"
+  | "aiApiStyleDescription"
+  | "aiApiStyleOpenAI"
+  | "aiApiStyleAnthropic"
   | "aiAsrSource"
   | "aiAsrSourceDescription"
   | "aiAsrSourceLocal"
@@ -432,6 +479,45 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     suggestTags: "Suggest tags for current note",
     ingestionCapture: "Ingest research source",
     semanticSearch: "Semantic search via external command",
+    ocr: "Local image OCR",
+    textbookCleanup: "Clean textbook OCR",
+    paddleOcrTierLabel: "PaddleOCR model tier",
+    paddleOcrTierDesc: "PP-OCRv5 model size. Mobile = fast / low memory. Server = best accuracy, default. Hybrid = mobile detector + server recognizer. Switching tiers triggers a model download on next OCR call.",
+    paddleOcrTierMobileLabel: "Mobile — fast, ~22 MB",
+    paddleOcrTierServerLabel: "Server — precise, ~181 MB, default",
+    paddleOcrTierHybridLabel: "Hybrid — mobile det + server rec, ~94 MB",
+    paddleOcrDownloadButton: "Download PaddleOCR model now",
+    paddleOcrDownloadInProgress: "Downloading PaddleOCR {tier} model…",
+    paddleOcrDownloadDone: "PaddleOCR {tier} model ready.",
+    paddleOcrDownloadFailed: "PaddleOCR model download failed: {error}",
+    paddleDetAdvancedHeading: "Advanced PaddleOCR detection parameters",
+    paddleDetAdvancedDesc: "Tune the DBNet postprocessor for your specific workload. Defaults are PaddleOCR's official values. ⚠ Changing these can hurt accuracy on images that already work well.",
+    paddleDetReset: "Reset to PaddleOCR defaults",
+    paddleDetResetConfirm: "Reset all 9 PaddleOCR detection parameters to their official defaults?",
+    paddleDetDbThreshLabel: "Binarize threshold (db_thresh)",
+    paddleDetDbThreshDesc: "Pixel probability > this counts as text. Lower = more sensitive (may detect noise). Range 0.1–0.9. PaddleOCR default: 0.3.",
+    paddleDetBoxThreshLabel: "Box score threshold (db_box_thresh)",
+    paddleDetBoxThreshDesc: "Average confidence inside a candidate box. Lower = keep uncertain boxes (more recall, less precision). Range 0.1–0.9. PaddleOCR default: 0.6.",
+    paddleDetUnclipRatioLabel: "Unclip expansion ratio",
+    paddleDetUnclipRatioDesc: "How far each detected box is expanded outward. Higher = box more generous around the text. Range 1.0–3.0. PaddleOCR default: 1.5.",
+    paddleDetMinSizeLabel: "Minimum box side (px)",
+    paddleDetMinSizeDesc: "Boxes smaller than this on their short side are dropped. Higher = filters more noise. Range 1–50. PaddleOCR default: 3.",
+    paddleDetNmsIouThreshLabel: "NMS IoU threshold",
+    paddleDetNmsIouThreshDesc: "Boxes with IoU above this are merged. Lower = more aggressive merging. Range 0.1–0.9. PaddleOCR default: 0.3.",
+    paddleDetMaxCandidatesLabel: "Max candidate boxes (cap)",
+    paddleDetMaxCandidatesDesc: "Hard cap for performance. Range 100–5000. PaddleOCR default: 1000.",
+    paddleDetLimitSideLenLabel: "Long-side resize for inference",
+    paddleDetLimitSideLenDesc: "Image is downscaled so its longest side is this value before detection. Higher = slower but more accurate for small text. Range 320–2048. PaddleOCR default: 960.",
+    paddleOcrCpuThreadsLabel: "ONNX CPU threads",
+    paddleOcrCpuThreadsDesc: "Threads per PaddleOCR worker. 0 = auto (about half of CPU cores, capped at 8). Higher can speed up inference but each parallel PDF page worker also uses this many threads.",
+    paddleOcrPdfConcurrencyLabel: "PDF page OCR concurrency",
+    paddleOcrPdfConcurrencyDesc: "How many scanned PDF pages to OCR in parallel. 2 is safe; 3-4 can use more CPU if memory is available. Range 1-8.",
+    paddleOcrPdfDpiLabel: "PDF rasterization DPI",
+    paddleOcrPdfDpiDesc: "DPI used when rendering scanned PDF pages before OCR. Lower is faster; higher preserves small text. Range 96-300. Default: 150.",
+    paddleDetScoreModeLabel: "Score mode",
+    paddleDetScoreModeDesc: "fast = mean of pixels in axis-aligned bbox. slow = mean inside polygon (more accurate, slower).",
+    paddleDetUseDilationLabel: "Dilate segmentation map",
+    paddleDetUseDilationDesc: "Apply 3×3 dilation to the binarized map before contour finding. Useful for dense small text. PaddleOCR mobile default: true.",
     currentNote: "Current note",
     outgoingLinks: "Outgoing links",
     backlinks: "Backlinks",
@@ -565,7 +651,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsWorkbenchPagePlugins: "Plugins",
     settingsWorkbenchPageWorkflow: "Workflow",
     settingsWorkbenchPageTaxonomy: "Taxonomy",
-    settingsWorkbenchPageSpeech: "Voice",
+    settingsWorkbenchPageSpeech: "Local AI",
     settingsWorkbenchOn: "On",
     settingsWorkbenchOff: "Off",
     settingsWorkbenchDetails: "Details",
@@ -704,22 +790,30 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     speechRecordTooltipProcessing: "Processing...",
     speechRecordTooltipRecording: "Recording... Click to stop",
     speechSettingsDescription: "Configure speech recognition model, language, and recording behavior. All processing is local.",
-    speechSettingsHeading: "Voice",
+    speechSettingsHeading: "Speech Recognition",
     speechShortcutConflict: "Shortcut Ctrl+Shift+V is already in use. Please configure manually in Obsidian hotkey settings.",
     speechToggleCommand: "Toggle voice input",
     speechVadSensitivity: "VAD sensitivity",
     speechVadSensitivityDescription: "0=Lecture (2.4s pause)  1=Slow (1.8s)  2=Normal (1.5s)  3=Fast (0.8s). Higher = shorter sentence breaks.",
     settingsWorkbenchPageAI: "AI Helper",
     aiSettingsHeading: "AI Transcription & Refinement",
-    aiSettingsDescription: "Configure API access for OpenAI-compatible, Anthropic, DeepSeek, or MiniMax providers. Setup prompt templates to automatically transcribe and polish audio files.",
+    aiSettingsDescription: "Configure the shared AI endpoint used by transcription polishing, textbook cleanup, and other AI text tasks.",
     aiProvider: "AI Provider",
-    aiProviderDescription: "Choose the API provider for Chat and LLM-based post-processing.",
+    aiProviderDescription: "Choose the endpoint preset / billing account. Wire format is selected separately below.",
     aiModel: "Model Name",
     aiModelDescription: "Model name for chat completions (e.g., gpt-4o-mini, deepseek-chat, claude-3-5-sonnet-20241022).",
+    aiMaxTokens: "Max Output Tokens",
+    aiMaxTokensDescription: "Maximum output tokens, not context-window size. For textbook cleanup, 8192-32768 is usually safer; MiniMax-M3 is clamped to 524288, older M2.x to 204800.",
+    aiTemperature: "Temperature",
+    aiTemperatureDescription: "Sampling randomness, range 0-2. Lower is more deterministic. 1.0 is recommended for text cleanup / general tasks. Reasoning models ignore this value.",
     aiApiKey: "API Key",
     aiApiKeyDescription: "API secret key for authorization. Handled securely.",
     aiBaseUrl: "API Base URL",
-    aiBaseUrlDescription: "Base URL for the provider API endpoint (e.g., https://api.openai.com/v1, https://api.deepseek.com).",
+    aiBaseUrlDescription: "Base URL for the endpoint (e.g., https://api.openai.com/v1, https://api.deepseek.com, https://api.minimaxi.com).",
+    aiApiStyle: "API Wire Format",
+    aiApiStyleDescription: "Controls request/response shape only. Anthropic-compatible style can be used with MiniMax or other compatible gateways on their own Base URL.",
+    aiApiStyleOpenAI: "OpenAI-compatible (/v1/chat/completions)",
+    aiApiStyleAnthropic: "Anthropic-compatible (/anthropic/v1/messages, supports images)",
     aiAsrSource: "ASR Transcription Source",
     aiAsrSourceDescription: "Choose where the audio-to-text phase is processed (Local offline engine or Cloud API).",
     aiAsrSourceLocal: "Local (sherpa-onnx)",
@@ -849,6 +943,45 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     suggestTags: "为当前笔记推荐标签",
     ingestionCapture: "导入研究来源",
     semanticSearch: "通过外部命令进行语义检索",
+    ocr: "本地图片离线 OCR 提取",
+    textbookCleanup: "教材整理",
+    paddleOcrTierLabel: "PaddleOCR 模型档位",
+    paddleOcrTierDesc: "PP-OCRv5 模型大小。Mobile = 速度快 / 内存低；Server = 精度最高（默认）；Hybrid = 移动端检测器 + 服务端识别器。切换档位后，下次 OCR 调用时会自动下载所选档位的模型。",
+    paddleOcrTierMobileLabel: "Mobile — 速度快，约 22 MB",
+    paddleOcrTierServerLabel: "Server — 精度高，约 181 MB（默认）",
+    paddleOcrTierHybridLabel: "Hybrid — 移动端 det + 服务端 rec，约 94 MB",
+    paddleOcrDownloadButton: "立即下载 PaddleOCR 模型",
+    paddleOcrDownloadInProgress: "正在下载 PaddleOCR {tier} 模型…",
+    paddleOcrDownloadDone: "PaddleOCR {tier} 模型已就绪。",
+    paddleOcrDownloadFailed: "PaddleOCR 模型下载失败：{error}",
+    paddleDetAdvancedHeading: "高级 PaddleOCR 检测参数",
+    paddleDetAdvancedDesc: "为你的具体场景微调 DBNet 后处理。默认值为 PaddleOCR 官方值。⚠ 修改这些参数可能让原本能识别的图片反而变差。",
+    paddleDetReset: "重置为 PaddleOCR 官方默认",
+    paddleDetResetConfirm: "确认将 9 个 PaddleOCR 检测参数全部重置为官方默认值？",
+    paddleDetDbThreshLabel: "二值化阈值 (db_thresh)",
+    paddleDetDbThreshDesc: "像素概率 > 此值算文字像素。越低越敏感（可能误检噪声）。范围 0.1–0.9。官方默认：0.3。",
+    paddleDetBoxThreshLabel: "检测框置信度阈值 (db_box_thresh)",
+    paddleDetBoxThreshDesc: "候选框内平均概率。越低越宽松（召回↑、精度↓）。范围 0.1–0.9。官方默认：0.6。",
+    paddleDetUnclipRatioLabel: "Unclip 扩展比例",
+    paddleDetUnclipRatioDesc: "检测框向外扩展距离。越高框越大。范围 1.0–3.0。官方默认：1.5。",
+    paddleDetMinSizeLabel: "最小框边长 (像素)",
+    paddleDetMinSizeDesc: "小于此边长的框被丢弃。越高过滤越严。范围 1–50。官方默认：3。",
+    paddleDetNmsIouThreshLabel: "NMS IoU 阈值",
+    paddleDetNmsIouThreshDesc: "IoU 高于此阈值的框被合并。越低合并越激进。范围 0.1–0.9。官方默认：0.3。",
+    paddleDetMaxCandidatesLabel: "最大候选框数",
+    paddleDetMaxCandidatesDesc: "性能保护上限。范围 100–5000。官方默认：1000。",
+    paddleDetLimitSideLenLabel: "推理时最长边长度",
+    paddleDetLimitSideLenDesc: "检测前图片被缩放到此最长边。越大越慢但对小字越准。范围 320–2048。官方默认：960。",
+    paddleOcrCpuThreadsLabel: "ONNX CPU 线程数",
+    paddleOcrCpuThreadsDesc: "每个 PaddleOCR worker 使用的线程数。0 = 自动（约半数 CPU 核心，最高 8）。调高可加速推理，但 PDF 并发页 worker 也会各自占用这些线程。",
+    paddleOcrPdfConcurrencyLabel: "PDF 页面 OCR 并发数",
+    paddleOcrPdfConcurrencyDesc: "扫描版 PDF 同时识别的页数。2 较稳；内存充足时可试 3-4。范围 1-8。",
+    paddleOcrPdfDpiLabel: "PDF 渲染 DPI",
+    paddleOcrPdfDpiDesc: "扫描版 PDF 转图片时使用的 DPI。越低越快，越高越保留小字。范围 96-300。默认：150。",
+    paddleDetScoreModeLabel: "得分模式",
+    paddleDetScoreModeDesc: "fast = bbox 内均值（快）。slow = polygon 内均值（准但慢）。",
+    paddleDetUseDilationLabel: "膨胀分割图",
+    paddleDetUseDilationDesc: "在 contour 提取前对二值化图做 3×3 膨胀。密集小字场景有用。PaddleOCR 移动端默认：开。",
     currentNote: "当前笔记",
     outgoingLinks: "出链",
     backlinks: "反链",
@@ -982,7 +1115,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsWorkbenchPagePlugins: "插件",
     settingsWorkbenchPageWorkflow: "工作流",
     settingsWorkbenchPageTaxonomy: "词表",
-    settingsWorkbenchPageSpeech: "语音",
+    settingsWorkbenchPageSpeech: "本地 AI",
     settingsWorkbenchOn: "开启",
     settingsWorkbenchOff: "关闭",
     settingsWorkbenchDetails: "详情",
@@ -1121,22 +1254,30 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     speechRecordTooltipProcessing: "正在处理...",
     speechRecordTooltipRecording: "正在录音... 点击停止",
     speechSettingsDescription: "配置语音识别模型、语言和录音行为。所有处理均在本地完成。",
-    speechSettingsHeading: "语音",
+    speechSettingsHeading: "语音识别",
     speechShortcutConflict: "快捷键 Ctrl+Shift+V 已被占用，请在 Obsidian 快捷键设置中手动配置。",
     speechToggleCommand: "切换语音输入",
     speechVadSensitivity: "VAD 灵敏度",
     speechVadSensitivityDescription: "0=课程讲座(2.4s停顿)  1=慢速(1.8s)  2=正常(1.5s)  3=快速(0.8s)。越高断句越频繁。",
     settingsWorkbenchPageAI: "AI 助手",
     aiSettingsHeading: "AI 智能转录与润色",
-    aiSettingsDescription: "配置 OpenAI 兼容、Anthropic、DeepSeek 或 MiniMax API。设置提示词模板，自动进行语音转录与大模型整理。",
+    aiSettingsDescription: "配置共享 AI 接口。语音转录整理、教材整理以及其他 AI 文本任务都会读取这里的服务商、模型、Base URL、协议风格和 API Key。",
     aiProvider: "AI 服务商",
-    aiProviderDescription: "选择用于文本润色和 Chat Completions 的 API 服务商。",
+    aiProviderDescription: "选择接口预设/计费账户。具体请求协议格式在下方单独选择。",
     aiModel: "模型名称",
     aiModelDescription: "大模型名称（例如 gpt-4o-mini, deepseek-chat, claude-3-5-sonnet-20241022）。",
+    aiMaxTokens: "最大输出 Token 数",
+    aiMaxTokensDescription: "这是最大输出 Token 数，不是上下文窗口大小。教材整理通常建议 8192-32768；MiniMax-M3 会被限制到 524288，旧版 M2.x 限制到 204800，避免接口拒绝或空响应。",
+    aiTemperature: "采样温度 (Temperature)",
+    aiTemperatureDescription: "采样随机性，范围 0-2。越低越确定。教材整理/通用任务推荐 1.0。推理模型会忽略此值。",
     aiApiKey: "API 密钥 (API Key)",
     aiApiKeyDescription: "用于访问接口 of API Key，输入后将安全掩码显示。",
     aiBaseUrl: "API 接口地址 (Base URL)",
-    aiBaseUrlDescription: "接口基础地址（例如 https://api.openai.com/v1, https://api.deepseek.com）。",
+    aiBaseUrlDescription: "接口基础地址（例如 https://api.openai.com/v1, https://api.deepseek.com, https://api.minimaxi.com）。",
+    aiApiStyle: "接口协议风格",
+    aiApiStyleDescription: "只控制请求/响应格式。Anthropic 兼容格式可用于 MiniMax 或其他兼容网关，不代表切换到 Anthropic 官方服务。",
+    aiApiStyleOpenAI: "OpenAI 兼容 (/v1/chat/completions)",
+    aiApiStyleAnthropic: "Anthropic 兼容 (/anthropic/v1/messages，支持图片)",
     aiAsrSource: "语音转文字 (ASR) 来源",
     aiAsrSourceDescription: "选择语音转录阶段的运行位置（本地离线 ASR 引擎或云端 API 接口）。",
     aiAsrSourceLocal: "本地离线 (sherpa-onnx)",

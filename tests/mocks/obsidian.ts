@@ -12,7 +12,18 @@ export class Modal {}
 export class SuggestModal<T = unknown> {
   protected _placeholder?: T;
 }
-export class Notice {}
+export class Notice {
+  message: string;
+  timeout?: number;
+  constructor(message: string, timeout?: number) {
+    this.message = message;
+    this.timeout = timeout;
+  }
+  setMessage(message: string): void {
+    this.message = message;
+  }
+  hide(): void { /* no-op */ }
+}
 export class TFile {
   path = "";
   basename = "";
@@ -20,6 +31,18 @@ export class TFile {
 }
 
 export class FileSystemAdapter {}
+
+export const requestUrl = async (options: unknown): Promise<unknown> => {
+  const mock = (globalThis as unknown as { __mockRequestUrl?: (options: unknown) => Promise<unknown> }).__mockRequestUrl;
+  if (!mock) {
+    throw new Error("requestUrl mock not installed");
+  }
+  return mock(options);
+};
+
+export function normalizePath(path: string): string {
+  return path.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
+}
 
 export const Platform = {
   isDesktopApp: true

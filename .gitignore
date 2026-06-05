@@ -22,10 +22,32 @@ planning/
 
 # OS
 *.icloud
-.DS_Store
 Thumbs.db
 
 # Models cache
 models/punc-zh-2024/
 models/zh-2025/
+models/ocr/
+models/tessdata/
+models/Qwen2-VL-*/
+models/InternVL*/
+models/Florence*/
+models/sensevoice/
 *.tar.bz2
+*.traineddata
+
+# Build artifacts produced by esbuild at the repo root
+vision-worker.js
+kreuzberg-worker.js
+paddle-ocr-worker.js
+
+# Defensive: archives, coverage, build cache that occasionally appear
+*.zip
+*.tgz
+*.gz
+coverage/
+*.tsbuildinfo
+tmp/
+temp/
+*.bak
+*.orig

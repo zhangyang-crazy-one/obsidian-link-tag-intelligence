@@ -1,8 +1,13 @@
 "use strict";
+var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
@@ -15,7 +20,151 @@ var __copyProps = (to, from, except, desc) => {
   }
   return to;
 };
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+// src/speech-model.ts
+var speech_model_exports = {};
+__export(speech_model_exports, {
+  downloadModelFile: () => downloadModelFile,
+  downloadModelFiles: () => downloadModelFiles,
+  downloadWithRetry: () => downloadWithRetry,
+  getModelFileList: () => getModelFileList,
+  getModelRepo: () => getModelRepo,
+  isArchiveDownload: () => isArchiveDownload,
+  sha256Hex: () => sha256Hex,
+  verifyChecksum: () => verifyChecksum
+});
+async function sha256Hex(buffer) {
+  const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function verifyChecksum(buffer, expectedSha256) {
+  const actual = await sha256Hex(buffer);
+  return actual === expectedSha256;
+}
+function getModelFileList(language) {
+  return language === "zh" ? [...ZH_MODEL_FILENAMES] : EN_MODEL_FILES.map((f) => f.filename);
+}
+function getModelRepo(language) {
+  return language === "zh" ? ZH_MODEL_URL : EN_MODEL_REPO;
+}
+function isArchiveDownload(language) {
+  return language === "zh";
+}
+async function downloadModelFile(repo, filename, onProgress) {
+  const url = `https://huggingface.co/${repo}/resolve/main/${filename}`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText} for ${filename}`);
+  }
+  const contentLength = Number(response.headers.get("content-length") || "0");
+  const reader = response.body.getReader();
+  const chunks = [];
+  let loaded = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.length;
+    onProgress({
+      percent: contentLength > 0 ? loaded / contentLength : 0,
+      loadedBytes: loaded,
+      totalBytes: contentLength
+    });
+  }
+  const total = chunks.reduce((sum, c) => sum + c.length, 0);
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result.buffer;
+}
+async function downloadWithRetry(repo, filename, expectedSha256, onProgress, maxRetries = 3) {
+  const backoffDelays = [1e3, 2e3, 4e3];
+  const PLACEHOLDER_SHA2562 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const buffer = await downloadModelFile(repo, filename, onProgress);
+      const skipVerify = expectedSha256 === PLACEHOLDER_SHA2562;
+      const valid = skipVerify || await verifyChecksum(buffer, expectedSha256);
+      if (skipVerify) {
+        return { filename, success: true, buffer };
+      }
+      if (!valid) {
+        if (attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, backoffDelays[attempt] ?? 4e3));
+          continue;
+        }
+        return { filename, success: false, error: "sha256 mismatch after retries" };
+      }
+      return { filename, success: true, buffer };
+    } catch (error) {
+      if (attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, backoffDelays[attempt] ?? 4e3));
+        continue;
+      }
+      return { filename, success: false, error: String(error) };
+    }
+  }
+  return { filename, success: false, error: "unknown error" };
+}
+async function downloadModelFiles(language, writeFile, onProgress) {
+  const repo = getModelRepo(language);
+  const files = getModelFileList(language);
+  const results = [];
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const result = await downloadWithRetry(
+      repo,
+      file.filename,
+      file.sha256,
+      (fp) => onProgress({
+        currentFile: file.filename,
+        fileIndex: i,
+        totalFiles: files.length,
+        fileProgress: fp
+      }),
+      3
+    );
+    if (result.success && result.buffer) {
+      await writeFile(file.filename, result.buffer);
+    }
+    results.push(result);
+  }
+  return results;
+}
+var ZH_MODEL_ARCHIVE, ZH_MODEL_URL, ZH_MODEL_FILENAMES, EN_MODEL_REPO, EN_MODEL_FILES;
+var init_speech_model = __esm({
+  "src/speech-model.ts"() {
+    "use strict";
+    ZH_MODEL_ARCHIVE = "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2";
+    ZH_MODEL_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/" + ZH_MODEL_ARCHIVE;
+    ZH_MODEL_FILENAMES = [
+      "encoder.int8.onnx",
+      "decoder.onnx",
+      "joiner.int8.onnx",
+      "tokens.txt"
+    ];
+    EN_MODEL_REPO = "csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20";
+    EN_MODEL_FILES = [
+      { filename: "encoder-epoch-99-avg-1.int8.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+      { filename: "decoder-epoch-99-avg-1.int8.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+      { filename: "joiner-epoch-99-avg-1.int8.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+      { filename: "tokens.txt", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" }
+    ];
+  }
+});
 
 // src/main.ts
 var main_exports = {};
@@ -24,7 +173,7 @@ __export(main_exports, {
   default: () => LinkTagIntelligencePlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian13 = require("obsidian");
+var import_obsidian14 = require("obsidian");
 
 // src/editor-extension.ts
 var import_state = require("@codemirror/state");
@@ -797,13 +946,13 @@ async function runIngestionCommand(app, settings, request, activeFile, selection
     openAfterImport: String(settings.researchOpenNoteAfterImport)
   });
   const exec = getExecFunction();
-  const stdout = await new Promise((resolve, reject) => {
+  const stdout = await new Promise((resolve2, reject) => {
     exec(command, { timeout: settings.ingestionTimeoutMs, cwd: getVaultBasePath(app) || void 0 }, (error, resultStdout, stderr) => {
       if (error) {
         reject(new Error(stderr?.trim() || error.message));
         return;
       }
-      resolve(resultStdout);
+      resolve2(resultStdout);
     });
   });
   const parsed = JSON.parse(stdout.trim());
@@ -831,6 +980,45 @@ var TRANSLATIONS = {
     suggestTags: "Suggest tags for current note",
     ingestionCapture: "Ingest research source",
     semanticSearch: "Semantic search via external command",
+    ocr: "Local image OCR",
+    textbookCleanup: "Clean textbook OCR",
+    paddleOcrTierLabel: "PaddleOCR model tier",
+    paddleOcrTierDesc: "PP-OCRv5 model size. Mobile = fast / low memory. Server = best accuracy, default. Hybrid = mobile detector + server recognizer. Switching tiers triggers a model download on next OCR call.",
+    paddleOcrTierMobileLabel: "Mobile \u2014 fast, ~22 MB",
+    paddleOcrTierServerLabel: "Server \u2014 precise, ~181 MB, default",
+    paddleOcrTierHybridLabel: "Hybrid \u2014 mobile det + server rec, ~94 MB",
+    paddleOcrDownloadButton: "Download PaddleOCR model now",
+    paddleOcrDownloadInProgress: "Downloading PaddleOCR {tier} model\u2026",
+    paddleOcrDownloadDone: "PaddleOCR {tier} model ready.",
+    paddleOcrDownloadFailed: "PaddleOCR model download failed: {error}",
+    paddleDetAdvancedHeading: "Advanced PaddleOCR detection parameters",
+    paddleDetAdvancedDesc: "Tune the DBNet postprocessor for your specific workload. Defaults are PaddleOCR's official values. \u26A0 Changing these can hurt accuracy on images that already work well.",
+    paddleDetReset: "Reset to PaddleOCR defaults",
+    paddleDetResetConfirm: "Reset all 9 PaddleOCR detection parameters to their official defaults?",
+    paddleDetDbThreshLabel: "Binarize threshold (db_thresh)",
+    paddleDetDbThreshDesc: "Pixel probability > this counts as text. Lower = more sensitive (may detect noise). Range 0.1\u20130.9. PaddleOCR default: 0.3.",
+    paddleDetBoxThreshLabel: "Box score threshold (db_box_thresh)",
+    paddleDetBoxThreshDesc: "Average confidence inside a candidate box. Lower = keep uncertain boxes (more recall, less precision). Range 0.1\u20130.9. PaddleOCR default: 0.6.",
+    paddleDetUnclipRatioLabel: "Unclip expansion ratio",
+    paddleDetUnclipRatioDesc: "How far each detected box is expanded outward. Higher = box more generous around the text. Range 1.0\u20133.0. PaddleOCR default: 1.5.",
+    paddleDetMinSizeLabel: "Minimum box side (px)",
+    paddleDetMinSizeDesc: "Boxes smaller than this on their short side are dropped. Higher = filters more noise. Range 1\u201350. PaddleOCR default: 3.",
+    paddleDetNmsIouThreshLabel: "NMS IoU threshold",
+    paddleDetNmsIouThreshDesc: "Boxes with IoU above this are merged. Lower = more aggressive merging. Range 0.1\u20130.9. PaddleOCR default: 0.3.",
+    paddleDetMaxCandidatesLabel: "Max candidate boxes (cap)",
+    paddleDetMaxCandidatesDesc: "Hard cap for performance. Range 100\u20135000. PaddleOCR default: 1000.",
+    paddleDetLimitSideLenLabel: "Long-side resize for inference",
+    paddleDetLimitSideLenDesc: "Image is downscaled so its longest side is this value before detection. Higher = slower but more accurate for small text. Range 320\u20132048. PaddleOCR default: 960.",
+    paddleOcrCpuThreadsLabel: "ONNX CPU threads",
+    paddleOcrCpuThreadsDesc: "Threads per PaddleOCR worker. 0 = auto (about half of CPU cores, capped at 8). Higher can speed up inference but each parallel PDF page worker also uses this many threads.",
+    paddleOcrPdfConcurrencyLabel: "PDF page OCR concurrency",
+    paddleOcrPdfConcurrencyDesc: "How many scanned PDF pages to OCR in parallel. 2 is safe; 3-4 can use more CPU if memory is available. Range 1-8.",
+    paddleOcrPdfDpiLabel: "PDF rasterization DPI",
+    paddleOcrPdfDpiDesc: "DPI used when rendering scanned PDF pages before OCR. Lower is faster; higher preserves small text. Range 96-300. Default: 150.",
+    paddleDetScoreModeLabel: "Score mode",
+    paddleDetScoreModeDesc: "fast = mean of pixels in axis-aligned bbox. slow = mean inside polygon (more accurate, slower).",
+    paddleDetUseDilationLabel: "Dilate segmentation map",
+    paddleDetUseDilationDesc: "Apply 3\xD73 dilation to the binarized map before contour finding. Useful for dense small text. PaddleOCR mobile default: true.",
     currentNote: "Current note",
     outgoingLinks: "Outgoing links",
     backlinks: "Backlinks",
@@ -964,7 +1152,7 @@ var TRANSLATIONS = {
     settingsWorkbenchPagePlugins: "Plugins",
     settingsWorkbenchPageWorkflow: "Workflow",
     settingsWorkbenchPageTaxonomy: "Taxonomy",
-    settingsWorkbenchPageSpeech: "Voice",
+    settingsWorkbenchPageSpeech: "Local AI",
     settingsWorkbenchOn: "On",
     settingsWorkbenchOff: "Off",
     settingsWorkbenchDetails: "Details",
@@ -1103,22 +1291,30 @@ var TRANSLATIONS = {
     speechRecordTooltipProcessing: "Processing...",
     speechRecordTooltipRecording: "Recording... Click to stop",
     speechSettingsDescription: "Configure speech recognition model, language, and recording behavior. All processing is local.",
-    speechSettingsHeading: "Voice",
+    speechSettingsHeading: "Speech Recognition",
     speechShortcutConflict: "Shortcut Ctrl+Shift+V is already in use. Please configure manually in Obsidian hotkey settings.",
     speechToggleCommand: "Toggle voice input",
     speechVadSensitivity: "VAD sensitivity",
     speechVadSensitivityDescription: "0=Lecture (2.4s pause)  1=Slow (1.8s)  2=Normal (1.5s)  3=Fast (0.8s). Higher = shorter sentence breaks.",
     settingsWorkbenchPageAI: "AI Helper",
     aiSettingsHeading: "AI Transcription & Refinement",
-    aiSettingsDescription: "Configure API access for OpenAI-compatible, Anthropic, DeepSeek, or MiniMax providers. Setup prompt templates to automatically transcribe and polish audio files.",
+    aiSettingsDescription: "Configure the shared AI endpoint used by transcription polishing, textbook cleanup, and other AI text tasks.",
     aiProvider: "AI Provider",
-    aiProviderDescription: "Choose the API provider for Chat and LLM-based post-processing.",
+    aiProviderDescription: "Choose the endpoint preset / billing account. Wire format is selected separately below.",
     aiModel: "Model Name",
     aiModelDescription: "Model name for chat completions (e.g., gpt-4o-mini, deepseek-chat, claude-3-5-sonnet-20241022).",
+    aiMaxTokens: "Max Output Tokens",
+    aiMaxTokensDescription: "Maximum output tokens, not context-window size. For textbook cleanup, 8192-32768 is usually safer; MiniMax-M3 is clamped to 524288, older M2.x to 204800.",
+    aiTemperature: "Temperature",
+    aiTemperatureDescription: "Sampling randomness, range 0-2. Lower is more deterministic. 1.0 is recommended for text cleanup / general tasks. Reasoning models ignore this value.",
     aiApiKey: "API Key",
     aiApiKeyDescription: "API secret key for authorization. Handled securely.",
     aiBaseUrl: "API Base URL",
-    aiBaseUrlDescription: "Base URL for the provider API endpoint (e.g., https://api.openai.com/v1, https://api.deepseek.com).",
+    aiBaseUrlDescription: "Base URL for the endpoint (e.g., https://api.openai.com/v1, https://api.deepseek.com, https://api.minimaxi.com).",
+    aiApiStyle: "API Wire Format",
+    aiApiStyleDescription: "Controls request/response shape only. Anthropic-compatible style can be used with MiniMax or other compatible gateways on their own Base URL.",
+    aiApiStyleOpenAI: "OpenAI-compatible (/v1/chat/completions)",
+    aiApiStyleAnthropic: "Anthropic-compatible (/anthropic/v1/messages, supports images)",
     aiAsrSource: "ASR Transcription Source",
     aiAsrSourceDescription: "Choose where the audio-to-text phase is processed (Local offline engine or Cloud API).",
     aiAsrSourceLocal: "Local (sherpa-onnx)",
@@ -1248,6 +1444,45 @@ var TRANSLATIONS = {
     suggestTags: "\u4E3A\u5F53\u524D\u7B14\u8BB0\u63A8\u8350\u6807\u7B7E",
     ingestionCapture: "\u5BFC\u5165\u7814\u7A76\u6765\u6E90",
     semanticSearch: "\u901A\u8FC7\u5916\u90E8\u547D\u4EE4\u8FDB\u884C\u8BED\u4E49\u68C0\u7D22",
+    ocr: "\u672C\u5730\u56FE\u7247\u79BB\u7EBF OCR \u63D0\u53D6",
+    textbookCleanup: "\u6559\u6750\u6574\u7406",
+    paddleOcrTierLabel: "PaddleOCR \u6A21\u578B\u6863\u4F4D",
+    paddleOcrTierDesc: "PP-OCRv5 \u6A21\u578B\u5927\u5C0F\u3002Mobile = \u901F\u5EA6\u5FEB / \u5185\u5B58\u4F4E\uFF1BServer = \u7CBE\u5EA6\u6700\u9AD8\uFF08\u9ED8\u8BA4\uFF09\uFF1BHybrid = \u79FB\u52A8\u7AEF\u68C0\u6D4B\u5668 + \u670D\u52A1\u7AEF\u8BC6\u522B\u5668\u3002\u5207\u6362\u6863\u4F4D\u540E\uFF0C\u4E0B\u6B21 OCR \u8C03\u7528\u65F6\u4F1A\u81EA\u52A8\u4E0B\u8F7D\u6240\u9009\u6863\u4F4D\u7684\u6A21\u578B\u3002",
+    paddleOcrTierMobileLabel: "Mobile \u2014 \u901F\u5EA6\u5FEB\uFF0C\u7EA6 22 MB",
+    paddleOcrTierServerLabel: "Server \u2014 \u7CBE\u5EA6\u9AD8\uFF0C\u7EA6 181 MB\uFF08\u9ED8\u8BA4\uFF09",
+    paddleOcrTierHybridLabel: "Hybrid \u2014 \u79FB\u52A8\u7AEF det + \u670D\u52A1\u7AEF rec\uFF0C\u7EA6 94 MB",
+    paddleOcrDownloadButton: "\u7ACB\u5373\u4E0B\u8F7D PaddleOCR \u6A21\u578B",
+    paddleOcrDownloadInProgress: "\u6B63\u5728\u4E0B\u8F7D PaddleOCR {tier} \u6A21\u578B\u2026",
+    paddleOcrDownloadDone: "PaddleOCR {tier} \u6A21\u578B\u5DF2\u5C31\u7EEA\u3002",
+    paddleOcrDownloadFailed: "PaddleOCR \u6A21\u578B\u4E0B\u8F7D\u5931\u8D25\uFF1A{error}",
+    paddleDetAdvancedHeading: "\u9AD8\u7EA7 PaddleOCR \u68C0\u6D4B\u53C2\u6570",
+    paddleDetAdvancedDesc: "\u4E3A\u4F60\u7684\u5177\u4F53\u573A\u666F\u5FAE\u8C03 DBNet \u540E\u5904\u7406\u3002\u9ED8\u8BA4\u503C\u4E3A PaddleOCR \u5B98\u65B9\u503C\u3002\u26A0 \u4FEE\u6539\u8FD9\u4E9B\u53C2\u6570\u53EF\u80FD\u8BA9\u539F\u672C\u80FD\u8BC6\u522B\u7684\u56FE\u7247\u53CD\u800C\u53D8\u5DEE\u3002",
+    paddleDetReset: "\u91CD\u7F6E\u4E3A PaddleOCR \u5B98\u65B9\u9ED8\u8BA4",
+    paddleDetResetConfirm: "\u786E\u8BA4\u5C06 9 \u4E2A PaddleOCR \u68C0\u6D4B\u53C2\u6570\u5168\u90E8\u91CD\u7F6E\u4E3A\u5B98\u65B9\u9ED8\u8BA4\u503C\uFF1F",
+    paddleDetDbThreshLabel: "\u4E8C\u503C\u5316\u9608\u503C (db_thresh)",
+    paddleDetDbThreshDesc: "\u50CF\u7D20\u6982\u7387 > \u6B64\u503C\u7B97\u6587\u5B57\u50CF\u7D20\u3002\u8D8A\u4F4E\u8D8A\u654F\u611F\uFF08\u53EF\u80FD\u8BEF\u68C0\u566A\u58F0\uFF09\u3002\u8303\u56F4 0.1\u20130.9\u3002\u5B98\u65B9\u9ED8\u8BA4\uFF1A0.3\u3002",
+    paddleDetBoxThreshLabel: "\u68C0\u6D4B\u6846\u7F6E\u4FE1\u5EA6\u9608\u503C (db_box_thresh)",
+    paddleDetBoxThreshDesc: "\u5019\u9009\u6846\u5185\u5E73\u5747\u6982\u7387\u3002\u8D8A\u4F4E\u8D8A\u5BBD\u677E\uFF08\u53EC\u56DE\u2191\u3001\u7CBE\u5EA6\u2193\uFF09\u3002\u8303\u56F4 0.1\u20130.9\u3002\u5B98\u65B9\u9ED8\u8BA4\uFF1A0.6\u3002",
+    paddleDetUnclipRatioLabel: "Unclip \u6269\u5C55\u6BD4\u4F8B",
+    paddleDetUnclipRatioDesc: "\u68C0\u6D4B\u6846\u5411\u5916\u6269\u5C55\u8DDD\u79BB\u3002\u8D8A\u9AD8\u6846\u8D8A\u5927\u3002\u8303\u56F4 1.0\u20133.0\u3002\u5B98\u65B9\u9ED8\u8BA4\uFF1A1.5\u3002",
+    paddleDetMinSizeLabel: "\u6700\u5C0F\u6846\u8FB9\u957F (\u50CF\u7D20)",
+    paddleDetMinSizeDesc: "\u5C0F\u4E8E\u6B64\u8FB9\u957F\u7684\u6846\u88AB\u4E22\u5F03\u3002\u8D8A\u9AD8\u8FC7\u6EE4\u8D8A\u4E25\u3002\u8303\u56F4 1\u201350\u3002\u5B98\u65B9\u9ED8\u8BA4\uFF1A3\u3002",
+    paddleDetNmsIouThreshLabel: "NMS IoU \u9608\u503C",
+    paddleDetNmsIouThreshDesc: "IoU \u9AD8\u4E8E\u6B64\u9608\u503C\u7684\u6846\u88AB\u5408\u5E76\u3002\u8D8A\u4F4E\u5408\u5E76\u8D8A\u6FC0\u8FDB\u3002\u8303\u56F4 0.1\u20130.9\u3002\u5B98\u65B9\u9ED8\u8BA4\uFF1A0.3\u3002",
+    paddleDetMaxCandidatesLabel: "\u6700\u5927\u5019\u9009\u6846\u6570",
+    paddleDetMaxCandidatesDesc: "\u6027\u80FD\u4FDD\u62A4\u4E0A\u9650\u3002\u8303\u56F4 100\u20135000\u3002\u5B98\u65B9\u9ED8\u8BA4\uFF1A1000\u3002",
+    paddleDetLimitSideLenLabel: "\u63A8\u7406\u65F6\u6700\u957F\u8FB9\u957F\u5EA6",
+    paddleDetLimitSideLenDesc: "\u68C0\u6D4B\u524D\u56FE\u7247\u88AB\u7F29\u653E\u5230\u6B64\u6700\u957F\u8FB9\u3002\u8D8A\u5927\u8D8A\u6162\u4F46\u5BF9\u5C0F\u5B57\u8D8A\u51C6\u3002\u8303\u56F4 320\u20132048\u3002\u5B98\u65B9\u9ED8\u8BA4\uFF1A960\u3002",
+    paddleOcrCpuThreadsLabel: "ONNX CPU \u7EBF\u7A0B\u6570",
+    paddleOcrCpuThreadsDesc: "\u6BCF\u4E2A PaddleOCR worker \u4F7F\u7528\u7684\u7EBF\u7A0B\u6570\u30020 = \u81EA\u52A8\uFF08\u7EA6\u534A\u6570 CPU \u6838\u5FC3\uFF0C\u6700\u9AD8 8\uFF09\u3002\u8C03\u9AD8\u53EF\u52A0\u901F\u63A8\u7406\uFF0C\u4F46 PDF \u5E76\u53D1\u9875 worker \u4E5F\u4F1A\u5404\u81EA\u5360\u7528\u8FD9\u4E9B\u7EBF\u7A0B\u3002",
+    paddleOcrPdfConcurrencyLabel: "PDF \u9875\u9762 OCR \u5E76\u53D1\u6570",
+    paddleOcrPdfConcurrencyDesc: "\u626B\u63CF\u7248 PDF \u540C\u65F6\u8BC6\u522B\u7684\u9875\u6570\u30022 \u8F83\u7A33\uFF1B\u5185\u5B58\u5145\u8DB3\u65F6\u53EF\u8BD5 3-4\u3002\u8303\u56F4 1-8\u3002",
+    paddleOcrPdfDpiLabel: "PDF \u6E32\u67D3 DPI",
+    paddleOcrPdfDpiDesc: "\u626B\u63CF\u7248 PDF \u8F6C\u56FE\u7247\u65F6\u4F7F\u7528\u7684 DPI\u3002\u8D8A\u4F4E\u8D8A\u5FEB\uFF0C\u8D8A\u9AD8\u8D8A\u4FDD\u7559\u5C0F\u5B57\u3002\u8303\u56F4 96-300\u3002\u9ED8\u8BA4\uFF1A150\u3002",
+    paddleDetScoreModeLabel: "\u5F97\u5206\u6A21\u5F0F",
+    paddleDetScoreModeDesc: "fast = bbox \u5185\u5747\u503C\uFF08\u5FEB\uFF09\u3002slow = polygon \u5185\u5747\u503C\uFF08\u51C6\u4F46\u6162\uFF09\u3002",
+    paddleDetUseDilationLabel: "\u81A8\u80C0\u5206\u5272\u56FE",
+    paddleDetUseDilationDesc: "\u5728 contour \u63D0\u53D6\u524D\u5BF9\u4E8C\u503C\u5316\u56FE\u505A 3\xD73 \u81A8\u80C0\u3002\u5BC6\u96C6\u5C0F\u5B57\u573A\u666F\u6709\u7528\u3002PaddleOCR \u79FB\u52A8\u7AEF\u9ED8\u8BA4\uFF1A\u5F00\u3002",
     currentNote: "\u5F53\u524D\u7B14\u8BB0",
     outgoingLinks: "\u51FA\u94FE",
     backlinks: "\u53CD\u94FE",
@@ -1381,7 +1616,7 @@ var TRANSLATIONS = {
     settingsWorkbenchPagePlugins: "\u63D2\u4EF6",
     settingsWorkbenchPageWorkflow: "\u5DE5\u4F5C\u6D41",
     settingsWorkbenchPageTaxonomy: "\u8BCD\u8868",
-    settingsWorkbenchPageSpeech: "\u8BED\u97F3",
+    settingsWorkbenchPageSpeech: "\u672C\u5730 AI",
     settingsWorkbenchOn: "\u5F00\u542F",
     settingsWorkbenchOff: "\u5173\u95ED",
     settingsWorkbenchDetails: "\u8BE6\u60C5",
@@ -1520,22 +1755,30 @@ var TRANSLATIONS = {
     speechRecordTooltipProcessing: "\u6B63\u5728\u5904\u7406...",
     speechRecordTooltipRecording: "\u6B63\u5728\u5F55\u97F3... \u70B9\u51FB\u505C\u6B62",
     speechSettingsDescription: "\u914D\u7F6E\u8BED\u97F3\u8BC6\u522B\u6A21\u578B\u3001\u8BED\u8A00\u548C\u5F55\u97F3\u884C\u4E3A\u3002\u6240\u6709\u5904\u7406\u5747\u5728\u672C\u5730\u5B8C\u6210\u3002",
-    speechSettingsHeading: "\u8BED\u97F3",
+    speechSettingsHeading: "\u8BED\u97F3\u8BC6\u522B",
     speechShortcutConflict: "\u5FEB\u6377\u952E Ctrl+Shift+V \u5DF2\u88AB\u5360\u7528\uFF0C\u8BF7\u5728 Obsidian \u5FEB\u6377\u952E\u8BBE\u7F6E\u4E2D\u624B\u52A8\u914D\u7F6E\u3002",
     speechToggleCommand: "\u5207\u6362\u8BED\u97F3\u8F93\u5165",
     speechVadSensitivity: "VAD \u7075\u654F\u5EA6",
     speechVadSensitivityDescription: "0=\u8BFE\u7A0B\u8BB2\u5EA7(2.4s\u505C\u987F)  1=\u6162\u901F(1.8s)  2=\u6B63\u5E38(1.5s)  3=\u5FEB\u901F(0.8s)\u3002\u8D8A\u9AD8\u65AD\u53E5\u8D8A\u9891\u7E41\u3002",
     settingsWorkbenchPageAI: "AI \u52A9\u624B",
     aiSettingsHeading: "AI \u667A\u80FD\u8F6C\u5F55\u4E0E\u6DA6\u8272",
-    aiSettingsDescription: "\u914D\u7F6E OpenAI \u517C\u5BB9\u3001Anthropic\u3001DeepSeek \u6216 MiniMax API\u3002\u8BBE\u7F6E\u63D0\u793A\u8BCD\u6A21\u677F\uFF0C\u81EA\u52A8\u8FDB\u884C\u8BED\u97F3\u8F6C\u5F55\u4E0E\u5927\u6A21\u578B\u6574\u7406\u3002",
+    aiSettingsDescription: "\u914D\u7F6E\u5171\u4EAB AI \u63A5\u53E3\u3002\u8BED\u97F3\u8F6C\u5F55\u6574\u7406\u3001\u6559\u6750\u6574\u7406\u4EE5\u53CA\u5176\u4ED6 AI \u6587\u672C\u4EFB\u52A1\u90FD\u4F1A\u8BFB\u53D6\u8FD9\u91CC\u7684\u670D\u52A1\u5546\u3001\u6A21\u578B\u3001Base URL\u3001\u534F\u8BAE\u98CE\u683C\u548C API Key\u3002",
     aiProvider: "AI \u670D\u52A1\u5546",
-    aiProviderDescription: "\u9009\u62E9\u7528\u4E8E\u6587\u672C\u6DA6\u8272\u548C Chat Completions \u7684 API \u670D\u52A1\u5546\u3002",
+    aiProviderDescription: "\u9009\u62E9\u63A5\u53E3\u9884\u8BBE/\u8BA1\u8D39\u8D26\u6237\u3002\u5177\u4F53\u8BF7\u6C42\u534F\u8BAE\u683C\u5F0F\u5728\u4E0B\u65B9\u5355\u72EC\u9009\u62E9\u3002",
     aiModel: "\u6A21\u578B\u540D\u79F0",
     aiModelDescription: "\u5927\u6A21\u578B\u540D\u79F0\uFF08\u4F8B\u5982 gpt-4o-mini, deepseek-chat, claude-3-5-sonnet-20241022\uFF09\u3002",
+    aiMaxTokens: "\u6700\u5927\u8F93\u51FA Token \u6570",
+    aiMaxTokensDescription: "\u8FD9\u662F\u6700\u5927\u8F93\u51FA Token \u6570\uFF0C\u4E0D\u662F\u4E0A\u4E0B\u6587\u7A97\u53E3\u5927\u5C0F\u3002\u6559\u6750\u6574\u7406\u901A\u5E38\u5EFA\u8BAE 8192-32768\uFF1BMiniMax-M3 \u4F1A\u88AB\u9650\u5236\u5230 524288\uFF0C\u65E7\u7248 M2.x \u9650\u5236\u5230 204800\uFF0C\u907F\u514D\u63A5\u53E3\u62D2\u7EDD\u6216\u7A7A\u54CD\u5E94\u3002",
+    aiTemperature: "\u91C7\u6837\u6E29\u5EA6 (Temperature)",
+    aiTemperatureDescription: "\u91C7\u6837\u968F\u673A\u6027\uFF0C\u8303\u56F4 0-2\u3002\u8D8A\u4F4E\u8D8A\u786E\u5B9A\u3002\u6559\u6750\u6574\u7406/\u901A\u7528\u4EFB\u52A1\u63A8\u8350 1.0\u3002\u63A8\u7406\u6A21\u578B\u4F1A\u5FFD\u7565\u6B64\u503C\u3002",
     aiApiKey: "API \u5BC6\u94A5 (API Key)",
     aiApiKeyDescription: "\u7528\u4E8E\u8BBF\u95EE\u63A5\u53E3 of API Key\uFF0C\u8F93\u5165\u540E\u5C06\u5B89\u5168\u63A9\u7801\u663E\u793A\u3002",
     aiBaseUrl: "API \u63A5\u53E3\u5730\u5740 (Base URL)",
-    aiBaseUrlDescription: "\u63A5\u53E3\u57FA\u7840\u5730\u5740\uFF08\u4F8B\u5982 https://api.openai.com/v1, https://api.deepseek.com\uFF09\u3002",
+    aiBaseUrlDescription: "\u63A5\u53E3\u57FA\u7840\u5730\u5740\uFF08\u4F8B\u5982 https://api.openai.com/v1, https://api.deepseek.com, https://api.minimaxi.com\uFF09\u3002",
+    aiApiStyle: "\u63A5\u53E3\u534F\u8BAE\u98CE\u683C",
+    aiApiStyleDescription: "\u53EA\u63A7\u5236\u8BF7\u6C42/\u54CD\u5E94\u683C\u5F0F\u3002Anthropic \u517C\u5BB9\u683C\u5F0F\u53EF\u7528\u4E8E MiniMax \u6216\u5176\u4ED6\u517C\u5BB9\u7F51\u5173\uFF0C\u4E0D\u4EE3\u8868\u5207\u6362\u5230 Anthropic \u5B98\u65B9\u670D\u52A1\u3002",
+    aiApiStyleOpenAI: "OpenAI \u517C\u5BB9 (/v1/chat/completions)",
+    aiApiStyleAnthropic: "Anthropic \u517C\u5BB9 (/anthropic/v1/messages\uFF0C\u652F\u6301\u56FE\u7247)",
     aiAsrSource: "\u8BED\u97F3\u8F6C\u6587\u5B57 (ASR) \u6765\u6E90",
     aiAsrSourceDescription: "\u9009\u62E9\u8BED\u97F3\u8F6C\u5F55\u9636\u6BB5\u7684\u8FD0\u884C\u4F4D\u7F6E\uFF08\u672C\u5730\u79BB\u7EBF ASR \u5F15\u64CE\u6216\u4E91\u7AEF API \u63A5\u53E3\uFF09\u3002",
     aiAsrSourceLocal: "\u672C\u5730\u79BB\u7EBF (sherpa-onnx)",
@@ -1750,8 +1993,8 @@ function getOffsetLineRange(content, start, end) {
 }
 var FRONTMATTER_RE = /^\s*---\n[\s\S]*?\n---\n?/;
 var CJK_RE = /[\u3400-\u9fff]/;
-function isSupportedNotePath(path) {
-  const lower = path.trim().toLowerCase();
+function isSupportedNotePath(path3) {
+  const lower = path3.trim().toLowerCase();
   return lower.endsWith(".md") || lower.endsWith(".excalidraw");
 }
 function isSupportedNoteFile(file) {
@@ -2277,13 +2520,13 @@ async function runSemanticSearch(app, settings, query, activeFile, selection) {
     selection
   });
   const exec = getExecFunction2();
-  const stdout = await new Promise((resolve, reject) => {
+  const stdout = await new Promise((resolve2, reject) => {
     exec(command, { timeout: settings.semanticTimeoutMs, cwd: getVaultBasePath2(app) || void 0 }, (error, resultStdout, stderr) => {
       if (error) {
         reject(new Error(stderr?.trim() || error.message));
         return;
       }
-      resolve(resultStdout);
+      resolve2(resultStdout);
     });
   });
   const parsed = JSON.parse(stdout.trim());
@@ -3836,6 +4079,44 @@ var SemanticSearchModal = class extends import_obsidian7.Modal {
   }
 };
 
+// src/ocr-quality.ts
+function countMeaningfulPdfChars(text) {
+  let count = 0;
+  for (const ch of text) {
+    const code = ch.charCodeAt(0);
+    const isMeaningful = code >= 48 && code <= 57 || code >= 65 && code <= 90 || code >= 97 && code <= 122 || code >= 13312 && code <= 40959 || code >= 65296 && code <= 65305 || code >= 65313 && code <= 65338 || code >= 65345 && code <= 65370;
+    if (isMeaningful) count++;
+  }
+  return count;
+}
+function assessPdfTextExtraction(text, pageCount) {
+  const pages = Math.max(1, Math.floor(Number.isFinite(pageCount) ? pageCount : 1));
+  const trimmed = text.trim();
+  const trimmedChars = trimmed.length;
+  const meaningfulChars = countMeaningfulPdfChars(trimmed);
+  const requiredChars = pages <= 2 ? 120 : Math.max(500, pages * 80);
+  const requiredMeaningfulChars = pages <= 2 ? 60 : Math.max(250, pages * 40);
+  if (trimmedChars === 0) {
+    return { usable: false, reason: "empty", trimmedChars, meaningfulChars, requiredChars, requiredMeaningfulChars, pageCount: pages };
+  }
+  if (trimmedChars < requiredChars) {
+    return { usable: false, reason: "too-short", trimmedChars, meaningfulChars, requiredChars, requiredMeaningfulChars, pageCount: pages };
+  }
+  if (meaningfulChars < requiredMeaningfulChars) {
+    return { usable: false, reason: "too-few-meaningful-chars", trimmedChars, meaningfulChars, requiredChars, requiredMeaningfulChars, pageCount: pages };
+  }
+  return { usable: true, reason: "ok", trimmedChars, meaningfulChars, requiredChars, requiredMeaningfulChars, pageCount: pages };
+}
+
+// src/textbook-cleaner.ts
+var import_obsidian10 = require("obsidian");
+
+// src/ai-service.ts
+var import_obsidian9 = require("obsidian");
+
+// src/settings.ts
+var import_obsidian8 = require("obsidian");
+
 // src/companion-plugins.ts
 var ZOTERO_ID = "obsidian-zotero-desktop-connector";
 var PDF_PLUS_ID = "pdf-plus";
@@ -3873,8 +4154,8 @@ var REQUIRED_PDF_COPY_COMMANDS = [
     template: "{{linkWithDisplay}}"
   }
 ];
-function normalizeVaultPath(path) {
-  return path.replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/^\.\//, "").replace(/\/$/, "").trim();
+function normalizeVaultPath(path3) {
+  return path3.replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/^\.\//, "").replace(/\/$/, "").trim();
 }
 function configPath(app, ...segments) {
   return normalizeVaultPath([app.vault.configDir, ...segments].join("/"));
@@ -3903,14 +4184,14 @@ function ensureArray(value) {
 function stringifyJson(data) {
   return JSON.stringify(data, null, 2);
 }
-async function pathExists(app, path) {
+async function pathExists(app, path3) {
   const adapter = app.vault.adapter;
   if (typeof adapter.exists === "function") {
-    return adapter.exists(path);
+    return adapter.exists(path3);
   }
   if (typeof adapter.read === "function") {
     try {
-      await adapter.read(path);
+      await adapter.read(path3);
       return true;
     } catch {
       return false;
@@ -3936,20 +4217,20 @@ async function ensureParentDirectory(app, filePath) {
     }
   }
 }
-async function readJson(app, path) {
-  if (!await pathExists(app, path)) {
+async function readJson(app, path3) {
+  if (!await pathExists(app, path3)) {
     return {};
   }
-  const raw = await app.vault.adapter.read(path);
+  const raw = await app.vault.adapter.read(path3);
   try {
     return toRecord(JSON.parse(raw));
   } catch {
     return {};
   }
 }
-async function writeJson(app, path, data) {
-  await ensureParentDirectory(app, path);
-  await app.vault.adapter.write(path, stringifyJson(data));
+async function writeJson(app, path3, data) {
+  await ensureParentDirectory(app, path3);
+  await app.vault.adapter.write(path3, stringifyJson(data));
 }
 function findNamedEntry(items, name) {
   return items.find((item) => ensureString(item.name) === name) ?? null;
@@ -4328,693 +4609,69 @@ async function applyCompanionPresetToVault(app, id, profile) {
   await writeJson(app, SMART_CONNECTIONS_CONFIG_PATH, next);
 }
 
-// src/reference-preview.ts
-function clamp2(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
-var _ReferencePreviewPopover = class _ReferencePreviewPopover {
-  constructor() {
-    this.rootEl = null;
-    this.kindEl = null;
-    this.locationEl = null;
-    this.titleEl = null;
-    this.pathEl = null;
-    this.snippetEl = null;
-    this.hideTimer = null;
-    this.activeAnchor = null;
-    this.onHide = null;
-    this.repositionHandler = () => {
-      if (this.rootEl && this.activeAnchor) {
-        this.position(this.activeAnchor);
-      }
-    };
-  }
-  setOnHide(handler) {
-    this.onHide = handler;
-  }
-  show(anchor, data) {
-    this.ensureRoot();
-    this.cleanupDuplicateRoots();
-    this.cancelHide();
-    this.activeAnchor = anchor;
-    if (!this.rootEl || !this.kindEl || !this.locationEl || !this.titleEl || !this.pathEl || !this.snippetEl) {
-      return;
-    }
-    this.rootEl.classList.toggle("is-missing", data.missing === true);
-    this.kindEl.textContent = data.location ? `${data.kindLabel} \xB7 ${data.location}` : data.kindLabel;
-    this.locationEl.textContent = "";
-    this.locationEl.hidden = true;
-    this.titleEl.textContent = data.title;
-    this.pathEl.textContent = data.path;
-    this.pathEl.hidden = !data.path;
-    this.snippetEl.textContent = data.snippet;
-    this.rootEl.hidden = false;
-    this.rootEl.setAttribute("aria-hidden", "false");
-    this.position(anchor);
-    window.requestAnimationFrame(() => {
-      if (this.rootEl && this.activeAnchor === anchor && !this.rootEl.hidden) {
-        this.position(anchor);
-      }
-    });
-    window.addEventListener("scroll", this.repositionHandler, true);
-    window.addEventListener("resize", this.repositionHandler);
-  }
-  scheduleHide(delay = 140) {
-    this.cancelHide();
-    this.hideTimer = window.setTimeout(() => this.hide(true), delay);
-  }
-  cancelHide() {
-    if (this.hideTimer !== null) {
-      window.clearTimeout(this.hideTimer);
-      this.hideTimer = null;
-    }
-  }
-  hide(immediate = false) {
-    this.cancelHide();
-    const hadAnchor = this.activeAnchor !== null;
-    this.activeAnchor = null;
-    if (!this.rootEl) {
-      return;
-    }
-    this.rootEl.hidden = true;
-    this.rootEl.setAttribute("aria-hidden", "true");
-    if (immediate) {
-      window.removeEventListener("scroll", this.repositionHandler, true);
-      window.removeEventListener("resize", this.repositionHandler);
-    }
-    if (hadAnchor) {
-      this.onHide?.();
-    }
-  }
-  destroy() {
-    this.hide(true);
-    this.rootEl?.remove();
-    this.rootEl = null;
-    this.kindEl = null;
-    this.locationEl = null;
-    this.titleEl = null;
-    this.pathEl = null;
-    this.snippetEl = null;
-  }
-  ensureRoot() {
-    if (this.rootEl) {
-      return;
-    }
-    for (const existing of Array.from(document.querySelectorAll(_ReferencePreviewPopover.ROOT_SELECTOR))) {
-      existing.remove();
-    }
-    const root = document.createElement("div");
-    root.className = "lti-hover-preview";
-    root.id = "lti-hover-preview-root";
-    root.hidden = true;
-    root.setAttribute("aria-hidden", "true");
-    const head = document.createElement("div");
-    head.className = "lti-hover-preview-head";
-    const kind = document.createElement("span");
-    kind.className = "lti-hover-preview-kind";
-    head.append(kind);
-    const location = document.createElement("span");
-    location.className = "lti-hover-preview-location";
-    head.append(location);
-    const title = document.createElement("div");
-    title.className = "lti-hover-preview-title";
-    const path = document.createElement("div");
-    path.className = "lti-hover-preview-path";
-    const snippet = document.createElement("pre");
-    snippet.className = "lti-hover-preview-snippet";
-    root.append(head, title, path, snippet);
-    root.addEventListener("mouseenter", () => this.cancelHide());
-    root.addEventListener("mouseleave", () => this.scheduleHide());
-    document.body.appendChild(root);
-    this.rootEl = root;
-    this.kindEl = kind;
-    this.locationEl = location;
-    this.titleEl = title;
-    this.pathEl = path;
-    this.snippetEl = snippet;
-  }
-  cleanupDuplicateRoots() {
-    for (const existing of Array.from(document.querySelectorAll(_ReferencePreviewPopover.ROOT_SELECTOR))) {
-      if (existing !== this.rootEl) {
-        existing.remove();
-      }
-    }
-  }
-  position(anchor) {
-    if (!this.rootEl) {
-      return;
-    }
-    const gap = 10;
-    const margin = 12;
-    const safeTop = 20;
-    const anchorRect = anchor.getBoundingClientRect();
-    this.rootEl.setCssProps({
-      "--lti-preview-left": "0px",
-      "--lti-preview-top": "0px",
-      "--lti-preview-max-width": `min(28rem, calc(100vw - ${margin * 2}px))`,
-      "--lti-preview-max-height": `calc(100vh - ${margin * 2}px)`
-    });
-    const previewRect = this.rootEl.getBoundingClientRect();
-    const left = clamp2(anchorRect.left, margin, window.innerWidth - previewRect.width - margin);
-    const availableHeight = Math.max(160, window.innerHeight - margin * 2);
-    const previewHeight = Math.min(previewRect.height, availableHeight);
-    const spaceAbove = anchorRect.top - safeTop;
-    const spaceBelow = window.innerHeight - anchorRect.bottom - margin;
-    const canPlaceAbove = spaceAbove >= previewHeight + gap;
-    const canPlaceBelow = spaceBelow >= previewHeight + gap;
-    let top;
-    if (canPlaceBelow) {
-      top = anchorRect.bottom + gap;
-    } else if (canPlaceAbove) {
-      top = anchorRect.top - previewHeight - gap;
-    } else if (spaceBelow >= spaceAbove) {
-      top = anchorRect.bottom + gap;
-    } else {
-      top = anchorRect.top - previewHeight - gap;
-    }
-    top = clamp2(top, safeTop, window.innerHeight - previewHeight - margin);
-    this.rootEl.setCssProps({
-      "--lti-preview-left": `${left}px`,
-      "--lti-preview-top": `${top}px`
-    });
+// src/paddle-ocr-types.ts
+var PADDLE_DET_CLS_PREPROCESS = {
+  mean: [0.5, 0.5, 0.5],
+  std: [0.5, 0.5, 0.5]
+};
+var PADDLE_REC_PREPROCESS = {
+  mean: [0.5, 0.5, 0.5],
+  std: [0.5, 0.5, 0.5]
+};
+var PADDLE_MODEL_SUBDIRS = {
+  det: "det",
+  rec: "rec",
+  cls: "cls",
+  dict: "dict"
+};
+var PLACEHOLDER = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+var PADDLE_TIER_SPECS = {
+  mobile: {
+    det: { repo: "PaddlePaddle/PP-OCRv5_mobile_det_onnx", filename: "inference.onnx", sha256: PLACEHOLDER, sizeBytes: 5063518 },
+    rec: { repo: "PaddlePaddle/PP-OCRv5_mobile_rec_onnx", filename: "inference.onnx", sha256: PLACEHOLDER, sizeBytes: 17297408 },
+    dict: { repo: "PaddlePaddle/PP-OCRv5_mobile_rec_onnx", filename: "inference.yml", sha256: PLACEHOLDER, sizeBytes: 148345, role: "rec" },
+    dirName: "mobile",
+    summary: "Mobile (fast, ~22 MB)"
+  },
+  server: {
+    det: { repo: "PaddlePaddle/PP-OCRv5_server_det_onnx", filename: "inference.onnx", sha256: PLACEHOLDER, sizeBytes: 92408575 },
+    rec: { repo: "PaddlePaddle/PP-OCRv5_server_rec_onnx", filename: "inference.onnx", sha256: PLACEHOLDER, sizeBytes: 88602496 },
+    dict: { repo: "PaddlePaddle/PP-OCRv5_server_rec_onnx", filename: "inference.yml", sha256: PLACEHOLDER, sizeBytes: 512e3, role: "rec" },
+    dirName: "server",
+    summary: "Server (precise, ~181 MB, default)"
+  },
+  hybrid: {
+    det: { repo: "PaddlePaddle/PP-OCRv5_mobile_det_onnx", filename: "inference.onnx", sha256: PLACEHOLDER, sizeBytes: 5063518 },
+    rec: { repo: "PaddlePaddle/PP-OCRv5_server_rec_onnx", filename: "inference.onnx", sha256: PLACEHOLDER, sizeBytes: 88602496 },
+    dict: { repo: "PaddlePaddle/PP-OCRv5_server_rec_onnx", filename: "inference.yml", sha256: PLACEHOLDER, sizeBytes: 512e3, role: "rec" },
+    dirName: "hybrid",
+    summary: "Hybrid (mobile det + server rec, ~94 MB)"
   }
 };
-_ReferencePreviewPopover.ROOT_SELECTOR = ".lti-hover-preview";
-var ReferencePreviewPopover = _ReferencePreviewPopover;
-
-// src/reading-hover-controller.ts
-var import_obsidian8 = require("obsidian");
-var controllerMap = /* @__PURE__ */ new WeakMap();
-function buildReadingHoverContent(doc, data) {
-  const root = doc.createElement("div");
-  root.className = "lti-reading-hover-content";
-  const head = doc.createElement("div");
-  head.className = "lti-reading-hover-head";
-  const kind = doc.createElement("span");
-  kind.className = "lti-reading-hover-kind";
-  kind.textContent = data.location ? `${data.kindLabel} \xB7 ${data.location}` : data.kindLabel;
-  head.append(kind);
-  root.append(head);
-  const title = doc.createElement("div");
-  title.className = "lti-reading-hover-title";
-  title.textContent = data.title;
-  root.append(title);
-  if (data.path) {
-    const path = doc.createElement("div");
-    path.className = "lti-reading-hover-path";
-    path.textContent = data.path;
-    root.append(path);
-  }
-  const snippet = doc.createElement("pre");
-  snippet.className = "lti-reading-hover-snippet";
-  snippet.textContent = data.snippet;
-  root.append(snippet);
-  return root;
+var DEFAULT_PADDLE_TIER = "server";
+function getPaddleTierModelDir(tier) {
+  return `models/ocr/pp-ocrv5/${PADDLE_TIER_SPECS[tier].dirName}`;
 }
-function resolveFallbackHost(containerEl) {
-  return containerEl.closest(".markdown-preview-view") ?? containerEl.closest(".markdown-rendered") ?? containerEl.closest(".workspace-leaf-content") ?? containerEl;
-}
-function findMarkdownView(app, containerEl) {
-  const activeView = app.workspace.getActiveViewOfType(import_obsidian8.MarkdownView);
-  const views = [];
-  if (activeView) {
-    views.push(activeView);
-  }
-  for (const leaf of app.workspace.getLeavesOfType("markdown")) {
-    const view = leaf.view;
-    if (view instanceof import_obsidian8.MarkdownView && !views.includes(view)) {
-      views.push(view);
-    }
-  }
-  for (const view of views) {
-    if (view.previewMode?.containerEl?.contains(containerEl) || view.containerEl.contains(containerEl)) {
-      return view;
-    }
-  }
-  return views[0] ?? null;
-}
-function resolveHoverHost(app, containerEl) {
-  const markdownView = findMarkdownView(app, containerEl);
-  if (!markdownView) {
-    return {
-      hostEl: resolveFallbackHost(containerEl),
-      hoverParent: null
-    };
-  }
-  const hoverParent = markdownView.previewMode ?? markdownView;
-  return {
-    hostEl: containerEl.closest(".markdown-preview-view") ?? markdownView.previewMode?.containerEl ?? markdownView.containerEl,
-    hoverParent
-  };
-}
-var LegacyReadingHoverController = class extends import_obsidian8.MarkdownRenderChild {
-  constructor(app, hostEl, sentinelEl, hoverParent, getPreviewData) {
-    super(sentinelEl);
-    this.popover = null;
-    this.fallbackEl = null;
-    this.hideTimer = null;
-    this.previewToken = 0;
-    this.handlePopoverEnter = () => this.cancelHide();
-    this.handlePopoverLeave = () => this.scheduleHide();
-    this.app = app;
-    this.hostEl = hostEl;
-    this.hoverParent = hoverParent;
-    this.getPreviewData = getPreviewData;
-    this.win = hostEl.ownerDocument.defaultView ?? window;
-  }
-  async show(anchor, options) {
-    const token = ++this.previewToken;
-    this.cancelHide();
-    debugLog(this.app, "reading.hover.show-request", {
-      token,
-      target: options.target,
-      sourcePath: options.sourcePath,
-      kind: options.kind,
-      startLine: options.startLine,
-      endLine: options.endLine,
-      hoverParentType: this.hoverParent?.constructor?.name ?? "null",
-      anchorClass: anchor.className
-    });
-    const data = await this.getPreviewData(options);
-    if (token !== this.previewToken || !anchor.isConnected) {
-      debugLog(this.app, "reading.hover.show-abort", {
-        token,
-        currentToken: this.previewToken,
-        anchorConnected: anchor.isConnected,
-        target: options.target
-      });
-      return;
-    }
-    if (this.hoverParent) {
-      const popover = this.ensurePopover(anchor);
-      const hoverEl = popover.hoverEl;
-      hoverEl.classList.add("lti-reading-hover-popover");
-      hoverEl.classList.toggle("is-missing", data.missing === true);
-      hoverEl.replaceChildren(buildReadingHoverContent(anchor.ownerDocument, data));
-      debugLog(this.app, "reading.hover.show-commit", {
-        token,
-        target: options.target,
-        hoverElClass: hoverEl.className,
-        parentHoverPopoverMatches: this.hoverParent.hoverPopover === popover,
-        snippetPreview: data.snippet.slice(0, 120)
-      });
-    } else {
-      this.showFallbackPopover(anchor, data);
-      debugLog(this.app, "reading.hover.show-fallback", {
-        token,
-        target: options.target,
-        snippetPreview: data.snippet.slice(0, 120)
-      });
-    }
-  }
-  cancelHide() {
-    if (this.hideTimer !== null) {
-      this.win.clearTimeout(this.hideTimer);
-      this.hideTimer = null;
-    }
-  }
-  scheduleHide(delay = 140) {
-    this.cancelHide();
-    debugLog(this.app, "reading.hover.schedule-hide", {
-      delay,
-      token: this.previewToken
-    });
-    this.hideTimer = this.win.setTimeout(() => {
-      this.previewToken += 1;
-      this.hide();
-    }, delay);
-  }
-  onunload() {
-    this.previewToken += 1;
-    this.cancelHide();
-    this.hide();
-    controllerMap.delete(this.hostEl);
-    this.containerEl.remove();
-  }
-  ensurePopover(anchor) {
-    debugLog(this.app, "reading.hover.ensure-popover", {
-      hadExistingPopover: Boolean(this.popover),
-      parentExistingPopover: Boolean(this.hoverParent?.hoverPopover),
-      hoverParentType: this.hoverParent?.constructor?.name ?? "unknown",
-      targetClass: anchor.className
-    });
-    this.destroyPopover();
-    const popover = new import_obsidian8.HoverPopover(this.hoverParent, anchor, 0);
-    popover.hoverEl.addEventListener("mouseenter", this.handlePopoverEnter);
-    popover.hoverEl.addEventListener("mouseleave", this.handlePopoverLeave);
-    this.popover = popover;
-    return popover;
-  }
-  showFallbackPopover(anchor, data) {
-    this.destroyFallbackPopover();
-    const doc = anchor.ownerDocument;
-    const el = doc.createElement("div");
-    el.className = "lti-reading-hover-popover lti-fallback-popover";
-    el.classList.toggle("is-missing", data.missing === true);
-    el.replaceChildren(buildReadingHoverContent(doc, data));
-    el.addEventListener("mouseenter", this.handlePopoverEnter);
-    el.addEventListener("mouseleave", this.handlePopoverLeave);
-    doc.body.appendChild(el);
-    this.fallbackEl = el;
-    const gap = 8;
-    const margin = 12;
-    const rect = anchor.getBoundingClientRect();
-    el.setCssProps({
-      "--lti-reading-hover-max-width": `min(28rem, calc(100vw - ${margin * 2}px))`
-    });
-    const elRect = el.getBoundingClientRect();
-    const left = Math.min(rect.left, doc.documentElement.clientWidth - elRect.width - margin);
-    const spaceBelow = doc.documentElement.clientHeight - rect.bottom - margin;
-    const top = spaceBelow >= elRect.height + gap ? rect.bottom + gap : rect.top - elRect.height - gap;
-    el.setCssProps({
-      "--lti-reading-hover-left": `${Math.max(margin, left)}px`,
-      "--lti-reading-hover-top": `${Math.max(margin, top)}px`
-    });
-  }
-  destroyFallbackPopover() {
-    if (!this.fallbackEl) {
-      return;
-    }
-    this.fallbackEl.removeEventListener("mouseenter", this.handlePopoverEnter);
-    this.fallbackEl.removeEventListener("mouseleave", this.handlePopoverLeave);
-    this.fallbackEl.remove();
-    this.fallbackEl = null;
-  }
-  hide() {
-    debugLog(this.app, "reading.hover.hide", {
-      token: this.previewToken
-    });
-    this.destroyPopover();
-    this.destroyFallbackPopover();
-  }
-  destroyPopover() {
-    if (!this.popover) {
-      return;
-    }
-    this.popover.hoverEl.removeEventListener("mouseenter", this.handlePopoverEnter);
-    this.popover.hoverEl.removeEventListener("mouseleave", this.handlePopoverLeave);
-    this.popover.unload();
-    debugLog(this.app, "reading.hover.destroy-popover", {
-      hoverParentType: this.hoverParent?.constructor?.name ?? "null"
-    });
-    if (this.hoverParent?.hoverPopover === this.popover) {
-      this.hoverParent.hoverPopover = null;
-    }
-    this.popover = null;
-  }
+var PADDLE_DEFAULT_MODEL_DIR = getPaddleTierModelDir(DEFAULT_PADDLE_TIER);
+var PADDLE_DET_DEFAULTS = {
+  dbThresh: 0.3,
+  dbBoxThresh: 0.6,
+  unclipRatio: 1.5,
+  minSize: 3,
+  nmsIouThresh: 0.3,
+  maxCandidates: 1e3,
+  limitSideLen: 960,
+  scoreMode: "fast",
+  // Mobile PP-OCRv5's official default per PaddleOCR's det_mv3_db.yml;
+  // desktop / server inference usually runs with dilation off. This plugin
+  // only ships the mobile bundle, so the mobile default is the right baseline.
+  useDilation: true
 };
-function getReadingReferenceHoverController(app, containerEl, ctx, getPreviewData) {
-  const { hostEl, hoverParent } = resolveHoverHost(app, containerEl);
-  const existing = controllerMap.get(hostEl);
-  if (existing) {
-    return existing;
-  }
-  const sentinel = hostEl.ownerDocument.createElement("span");
-  sentinel.className = "lti-reading-hover-sentinel";
-  sentinel.hidden = true;
-  hostEl.append(sentinel);
-  const controller = new LegacyReadingHoverController(app, hostEl, sentinel, hoverParent, getPreviewData);
-  controllerMap.set(hostEl, controller);
-  ctx.addChild(controller);
-  return controller;
-}
-
-// src/settings.ts
-var import_obsidian10 = require("obsidian");
-
-// src/ai-service.ts
-var import_obsidian9 = require("obsidian");
-var AIService = class {
-  constructor(app, settings) {
-    this.app = app;
-    this.settings = settings;
-  }
-  /**
-   * Decode any browser-supported audio file inside the vault into raw mono Float32Array PCM samples at 16kHz.
-   */
-  async decodeAudioFile(file) {
-    const buffer = await this.app.vault.readBinary(file);
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16e3 });
-    try {
-      const audioBuffer = await audioCtx.decodeAudioData(buffer);
-      return audioBuffer.getChannelData(0);
-    } finally {
-      void audioCtx.close();
-    }
-  }
-  /**
-   * Run local ASR on raw Float32Array PCM samples using the child process sherpa-onnx worker.
-   */
-  async runLocalASR(samples, onProgress) {
-    const adapter = this.app.vault.adapter;
-    const basePath = adapter instanceof import_obsidian9.FileSystemAdapter ? adapter.getBasePath() : "";
-    const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence";
-    const modelDir = getSpeechModelDir(this.app, this.settings.speechLanguage);
-    const lexicon = pluginDir + "/models/lexicon.txt";
-    const ruleFsts = pluginDir + "/models/replace.fst";
-    const hotwordsFile = this.settings.speechHotwordsFile ? pluginDir + "/" + this.settings.speechHotwordsFile : "";
-    const cp = require("child_process");
-    const isWindows = process.platform === "win32";
-    return new Promise((resolve, reject) => {
-      onProgress("aiStatusAsr", "0%");
-      const child = cp.spawn("node", ["asr-worker.js"], {
-        cwd: pluginDir,
-        stdio: ["pipe", "pipe", "pipe"],
-        shell: isWindows ? false : true,
-        detached: isWindows ? false : true
-      });
-      let stdoutBuf = "";
-      let stderrLog = "";
-      const sentences = [];
-      let isReady = false;
-      child.on("error", (err) => {
-        reject(new Error(`Failed to start local ASR process: ${err.message}`));
-      });
-      child.stdout.on("data", (chunk) => {
-        stdoutBuf += chunk.toString();
-        const lines = stdoutBuf.split("\n");
-        stdoutBuf = lines.pop() ?? "";
-        for (const line of lines) {
-          try {
-            const msg = JSON.parse(line);
-            if (msg.type === "ready") {
-              if (msg.ok) {
-                isReady = true;
-                void feedAudio();
-              } else {
-                child.kill();
-                reject(new Error(msg.error || "ASR worker failed to initialize"));
-              }
-            } else if (msg.type === "result") {
-              if (msg.text && msg.isEndpoint) {
-                sentences.push(msg.text);
-                onProgress("aiStatusAsr", sentences.join(" "));
-              }
-            }
-          } catch {
-          }
-        }
-      });
-      child.stderr.on("data", (chunk) => {
-        stderrLog += chunk.toString();
-      });
-      child.on("exit", (code) => {
-        if (code !== null && code !== 0) {
-          reject(new Error(`Local ASR process exited with code ${code}. Stderr: ${stderrLog}`));
-        } else {
-          resolve(sentences.join(" ").trim());
-        }
-      });
-      child.stdin.write(JSON.stringify({
-        type: "init",
-        modelDir,
-        language: this.settings.speechLanguage,
-        vadSensitivity: this.settings.speechVadSensitivity,
-        speechAutoPunctuate: this.settings.speechAutoPunctuate,
-        decodingMethod: this.settings.speechDecodingMethod,
-        speechMaxUtteranceSec: this.settings.speechMaxUtteranceSec,
-        lexicon,
-        ruleFsts,
-        hotwordsFile
-      }) + "\n");
-      const feedAudio = async () => {
-        try {
-          const chunkLength = 16e3 * 2;
-          const totalSamples = samples.length;
-          for (let i = 0; i < totalSamples; i += chunkLength) {
-            const chunk = samples.subarray(i, Math.min(i + chunkLength, totalSamples));
-            const buf = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
-            const base64 = buf.toString("base64");
-            child.stdin.write(JSON.stringify({ type: "audio", bufferB64: base64 }) + "\n");
-            const pct = Math.min(100, Math.round(i / totalSamples * 100));
-            onProgress("aiStatusAsr", `${pct}%`);
-            await new Promise((r) => setTimeout(r, 10));
-          }
-          const silence = new Float32Array(16e3 * 2.5);
-          const silenceBuf = Buffer.from(silence.buffer, silence.byteOffset, silence.byteLength);
-          child.stdin.write(JSON.stringify({ type: "audio", bufferB64: silenceBuf.toString("base64") }) + "\n");
-          await new Promise((r) => setTimeout(r, 1e3));
-          child.stdin.write(JSON.stringify({ type: "destroy" }) + "\n");
-        } catch (err) {
-          child.kill();
-          reject(err);
-        }
-      };
-    });
-  }
-  /**
-   * Send the audio binary to cloud speech-to-text API (OpenAI Whisper or MiniMax ASR).
-   */
-  async runCloudASR(file, onProgress) {
-    onProgress("aiStatusAsr", "Uploading to Cloud...");
-    const buffer = await this.app.vault.readBinary(file);
-    const formData = new FormData();
-    let mimeType = "audio/wav";
-    if (file.extension === "mp3") mimeType = "audio/mp3";
-    else if (file.extension === "m4a") mimeType = "audio/m4a";
-    else if (file.extension === "webm") mimeType = "audio/webm";
-    else if (file.extension === "ogg") mimeType = "audio/ogg";
-    else if (file.extension === "aac") mimeType = "audio/aac";
-    const blob = new Blob([buffer], { type: mimeType });
-    formData.append("file", blob, file.name);
-    let url = "";
-    const headers = {
-      "Authorization": `Bearer ${this.settings.aiApiKey}`
-    };
-    if (this.settings.aiProvider === "minimax") {
-      formData.append("model", "speech-to-text");
-      url = `${this.settings.aiBaseUrl}/audio/speech_to_text`;
-    } else {
-      formData.append("model", "whisper-1");
-      url = `${this.settings.aiBaseUrl}/audio/transcriptions`;
-    }
-    const response = await fetch(url, {
-      method: "POST",
-      headers,
-      body: formData
-    });
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Cloud ASR API error (${response.status}): ${errText}`);
-    }
-    const json = await response.json();
-    return json.text || json.transcript || "";
-  }
-  /**
-   * Run the LLM refinement completion (OpenAI-compatible or Anthropic).
-   */
-  async runRefinement(prompt) {
-    const provider = this.settings.aiProvider;
-    if (provider === "anthropic") {
-      return this.runAnthropicChat(prompt);
-    } else {
-      return this.runOpenAIChat(prompt);
-    }
-  }
-  async runOpenAIChat(prompt) {
-    const url = `${this.settings.aiBaseUrl}/chat/completions`;
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${this.settings.aiApiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: this.settings.aiModel,
-        messages: [
-          { role: "user", content: prompt }
-        ],
-        temperature: 0.3
-      })
-    });
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Chat API error (${response.status}): ${errText}`);
-    }
-    const json = await response.json();
-    if (json.error) {
-      throw new Error(json.error.message || JSON.stringify(json.error));
-    }
-    const content = json.choices?.[0]?.message?.content || "";
-    if (!content.trim()) {
-      throw new Error(`\u63A5\u53E3\u54CD\u5E94\u5185\u5BB9\u4E3A\u7A7A\u3002\u5B8C\u6574\u54CD\u5E94\u4F53: ${JSON.stringify(json)}`);
-    }
-    return content;
-  }
-  async runAnthropicChat(prompt) {
-    const url = `${this.settings.aiBaseUrl}/messages`;
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "x-api-key": this.settings.aiApiKey,
-        "anthropic-version": "2023-06-01",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: this.settings.aiModel,
-        max_tokens: 4096,
-        messages: [
-          { role: "user", content: prompt }
-        ],
-        temperature: 0.3
-      })
-    });
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Anthropic Messages API error (${response.status}): ${errText}`);
-    }
-    const json = await response.json();
-    if (json.error) {
-      throw new Error(json.error.message || JSON.stringify(json.error));
-    }
-    let content = "";
-    if (Array.isArray(json.content)) {
-      content = json.content.filter((item) => item && item.type === "text" && typeof item.text === "string").map((item) => item.text).join("").trim();
-    } else if (typeof json.content === "string") {
-      content = json.content.trim();
-    }
-    if (!content.trim()) {
-      throw new Error(`\u63A5\u53E3\u54CD\u5E94\u5185\u5BB9\u4E3A\u7A7A\u3002\u5B8C\u6574\u54CD\u5E94\u4F53: ${JSON.stringify(json)}`);
-    }
-    return content;
-  }
-  /**
-   * Orchestrate full workflow: ASR -> Variable replacements -> LLM Refinement.
-   */
-  async processTranscription(audioFile, template, selection, wholeFileContent, onProgress) {
-    let transcription = "";
-    if (audioFile) {
-      if (this.settings.aiAsrSource === "local") {
-        onProgress("aiStatusDecoding");
-        const samples = await this.decodeAudioFile(audioFile);
-        transcription = await this.runLocalASR(samples, onProgress);
-      } else {
-        transcription = await this.runCloudASR(audioFile, onProgress);
-      }
-      if (!transcription.trim()) {
-        throw new Error("No speech transcription captured.");
-      }
-    }
-    onProgress("aiStatusRefining");
-    const dateStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-    let prompt = template.prompt;
-    prompt = prompt.replace(/\{\{selection\}\}/g, selection || "");
-    prompt = prompt.replace(/\{\{file:whole\}\}/g, wholeFileContent || "");
-    prompt = prompt.replace(/\{\{date\}\}/g, dateStr);
-    if (prompt.includes("{{transcription}}")) {
-      prompt = prompt.replace(/\{\{transcription\}\}/g, transcription);
-    } else if (transcription) {
-      prompt = `${prompt}
-
-\u5F85\u6574\u7406\u7684\u8F6C\u5F55\u6587\u672C\uFF1A
-${transcription}`;
-    }
-    if (!this.settings.aiApiKey.trim()) {
-      return transcription;
-    }
-    const refinedText = await this.runRefinement(prompt);
-    return refinedText || transcription;
-  }
+var PADDLE_MODEL_FILES = {
+  det: "inference.onnx",
+  rec: "inference.onnx",
+  cls: "inference.onnx",
+  dict: "ppocr_keys_v5.txt"
 };
 
 // src/settings.ts
@@ -5050,7 +4707,7 @@ var SMART_CONNECTIONS_HEADINGS = [
 var DEFAULT_SMART_RESULTS_LIMIT = 20;
 function getSpeechModelDir(app, language) {
   const adapter = app.vault.adapter;
-  const basePath = adapter instanceof import_obsidian10.FileSystemAdapter ? adapter.getBasePath() : "";
+  const basePath = adapter instanceof import_obsidian8.FileSystemAdapter ? adapter.getBasePath() : "";
   const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
   const plugin = app.plugins?.plugins?.["link-tag-intelligence"];
   const choice = plugin?.settings?.speechModelChoice ?? "zipformer";
@@ -5196,17 +4853,40 @@ function buildDefaultSettings(configDir = "") {
     speechAutoPunctuate: true,
     speechDecodingMethod: "greedy_search",
     speechMaxUtteranceSec: 20,
-    speechModelChoice: "zipformer",
     speechAutoHotwords: true,
     speechConfusionMapText: "\u5728\u663E\u4EF7\u503C:\u5728\u9669\u4EF7\u503C\n\u98CE\u9669\u7A57:\u98CE\u9669\u77E9\u9635\n\u5BCC\u529B\u4E1A:\u5085\u91CC\u53F6",
+    // OCR Defaults
+    ocrEnabled: true,
+    ocrSmartRouting: true,
+    paddleOcrModelPath: "",
+    paddleOcrTier: DEFAULT_PADDLE_TIER,
+    paddleDetDbThresh: 0.2,
+    paddleDetBoxThresh: 0.3,
+    paddleDetUnclipRatio: 2,
+    paddleDetMinSize: 2,
+    paddleDetNmsIouThresh: 0.2,
+    paddleDetMaxCandidates: 4e3,
+    paddleDetLimitSideLen: 2048,
+    paddleDetScoreMode: "fast",
+    paddleDetUseDilation: true,
+    paddleOcrCpuThreads: 0,
+    paddleOcrPdfConcurrency: 2,
+    paddleOcrPdfDpi: 240,
+    tesseractDataPath: "",
     // AI Settings defaults
     aiProvider: "openai",
     aiModel: "gpt-4o-mini",
     aiApiKey: "",
     aiBaseUrl: "https://api.openai.com/v1",
+    aiMaxTokens: 4096,
+    aiTemperature: 1,
+    aiApiStyle: "openai",
+    aiRequestRetries: 5,
+    aiRequestRetryBaseMs: 2e3,
     aiAsrSource: "local",
     aiLastUsedTemplateId: "standard-markdown",
-    aiTemplates: [...DEFAULT_AI_TEMPLATES]
+    aiTemplates: [...DEFAULT_AI_TEMPLATES],
+    textbookManifestPath: ""
   };
 }
 var DEFAULT_SETTINGS = buildDefaultSettings();
@@ -5304,6 +4984,13 @@ function normalizeLoadedSettings(data, configDir = "") {
     ...defaults,
     ...raw
   };
+  const clampNumber = (value, min, max, fallback, integer = false) => {
+    if (!Number.isFinite(value)) {
+      return fallback;
+    }
+    const numeric = integer ? Math.round(value) : value;
+    return Math.max(min, Math.min(max, numeric));
+  };
   if (Array.isArray(raw.relationKeys) && arraysEqual(raw.relationKeys.map(String), LEGACY_RELATION_KEYS)) {
     normalized.relationKeys = [...RESEARCH_RELATION_KEYS];
   }
@@ -5334,6 +5021,22 @@ function normalizeLoadedSettings(data, configDir = "") {
     defaults.smartConnectionsHeadingExclusions
   );
   normalized.smartConnectionsResultsLimit = Number.isFinite(normalized.smartConnectionsResultsLimit) && normalized.smartConnectionsResultsLimit > 0 ? normalized.smartConnectionsResultsLimit : defaults.smartConnectionsResultsLimit;
+  const legacyVisionSettings = raw;
+  normalized.ocrEnabled = typeof raw.ocrEnabled === "boolean" ? raw.ocrEnabled : typeof legacyVisionSettings.visionEnabled === "boolean" ? legacyVisionSettings.visionEnabled : defaults.ocrEnabled;
+  normalized.ocrSmartRouting = typeof raw.ocrSmartRouting === "boolean" ? raw.ocrSmartRouting : typeof legacyVisionSettings.visionSmartRouting === "boolean" ? legacyVisionSettings.visionSmartRouting : defaults.ocrSmartRouting;
+  normalized.paddleOcrTier = PADDLE_TIER_SPECS[normalized.paddleOcrTier] ? normalized.paddleOcrTier : defaults.paddleOcrTier;
+  normalized.paddleDetDbThresh = clampNumber(normalized.paddleDetDbThresh, 0.1, 0.9, defaults.paddleDetDbThresh);
+  normalized.paddleDetBoxThresh = clampNumber(normalized.paddleDetBoxThresh, 0.1, 0.9, defaults.paddleDetBoxThresh);
+  normalized.paddleDetUnclipRatio = clampNumber(normalized.paddleDetUnclipRatio, 1, 3, defaults.paddleDetUnclipRatio);
+  normalized.paddleDetMinSize = clampNumber(normalized.paddleDetMinSize, 1, 50, defaults.paddleDetMinSize, true);
+  normalized.paddleDetNmsIouThresh = clampNumber(normalized.paddleDetNmsIouThresh, 0.1, 0.9, defaults.paddleDetNmsIouThresh);
+  normalized.paddleDetMaxCandidates = clampNumber(normalized.paddleDetMaxCandidates, 100, 5e3, defaults.paddleDetMaxCandidates, true);
+  normalized.paddleDetLimitSideLen = clampNumber(normalized.paddleDetLimitSideLen, 320, 2048, defaults.paddleDetLimitSideLen, true);
+  normalized.paddleDetScoreMode = normalized.paddleDetScoreMode === "slow" ? "slow" : "fast";
+  normalized.paddleDetUseDilation = typeof normalized.paddleDetUseDilation === "boolean" ? normalized.paddleDetUseDilation : defaults.paddleDetUseDilation;
+  normalized.paddleOcrCpuThreads = clampNumber(normalized.paddleOcrCpuThreads, 0, 32, defaults.paddleOcrCpuThreads, true);
+  normalized.paddleOcrPdfConcurrency = clampNumber(normalized.paddleOcrPdfConcurrency, 1, 8, defaults.paddleOcrPdfConcurrency, true);
+  normalized.paddleOcrPdfDpi = clampNumber(normalized.paddleOcrPdfDpi, 96, 300, defaults.paddleOcrPdfDpi, true);
   normalized.speechHotwordsFile = typeof normalized.speechHotwordsFile === "string" ? normalized.speechHotwordsFile.trim() : defaults.speechHotwordsFile;
   normalized.speechModelPath = typeof normalized.speechModelPath === "string" ? normalized.speechModelPath.trim() : defaults.speechModelPath;
   normalized.speechLanguage = normalized.speechLanguage === "en" ? "en" : "zh";
@@ -5347,8 +5050,17 @@ function normalizeLoadedSettings(data, configDir = "") {
   normalized.speechConfusionMapText = typeof normalized.speechConfusionMapText === "string" ? normalized.speechConfusionMapText : defaults.speechConfusionMapText;
   normalized.aiProvider = normalized.aiProvider === "anthropic" || normalized.aiProvider === "deepseek" || normalized.aiProvider === "minimax" ? normalized.aiProvider : "openai";
   normalized.aiModel = typeof normalized.aiModel === "string" && normalized.aiModel.trim() ? normalized.aiModel.trim() : defaults.aiModel;
+  normalized.aiMaxTokens = Number.isFinite(normalized.aiMaxTokens) && normalized.aiMaxTokens >= 1 ? Math.round(normalized.aiMaxTokens) : defaults.aiMaxTokens || 4096;
   normalized.aiApiKey = typeof normalized.aiApiKey === "string" ? normalized.aiApiKey : "";
   normalized.aiBaseUrl = typeof normalized.aiBaseUrl === "string" && normalized.aiBaseUrl.trim() ? normalized.aiBaseUrl.trim() : defaults.aiBaseUrl;
+  if (/minimax/i.test(normalized.aiModel) || /minimax/i.test(normalized.aiBaseUrl)) {
+    const upper = /m3/i.test(normalized.aiModel) ? 524288 : 204800;
+    normalized.aiMaxTokens = Math.min(normalized.aiMaxTokens, upper);
+  }
+  normalized.aiTemperature = clampNumber(normalized.aiTemperature, 0, 2, defaults.aiTemperature);
+  normalized.aiApiStyle = normalized.aiApiStyle === "anthropic" ? "anthropic" : "openai";
+  normalized.aiRequestRetries = Number.isFinite(normalized.aiRequestRetries) && normalized.aiRequestRetries >= 1 ? Math.round(normalized.aiRequestRetries) : 5;
+  normalized.aiRequestRetryBaseMs = Number.isFinite(normalized.aiRequestRetryBaseMs) && normalized.aiRequestRetryBaseMs >= 100 ? Math.round(normalized.aiRequestRetryBaseMs) : 2e3;
   normalized.aiAsrSource = normalized.aiAsrSource === "cloud" ? "cloud" : "local";
   normalized.aiLastUsedTemplateId = typeof normalized.aiLastUsedTemplateId === "string" ? normalized.aiLastUsedTemplateId : defaults.aiLastUsedTemplateId;
   if (Array.isArray(normalized.aiTemplates)) {
@@ -5366,9 +5078,16 @@ function normalizeLoadedSettings(data, configDir = "") {
   } else {
     normalized.aiTemplates = [...DEFAULT_AI_TEMPLATES];
   }
+  normalized.textbookManifestPath = typeof normalized.textbookManifestPath === "string" ? normalized.textbookManifestPath : "";
   return normalized;
 }
-var LinkTagIntelligenceSettingTab = class extends import_obsidian10.PluginSettingTab {
+var AI_PROVIDER_HINTS = {
+  openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" },
+  anthropic: { baseUrl: "https://api.anthropic.com", model: "claude-3-5-sonnet-20241022" },
+  deepseek: { baseUrl: "https://api.deepseek.com", model: "deepseek-v4-flash" },
+  minimax: { baseUrl: "https://api.minimaxi.com/v1", model: "MiniMax-M3" }
+};
+var LinkTagIntelligenceSettingTab = class extends import_obsidian8.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.renderToken = 0;
@@ -6667,6 +6386,205 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian10.PluginSettin
         await this.plugin.saveSettings();
       }
     );
+    this.renderOcrSection(containerEl);
+  }
+  renderOcrSection(containerEl) {
+    const section = this.createSectionCard(
+      containerEl,
+      "\u672C\u5730\u79BB\u7EBF OCR",
+      "\u914D\u7F6E PaddleOCR \u4E0E Kreuzberg/Tesseract \u672C\u5730\u6587\u5B57\u63D0\u53D6\u3002"
+    );
+    this.createToggleField(
+      section,
+      "\u5F00\u542F\u672C\u5730 OCR",
+      "\u542F\u7528\u540E\u53EF\u4ECE\u4FA7\u680F\u5BF9\u672C\u5730\u56FE\u7247\u6216 PDF \u6267\u884C\u79BB\u7EBF\u6587\u5B57\u63D0\u53D6\u3002",
+      this.plugin.settings.ocrEnabled,
+      async (value) => {
+        this.plugin.settings.ocrEnabled = value;
+        await this.plugin.saveSettings();
+      }
+    );
+    this.createToggleField(
+      section,
+      "\u542F\u7528 OCR \u667A\u80FD\u5206\u6D41\u8DEF\u7531",
+      "\u4F18\u5148\u4F7F\u7528 Kreuzberg/Tesseract \u5904\u7406\u5BC6\u96C6\u4E2D\u6587\u626B\u63CF\uFF1B\u5F53\u7ED3\u679C\u504F\u77ED\u6216\u5931\u8D25\u65F6\u8C03\u7528 PaddleOCR \u8865\u5145\u5BF9\u6BD4\u3002",
+      this.plugin.settings.ocrSmartRouting,
+      async (value) => {
+        this.plugin.settings.ocrSmartRouting = value;
+        await this.plugin.saveSettings();
+      }
+    );
+    this.createSelectField(
+      section,
+      this.plugin.t("paddleOcrTierLabel"),
+      this.plugin.t("paddleOcrTierDesc"),
+      ["mobile", "server", "hybrid"].map((tier) => ({
+        value: tier,
+        label: this.plugin.t(
+          tier === "mobile" ? "paddleOcrTierMobileLabel" : tier === "server" ? "paddleOcrTierServerLabel" : "paddleOcrTierHybridLabel"
+        ) || PADDLE_TIER_SPECS[tier].summary
+      })),
+      this.plugin.settings.paddleOcrTier,
+      async (value) => {
+        this.plugin.settings.paddleOcrTier = value;
+        await this.saveSettingsAndRecreateOcrService();
+      }
+    );
+    const paddleDownloadRow = section.createDiv({ cls: "lti-voice-field-row" });
+    const paddleDownloadField = this.createFieldShell(
+      paddleDownloadRow,
+      this.plugin.t("paddleOcrDownloadButton"),
+      ""
+    );
+    const paddleDownloadBtn = paddleDownloadField.createEl("button", {
+      text: this.plugin.t("paddleOcrDownloadButton"),
+      cls: "lti-workbench-button"
+    });
+    paddleDownloadBtn.addEventListener("click", () => {
+      void this.plugin.downloadPaddleModelFromSettings();
+    });
+    const paddleRow = section.createDiv({ cls: "lti-voice-field-row" });
+    const paddleField = this.createFieldShell(
+      paddleRow,
+      "PaddleOCR \u6A21\u578B\u8DEF\u5F84 (\u4E3B OCR \u5F15\u64CE)",
+      "PP-OCRv5 mobile ONNX \u6A21\u578B\u76EE\u5F55\u3002\u5305\u542B det/inference.onnx\u3001rec/inference.onnx\u3001cls/inference.onnx\u3001dict/ppocr_keys_v5.txt 4 \u4E2A\u6587\u4EF6\uFF08\u5171\u7EA6 30MB\uFF09\u3002\u7559\u7A7A\u9ED8\u8BA4\u6307\u5411\u63D2\u4EF6 models/ocr/pp-ocrv5/mobile/\u3002"
+    );
+    const paddleInputRow = paddleField.createDiv({ cls: "lti-voice-input-row" });
+    const paddleInput = paddleInputRow.createEl("input", { cls: "lti-workbench-input lti-voice-path-input", type: "text" });
+    paddleInput.value = this.plugin.settings.paddleOcrModelPath || "";
+    paddleInput.placeholder = "models/ocr/pp-ocrv5/mobile";
+    paddleInput.addEventListener("change", () => {
+      this.plugin.settings.paddleOcrModelPath = paddleInput.value.trim();
+      void this.saveSettingsAndRecreateOcrService();
+    });
+    const tessRow = section.createDiv({ cls: "lti-voice-field-row" });
+    const tessField = this.createFieldShell(
+      tessRow,
+      "Tesseract \u8BED\u8A00\u5305\u8DEF\u5F84 (OCR \u515C\u5E95)",
+      "Tesseract.js \u8BAD\u7EC3\u6570\u636E\u76EE\u5F55\uFF0C\u9700\u5305\u542B chi_sim.traineddata + eng.traineddata\u3002PaddleOCR \u5931\u8D25\u65F6\u81EA\u52A8\u56DE\u9000\u5230\u6B64\u5F15\u64CE\u3002\u7559\u7A7A\u9ED8\u8BA4\u6307\u5411\u63D2\u4EF6 models/tessdata/\u3002"
+    );
+    const tessInputRow = tessField.createDiv({ cls: "lti-voice-input-row" });
+    const tessInput = tessInputRow.createEl("input", { cls: "lti-workbench-input lti-voice-path-input", type: "text" });
+    tessInput.value = this.plugin.settings.tesseractDataPath || "";
+    tessInput.placeholder = "models/tessdata";
+    tessInput.addEventListener("change", () => {
+      this.plugin.settings.tesseractDataPath = tessInput.value.trim();
+      void this.saveSettingsAndRecreateOcrService();
+    });
+    this.renderPaddleDetAdvancedSection(section);
+    const hintCard = section.createDiv({ cls: "lti-workbench-hint-card" });
+    hintCard.createEl("h4", { text: "\u79BB\u7EBF OCR \u6743\u91CD\u90E8\u7F72\u6307\u5357" });
+    const ul = hintCard.createEl("ul");
+    ul.createEl("li", { text: "1. PaddleOCR\uFF1A\u9009\u62E9 mobile / server / hybrid \u6863\u4F4D\u540E\uFF0C\u53EF\u70B9\u51FB\u4E0A\u65B9\u6309\u94AE\u9884\u4E0B\u8F7D PP-OCRv5 ONNX \u6A21\u578B\u3002" });
+    ul.createEl("li", { text: "2. Kreuzberg/Tesseract\uFF1A\u4F5C\u4E3A OCR \u5206\u6D41\u548C\u515C\u5E95\u5F15\u64CE\u4F7F\u7528\uFF1B\u5982\u9700\u81EA\u5B9A\u4E49\u8BED\u8A00\u5305\u8DEF\u5F84\uFF0C\u53EF\u5728\u4E0A\u65B9\u586B\u5199 tessdata \u76EE\u5F55\u3002" });
+    ul.createEl("li", { text: "3. \u672C\u533A\u57DF\u53EA\u7BA1\u7406 OCR \u6240\u9700\u6A21\u578B\u548C\u53C2\u6570\u3002" });
+  }
+  /**
+   * Renders the "Advanced PaddleOCR Detection Parameters" collapsible
+   * sub-section inside the Vision section. Exposes the 9 hyperparameters
+   * of the DBNet postprocessor so users can tune them for their specific
+   * workload (e.g. dense Chinese text, small receipts, handwriting).
+   *
+   * Each field has a human-language description of the trade-off so
+   * users can self-tune without reading the PaddleOCR paper. A "reset to
+   * defaults" button restores PaddleOCR's official values.
+   */
+  renderPaddleDetAdvancedSection(parentSection) {
+    const detSection = this.createSectionCard(
+      parentSection,
+      this.plugin.t("paddleDetAdvancedHeading"),
+      this.plugin.t("paddleDetAdvancedDesc")
+    );
+    const addNumber = (key, labelKey, descKey, min, max, step) => {
+      const row = detSection.createDiv({ cls: "lti-voice-field-row" });
+      const field = this.createFieldShell(row, this.plugin.t(labelKey), this.plugin.t(descKey));
+      const inputRow = field.createDiv({ cls: "lti-voice-input-row" });
+      const input = inputRow.createEl("input", {
+        cls: "lti-workbench-input lti-voice-path-input",
+        type: "number"
+      });
+      input.value = String(this.plugin.settings[key]);
+      input.min = String(min);
+      input.max = String(max);
+      input.step = String(step);
+      input.addEventListener("change", () => {
+        const raw = parseFloat(input.value);
+        if (Number.isFinite(raw)) {
+          const clamped = Math.max(min, Math.min(max, raw));
+          this.plugin.settings[key] = clamped;
+          if (clamped !== raw) input.value = String(clamped);
+          if (key === "paddleOcrPdfConcurrency" || key === "paddleOcrPdfDpi") {
+            void this.plugin.saveSettings();
+          } else {
+            void this.saveSettingsAndRecreateOcrService();
+          }
+        }
+      });
+    };
+    addNumber("paddleDetDbThresh", "paddleDetDbThreshLabel", "paddleDetDbThreshDesc", 0.1, 0.9, 0.05);
+    addNumber("paddleDetBoxThresh", "paddleDetBoxThreshLabel", "paddleDetBoxThreshDesc", 0.1, 0.9, 0.05);
+    addNumber("paddleDetUnclipRatio", "paddleDetUnclipRatioLabel", "paddleDetUnclipRatioDesc", 1, 3, 0.1);
+    addNumber("paddleDetMinSize", "paddleDetMinSizeLabel", "paddleDetMinSizeDesc", 1, 50, 1);
+    addNumber("paddleDetNmsIouThresh", "paddleDetNmsIouThreshLabel", "paddleDetNmsIouThreshDesc", 0.1, 0.9, 0.05);
+    addNumber("paddleDetMaxCandidates", "paddleDetMaxCandidatesLabel", "paddleDetMaxCandidatesDesc", 100, 5e3, 100);
+    addNumber("paddleDetLimitSideLen", "paddleDetLimitSideLenLabel", "paddleDetLimitSideLenDesc", 320, 2048, 32);
+    addNumber("paddleOcrCpuThreads", "paddleOcrCpuThreadsLabel", "paddleOcrCpuThreadsDesc", 0, 32, 1);
+    addNumber("paddleOcrPdfConcurrency", "paddleOcrPdfConcurrencyLabel", "paddleOcrPdfConcurrencyDesc", 1, 8, 1);
+    addNumber("paddleOcrPdfDpi", "paddleOcrPdfDpiLabel", "paddleOcrPdfDpiDesc", 96, 300, 12);
+    const scoreRow = detSection.createDiv({ cls: "lti-voice-field-row" });
+    const scoreField = this.createFieldShell(
+      scoreRow,
+      this.plugin.t("paddleDetScoreModeLabel"),
+      this.plugin.t("paddleDetScoreModeDesc")
+    );
+    const scoreSelect = scoreField.createEl("select", { cls: "lti-workbench-input lti-voice-path-input" });
+    for (const mode of ["fast", "slow"]) {
+      const opt = scoreSelect.createEl("option", { value: mode, text: mode });
+      if (this.plugin.settings.paddleDetScoreMode === mode) opt.selected = true;
+    }
+    scoreSelect.addEventListener("change", () => {
+      this.plugin.settings.paddleDetScoreMode = scoreSelect.value;
+      void this.saveSettingsAndRecreateOcrService();
+    });
+    this.createToggleField(
+      detSection,
+      this.plugin.t("paddleDetUseDilationLabel"),
+      this.plugin.t("paddleDetUseDilationDesc"),
+      this.plugin.settings.paddleDetUseDilation,
+      async (value) => {
+        this.plugin.settings.paddleDetUseDilation = value;
+        await this.saveSettingsAndRecreateOcrService();
+      }
+    );
+    const resetRow = detSection.createDiv({ cls: "lti-voice-field-row" });
+    const resetBtn = resetRow.createEl("button", {
+      cls: "lti-workbench-button lti-voice-diagnostic-btn",
+      text: this.plugin.t("paddleDetReset"),
+      type: "button"
+    });
+    resetBtn.addEventListener("click", () => {
+      const confirmMsg = this.plugin.t("paddleDetResetConfirm");
+      if (typeof window !== "undefined" && !window.confirm(confirmMsg)) return;
+      this.plugin.settings.paddleDetDbThresh = 0.2;
+      this.plugin.settings.paddleDetBoxThresh = 0.3;
+      this.plugin.settings.paddleDetUnclipRatio = 2;
+      this.plugin.settings.paddleDetMinSize = 2;
+      this.plugin.settings.paddleDetNmsIouThresh = 0.2;
+      this.plugin.settings.paddleDetMaxCandidates = 4e3;
+      this.plugin.settings.paddleDetLimitSideLen = 2048;
+      this.plugin.settings.paddleDetScoreMode = "fast";
+      this.plugin.settings.paddleDetUseDilation = true;
+      this.plugin.settings.paddleOcrCpuThreads = 0;
+      this.plugin.settings.paddleOcrPdfConcurrency = 2;
+      this.plugin.settings.paddleOcrPdfDpi = 240;
+      void this.saveSettingsAndRecreateOcrService().then(() => {
+        this.display();
+      });
+    });
+  }
+  async saveSettingsAndRecreateOcrService() {
+    await this.plugin.saveSettings();
+    this.plugin.recreateOcrService();
   }
   renderAiSection(containerEl) {
     const section = this.createSectionCard(
@@ -6687,19 +6605,6 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian10.PluginSettin
       this.plugin.settings.aiProvider,
       async (value) => {
         this.plugin.settings.aiProvider = value;
-        if (value === "deepseek") {
-          this.plugin.settings.aiBaseUrl = "https://api.deepseek.com";
-          this.plugin.settings.aiModel = "deepseek-chat";
-        } else if (value === "minimax") {
-          this.plugin.settings.aiBaseUrl = "https://api.minimax.chat/v1";
-          this.plugin.settings.aiModel = "abab6.5g-chat";
-        } else if (value === "openai") {
-          this.plugin.settings.aiBaseUrl = "https://api.openai.com/v1";
-          this.plugin.settings.aiModel = "gpt-4o-mini";
-        } else if (value === "anthropic") {
-          this.plugin.settings.aiBaseUrl = "https://api.anthropic.com/v1";
-          this.plugin.settings.aiModel = "claude-3-5-sonnet-20241022";
-        }
         await this.plugin.saveSettings();
         this.display();
       }
@@ -6707,6 +6612,7 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian10.PluginSettin
     const urlField = this.createFieldShell(section, this.plugin.t("aiBaseUrl"), this.plugin.t("aiBaseUrlDescription"));
     const urlInput = urlField.createEl("input", { cls: "lti-workbench-input", type: "text" });
     urlInput.value = this.plugin.settings.aiBaseUrl;
+    urlInput.placeholder = AI_PROVIDER_HINTS[this.plugin.settings.aiProvider].baseUrl;
     urlInput.addEventListener("change", async () => {
       this.plugin.settings.aiBaseUrl = urlInput.value.trim();
       await this.plugin.saveSettings();
@@ -6722,10 +6628,83 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian10.PluginSettin
     const modelField = this.createFieldShell(section, this.plugin.t("aiModel"), this.plugin.t("aiModelDescription"));
     const modelInput = modelField.createEl("input", { cls: "lti-workbench-input", type: "text" });
     modelInput.value = this.plugin.settings.aiModel;
+    modelInput.placeholder = AI_PROVIDER_HINTS[this.plugin.settings.aiProvider].model;
     modelInput.addEventListener("change", async () => {
       this.plugin.settings.aiModel = modelInput.value.trim();
       await this.plugin.saveSettings();
     });
+    const tokensField = this.createFieldShell(section, this.plugin.t("aiMaxTokens"), this.plugin.t("aiMaxTokensDescription"));
+    const tokensInput = tokensField.createEl("input", { cls: "lti-workbench-input", type: "number" });
+    tokensInput.value = String(this.plugin.settings.aiMaxTokens || 4096);
+    tokensInput.placeholder = "4096";
+    tokensInput.min = "1";
+    tokensInput.addEventListener("change", async () => {
+      const val = parseInt(tokensInput.value, 10);
+      const isMiniMaxEndpoint = /minimax/i.test(this.plugin.settings.aiModel) || /minimax/i.test(this.plugin.settings.aiBaseUrl);
+      const upper = isMiniMaxEndpoint ? /m3/i.test(this.plugin.settings.aiModel) ? 524288 : 204800 : 1e6;
+      this.plugin.settings.aiMaxTokens = Number.isFinite(val) && val >= 1 ? Math.min(val, upper) : 4096;
+      tokensInput.value = String(this.plugin.settings.aiMaxTokens);
+      await this.plugin.saveSettings();
+    });
+    const tempField = this.createFieldShell(section, this.plugin.t("aiTemperature"), this.plugin.t("aiTemperatureDescription"));
+    const tempInput = tempField.createEl("input", { cls: "lti-workbench-input", type: "number" });
+    tempInput.value = String(this.plugin.settings.aiTemperature ?? 1);
+    tempInput.placeholder = "1.0";
+    tempInput.min = "0";
+    tempInput.max = "2";
+    tempInput.step = "0.1";
+    tempInput.addEventListener("change", async () => {
+      const val = parseFloat(tempInput.value);
+      this.plugin.settings.aiTemperature = Number.isFinite(val) ? Math.max(0, Math.min(2, val)) : 1;
+      tempInput.value = String(this.plugin.settings.aiTemperature);
+      await this.plugin.saveSettings();
+    });
+    const retriesField = this.createFieldShell(
+      section,
+      "AI \u8BF7\u6C42\u91CD\u8BD5\u6B21\u6570\uFF08MiniMax-M3 \u63A8\u8350 7-8\uFF09",
+      "\u7F51\u7EDC\u77AC\u65AD\uFF08EMPTY_RESPONSE / 5xx / 429\uFF09\u65F6\u7684\u91CD\u8BD5\u6B21\u6570\u3002Obsidian \u7684 requestUrl \u4E0D\u652F\u6301\u81EA\u5B9A\u4E49 timeout\uFF0C\u6240\u4EE5\u8FD9\u662F M3 \u5D29\u6E83\u7684\u4E3B\u8981\u8C03\u8282\u624B\u6BB5\u3002"
+    );
+    const retriesInput = retriesField.createEl("input", { cls: "lti-workbench-input", type: "number" });
+    retriesInput.value = String(this.plugin.settings.aiRequestRetries);
+    retriesInput.placeholder = "5";
+    retriesInput.min = "1";
+    retriesInput.max = "10";
+    retriesInput.addEventListener("change", async () => {
+      const val = parseInt(retriesInput.value, 10);
+      this.plugin.settings.aiRequestRetries = Number.isFinite(val) && val >= 1 ? Math.min(val, 10) : 5;
+      retriesInput.value = String(this.plugin.settings.aiRequestRetries);
+      await this.plugin.saveSettings();
+    });
+    const retryBaseField = this.createFieldShell(
+      section,
+      "AI \u91CD\u8BD5\u57FA\u7840\u5EF6\u8FDF (ms)",
+      "\u9996\u6B21\u91CD\u8BD5\u524D\u7684\u7B49\u5F85\u65F6\u95F4\uFF0C\u6309 2\xD7 \u6307\u6570\u9000\u907F\u3002\u9ED8\u8BA4 2000ms \u2192 2s/4s/8s/16s/32s\u3002MiniMax-M3 \u63A8\u8350 5000ms \u2192 5s/10s/20s/40s/80s\uFF0C\u7ED9 M3 \u670D\u52A1\u7AEF\u7559\u6062\u590D\u65F6\u95F4\u3002"
+    );
+    const retryBaseInput = retryBaseField.createEl("input", { cls: "lti-workbench-input", type: "number" });
+    retryBaseInput.value = String(this.plugin.settings.aiRequestRetryBaseMs);
+    retryBaseInput.placeholder = "2000";
+    retryBaseInput.min = "100";
+    retryBaseInput.step = "500";
+    retryBaseInput.addEventListener("change", async () => {
+      const val = parseInt(retryBaseInput.value, 10);
+      this.plugin.settings.aiRequestRetryBaseMs = Number.isFinite(val) && val >= 100 ? val : 2e3;
+      retryBaseInput.value = String(this.plugin.settings.aiRequestRetryBaseMs);
+      await this.plugin.saveSettings();
+    });
+    this.createSelectField(
+      section,
+      this.plugin.t("aiApiStyle"),
+      this.plugin.t("aiApiStyleDescription"),
+      [
+        { value: "openai", label: this.plugin.t("aiApiStyleOpenAI") },
+        { value: "anthropic", label: this.plugin.t("aiApiStyleAnthropic") }
+      ],
+      this.plugin.settings.aiApiStyle,
+      async (value) => {
+        this.plugin.settings.aiApiStyle = value;
+        await this.plugin.saveSettings();
+      }
+    );
     this.createSelectField(
       section,
       this.plugin.t("aiAsrSource"),
@@ -6846,8 +6825,1603 @@ var LinkTagIntelligenceSettingTab = class extends import_obsidian10.PluginSettin
   }
 };
 
-// src/view.ts
+// src/ai-service.ts
+var StreamAccumulator = class {
+  constructor(flavor) {
+    this.flavor = flavor;
+    this.content = "";
+    this.finishReason = null;
+    this.usage = null;
+    this.raw = "";
+  }
+  /** Feed a single line (without trailing newline) from the SSE stream. */
+  pushLine(line) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith(":")) return;
+    if (!trimmed.startsWith("data:")) return;
+    const payload = trimmed.slice(5).trim();
+    if (!payload || payload === "[DONE]") return;
+    let evt;
+    try {
+      evt = JSON.parse(payload);
+    } catch {
+      return;
+    }
+    this.raw += payload + "\n";
+    if (this.flavor === "openai") {
+      const choice = evt.choices?.[0];
+      const delta = choice?.delta?.content;
+      if (typeof delta === "string") this.content += delta;
+      if (choice?.finish_reason) this.finishReason = choice.finish_reason;
+      if (evt.usage) this.usage = evt.usage;
+      return;
+    }
+    switch (evt.type) {
+      case "message_start":
+        if (evt.message?.usage) this.usage = { ...evt.message.usage };
+        break;
+      case "content_block_delta": {
+        const t = evt.delta?.text;
+        if (typeof t === "string") this.content += t;
+        break;
+      }
+      case "message_delta":
+        if (evt.delta?.stop_reason) this.finishReason = evt.delta.stop_reason;
+        if (evt.usage) this.usage = { ...this.usage ?? {}, ...evt.usage };
+        break;
+      default:
+        break;
+    }
+  }
+  /** The concatenated raw `data:` payloads (for debugging / text field). */
+  rawText() {
+    return this.raw;
+  }
+  /** Reassemble into a non-streaming-shaped response body. */
+  toResponseJson() {
+    if (this.flavor === "openai") {
+      return {
+        choices: [{ message: { content: this.content }, finish_reason: this.finishReason }],
+        usage: this.usage ?? void 0
+      };
+    }
+    return {
+      content: [{ type: "text", text: this.content }],
+      stop_reason: this.finishReason,
+      usage: this.usage ?? void 0
+    };
+  }
+};
+var AIService = class {
+  constructor(app, settings) {
+    this.app = app;
+    this.settings = settings;
+  }
+  extractChatText(json, flavor) {
+    if (flavor === "openai") {
+      return String(json?.choices?.[0]?.message?.content ?? "").trim();
+    }
+    if (Array.isArray(json?.content)) {
+      let content = json.content.filter((item) => item && item.type === "text" && typeof item.text === "string").map((item) => item.text).join("").trim();
+      if (!content) {
+        content = json.content.filter((item) => item && typeof item.text === "string" && item.text.trim()).map((item) => item.text).join("").trim();
+      }
+      return content;
+    }
+    if (typeof json?.content === "string") {
+      return json.content.trim();
+    }
+    return "";
+  }
+  isTransientEmptyChatResponse(json, flavor) {
+    if (this.extractChatText(json, flavor)) return false;
+    const usage = json?.usage ?? {};
+    const outputTokenValue = usage.output_tokens ?? usage.completion_tokens ?? usage.outputTokens;
+    const outputTokens = Number(outputTokenValue ?? 0);
+    const stopReason = flavor === "openai" ? json?.choices?.[0]?.finish_reason : json?.stop_reason;
+    return !stopReason || outputTokenValue === void 0 || outputTokens === 0;
+  }
+  /**
+   * Decode any browser-supported audio file inside the vault into raw mono Float32Array PCM samples at 16kHz.
+   */
+  async decodeAudioFile(file) {
+    const buffer = await this.app.vault.readBinary(file);
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16e3 });
+    try {
+      const audioBuffer = await audioCtx.decodeAudioData(buffer);
+      return audioBuffer.getChannelData(0);
+    } finally {
+      void audioCtx.close();
+    }
+  }
+  /**
+   * Run local ASR on raw Float32Array PCM samples using the child process sherpa-onnx worker.
+   */
+  async runLocalASR(samples, onProgress) {
+    const adapter = this.app.vault.adapter;
+    const basePath = adapter instanceof import_obsidian9.FileSystemAdapter ? adapter.getBasePath() : "";
+    const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence";
+    const modelDir = getSpeechModelDir(this.app, this.settings.speechLanguage);
+    const lexicon = pluginDir + "/models/lexicon.txt";
+    const ruleFsts = pluginDir + "/models/replace.fst";
+    const hotwordsFile = this.settings.speechHotwordsFile ? pluginDir + "/" + this.settings.speechHotwordsFile : "";
+    const cp3 = require("child_process");
+    const isWindows = process.platform === "win32";
+    return new Promise((resolve2, reject) => {
+      onProgress("aiStatusAsr", "0%");
+      const child = cp3.spawn("node", ["asr-worker.js"], {
+        cwd: pluginDir,
+        stdio: ["pipe", "pipe", "pipe"],
+        shell: isWindows ? false : true,
+        detached: isWindows ? false : true
+      });
+      let stdoutBuf = "";
+      let stderrLog = "";
+      const sentences = [];
+      let isReady = false;
+      child.on("error", (err) => {
+        reject(new Error(`Failed to start local ASR process: ${err.message}`));
+      });
+      child.stdout.on("data", (chunk) => {
+        stdoutBuf += chunk.toString();
+        const lines = stdoutBuf.split("\n");
+        stdoutBuf = lines.pop() ?? "";
+        for (const line of lines) {
+          try {
+            const msg = JSON.parse(line);
+            if (msg.type === "ready") {
+              if (msg.ok) {
+                isReady = true;
+                void feedAudio();
+              } else {
+                child.kill();
+                reject(new Error(msg.error || "ASR worker failed to initialize"));
+              }
+            } else if (msg.type === "result") {
+              if (msg.text && msg.isEndpoint) {
+                sentences.push(msg.text);
+                onProgress("aiStatusAsr", sentences.join(" "));
+              }
+            }
+          } catch {
+          }
+        }
+      });
+      child.stderr.on("data", (chunk) => {
+        stderrLog += chunk.toString();
+      });
+      child.on("exit", (code) => {
+        if (code !== null && code !== 0) {
+          reject(new Error(`Local ASR process exited with code ${code}. Stderr: ${stderrLog}`));
+        } else {
+          resolve2(sentences.join(" ").trim());
+        }
+      });
+      child.stdin.write(JSON.stringify({
+        type: "init",
+        modelDir,
+        language: this.settings.speechLanguage,
+        vadSensitivity: this.settings.speechVadSensitivity,
+        speechAutoPunctuate: this.settings.speechAutoPunctuate,
+        decodingMethod: this.settings.speechDecodingMethod,
+        speechMaxUtteranceSec: this.settings.speechMaxUtteranceSec,
+        lexicon,
+        ruleFsts,
+        hotwordsFile
+      }) + "\n");
+      const feedAudio = async () => {
+        try {
+          const chunkLength = 16e3 * 2;
+          const totalSamples = samples.length;
+          for (let i = 0; i < totalSamples; i += chunkLength) {
+            const chunk = samples.subarray(i, Math.min(i + chunkLength, totalSamples));
+            const buf = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+            const base64 = buf.toString("base64");
+            child.stdin.write(JSON.stringify({ type: "audio", bufferB64: base64 }) + "\n");
+            const pct = Math.min(100, Math.round(i / totalSamples * 100));
+            onProgress("aiStatusAsr", `${pct}%`);
+            await new Promise((r) => setTimeout(r, 10));
+          }
+          const silence = new Float32Array(16e3 * 2.5);
+          const silenceBuf = Buffer.from(silence.buffer, silence.byteOffset, silence.byteLength);
+          child.stdin.write(JSON.stringify({ type: "audio", bufferB64: silenceBuf.toString("base64") }) + "\n");
+          await new Promise((r) => setTimeout(r, 1e3));
+          child.stdin.write(JSON.stringify({ type: "destroy" }) + "\n");
+        } catch (err) {
+          child.kill();
+          reject(err);
+        }
+      };
+    });
+  }
+  /**
+   * Normalize the user-entered base URL for the requested API family.
+   * For the MiniMax provider, the platform exposes both an OpenAI-style
+   * endpoint (/v1) and an Anthropic-style endpoint (/anthropic/v1) on the
+   * same host; we strip whatever family suffix the user entered and re-append
+   * the correct one, so all of these inputs converge to the right URL:
+   *   https://api.minimaxi.com            → /v1  or /anthropic/v1
+   *   https://api.minimaxi.com/v1         → re-aimed to the other family
+   *   https://api.minimaxi.com/anthropic  → /v1  or /anthropic/v1
+   *   https://api.minimaxi.com/anthropic/v1 → re-aimed to the other family
+   * For other providers we just strip common endpoint suffixes so the caller
+   * can re-append the standard path segment.
+   */
+  getNormalizedBaseUrl(family = "openai") {
+    let baseUrl = this.settings.aiBaseUrl.trim().replace(/\/+$/, "");
+    const suffixesToStrip = [
+      "/chat/completions",
+      "/messages",
+      "/text/chatcompletion_v2",
+      "/text/chatcompletion",
+      "/audio/speech_to_text",
+      "/audio/transcriptions"
+    ];
+    for (const suffix of suffixesToStrip) {
+      if (baseUrl.toLowerCase().endsWith(suffix)) {
+        baseUrl = baseUrl.slice(0, -suffix.length).replace(/\/+$/, "");
+      }
+    }
+    if (this.isMiniMaxEndpoint()) {
+      baseUrl = baseUrl.replace(/\/(?:anthropic(?:\/v1)?|v1)$/, "");
+      return family === "anthropic" ? `${baseUrl}/anthropic/v1` : `${baseUrl}/v1`;
+    }
+    if (family === "anthropic") {
+      if (/^https:\/\/api\.anthropic\.com(?:\/v1)?$/i.test(baseUrl)) {
+        return baseUrl.toLowerCase().endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
+      }
+      if (baseUrl.toLowerCase().endsWith("/anthropic/v1")) {
+        return baseUrl;
+      }
+      if (baseUrl.toLowerCase().endsWith("/anthropic")) {
+        return `${baseUrl}/v1`;
+      }
+      return `${baseUrl}/anthropic/v1`;
+    }
+    if (baseUrl.toLowerCase().endsWith("/v1")) {
+      return baseUrl;
+    }
+    return `${baseUrl}/v1`;
+  }
+  isMiniMaxEndpoint() {
+    return this.settings.aiProvider === "minimax" || /minimax/i.test(this.settings.aiModel) || /minimax/i.test(this.settings.aiBaseUrl);
+  }
+  /**
+   * Safe wrapper around requestUrl with automatic retry logic and
+   * user notices.
+   *
+   * Note: Obsidian's requestUrl API does NOT accept a `timeout`
+   * option (its RequestUrlParam interface has no such field), so the
+   * only knob we have for unstable long-context calls is the retry
+   * count / backoff (user-tunable via aiRequestRetries /
+   * aiRequestRetryBaseMs). For long prefills, the chat paths use a
+   * streaming backend instead (see streamChatRequest) which keeps
+   * the connection alive and avoids net::ERR_EMPTY_RESPONSE.
+   *
+   * `execute` lets the caller swap in a different request backend
+   * (e.g. the streaming one) while reusing this retry/backoff loop.
+   */
+  async requestUrlWithRetry(options, maxRetries, initialDelayMs, execute, validate) {
+    maxRetries = maxRetries ?? this.settings.aiRequestRetries ?? 5;
+    initialDelayMs = initialDelayMs ?? this.settings.aiRequestRetryBaseMs ?? 2e3;
+    const runRequest = execute ?? ((opts) => (0, import_obsidian9.requestUrl)(opts));
+    let lastError = null;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await runRequest(options);
+        if (response.status === 200 || response.status >= 400 && response.status < 500 && response.status !== 429) {
+          if (response.status === 200) validate?.(response);
+          return response;
+        }
+        throw new Error(`API \u8FD4\u56DE\u4E86 HTTP status ${response.status}`);
+      } catch (err) {
+        lastError = err;
+        const errMsg = err.message || String(err);
+        const isTransient = /EMPTY_RESPONSE|CONNECTION_CLOSED|CONNECTION_RESET|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ERR_|aborted|network|fetch|timeout|empty chat response|接口响应内容为空/i.test(errMsg) || errMsg.includes("status 5") || errMsg.includes("status 429");
+        if (!isTransient && attempt < maxRetries) {
+          throw err;
+        }
+        if (attempt < maxRetries) {
+          const delay = initialDelayMs * Math.pow(2, attempt - 1);
+          new import_obsidian9.Notice(`\u26A0\uFE0F [Local AI] \u7F51\u7EDC\u8FDE\u63A5\u5F02\u5E38\uFF0C\u6B63\u5728\u5C1D\u8BD5\u7B2C ${attempt} \u6B21\u91CD\u8FDE (\u7B49\u5F85 ${Math.round(delay / 1e3)}\u79D2)...`, 4e3);
+          console.warn(`[lti-ai-retry] Attempt ${attempt} failed: ${errMsg}. Retrying in ${delay}ms...`);
+          await new Promise((resolve2) => setTimeout(resolve2, delay));
+        } else {
+          console.error(`[lti-ai-retry] All ${maxRetries} attempts failed.`);
+        }
+      }
+    }
+    throw lastError || new Error("Request failed after all retry attempts.");
+  }
+  /**
+   * Streaming request backend for chat completions. Uses Node's
+   * `https`/`http` directly (desktop-only — same `require` context as
+   * runLocalASR's child_process) instead of Obsidian's `requestUrl`,
+   * because requestUrl buffers the whole response and a long M3
+   * prefill stays silent long enough for Electron's net layer to drop
+   * the socket (net::ERR_EMPTY_RESPONSE / ERR_CONNECTION_CLOSED).
+   * A streamed (SSE) response keeps bytes flowing so the connection
+   * never goes idle.
+   *
+   * Returns the SAME shape as requestUrl ({status, text, json}) so the
+   * downstream parsing in runOpenAIChat / runAnthropicChat is reused
+   * unchanged. `flavor` selects the SSE event grammar.
+   */
+  streamChatRequest(options, flavor) {
+    const mock = globalThis.__mockStreamChatRequest;
+    if (mock) {
+      return mock(options, flavor);
+    }
+    const https = require("https");
+    const http = require("http");
+    const { URL: URL2 } = require("url");
+    return new Promise((resolve2, reject) => {
+      let parsed;
+      try {
+        parsed = new URL2(options.url);
+      } catch (e) {
+        reject(new Error(`Invalid stream URL: ${e?.message ?? e}`));
+        return;
+      }
+      const transport = parsed.protocol === "http:" ? http : https;
+      const req = transport.request(
+        {
+          hostname: parsed.hostname,
+          port: parsed.port || (parsed.protocol === "http:" ? 80 : 443),
+          path: parsed.pathname + parsed.search,
+          method: options.method ?? "POST",
+          headers: {
+            ...options.headers ?? {},
+            // Streaming endpoints expect to send back text/event-stream.
+            "Accept": "text/event-stream"
+          }
+        },
+        (res) => {
+          const status = res.statusCode ?? 0;
+          if (status !== 200) {
+            let errBody = "";
+            res.setEncoding("utf8");
+            res.on("data", (c) => {
+              errBody += c;
+            });
+            res.on("end", () => {
+              let json = null;
+              try {
+                json = JSON.parse(errBody);
+              } catch {
+              }
+              resolve2({ status, text: errBody, json });
+            });
+            return;
+          }
+          const acc = new StreamAccumulator(flavor);
+          let buffer = "";
+          res.setEncoding("utf8");
+          res.on("data", (chunk) => {
+            buffer += chunk;
+            let nlIndex;
+            while ((nlIndex = buffer.indexOf("\n")) >= 0) {
+              const line = buffer.slice(0, nlIndex).replace(/\r$/, "");
+              buffer = buffer.slice(nlIndex + 1);
+              acc.pushLine(line);
+            }
+          });
+          res.on("end", () => {
+            if (buffer.trim()) acc.pushLine(buffer.replace(/\r$/, ""));
+            resolve2({ status: 200, text: acc.rawText(), json: acc.toResponseJson() });
+          });
+          res.on("error", (e) => reject(e));
+        }
+      );
+      req.on("error", (e) => reject(new Error(e?.message ?? String(e))));
+      if (options.body) req.write(options.body);
+      req.end();
+    });
+  }
+  /**
+   * Send the audio binary to cloud speech-to-text API (OpenAI Whisper or MiniMax ASR).
+   */
+  async runCloudASR(file, onProgress) {
+    onProgress("aiStatusAsr", "Uploading to Cloud...");
+    const buffer = await this.app.vault.readBinary(file);
+    let mimeType = "audio/wav";
+    if (file.extension === "mp3") mimeType = "audio/mp3";
+    else if (file.extension === "m4a") mimeType = "audio/m4a";
+    else if (file.extension === "webm") mimeType = "audio/webm";
+    else if (file.extension === "ogg") mimeType = "audio/ogg";
+    else if (file.extension === "aac") mimeType = "audio/aac";
+    let url = "";
+    let modelName = "whisper-1";
+    const baseUrl = this.getNormalizedBaseUrl();
+    if (this.settings.aiProvider === "minimax") {
+      modelName = "speech-to-text";
+      url = `${baseUrl}/audio/speech_to_text`;
+    } else {
+      modelName = "whisper-1";
+      url = `${baseUrl}/audio/transcriptions`;
+    }
+    const boundary = "----ObsidianFormBoundary" + Math.random().toString(36).substring(2, 15);
+    const header1 = `--${boundary}\r
+Content-Disposition: form-data; name="model"\r
+\r
+${modelName}\r
+`;
+    const header2 = `--${boundary}\r
+Content-Disposition: form-data; name="file"; filename="${file.name}"\r
+Content-Type: ${mimeType}\r
+\r
+`;
+    const footer = `\r
+--${boundary}--\r
+`;
+    const encoder = new TextEncoder();
+    const header1Bytes = encoder.encode(header1);
+    const header2Bytes = encoder.encode(header2);
+    const footerBytes = encoder.encode(footer);
+    const fileBytes = new Uint8Array(buffer);
+    const totalLength = header1Bytes.length + header2Bytes.length + fileBytes.length + footerBytes.length;
+    const bodyBytes = new Uint8Array(totalLength);
+    let offset = 0;
+    bodyBytes.set(header1Bytes, offset);
+    offset += header1Bytes.length;
+    bodyBytes.set(header2Bytes, offset);
+    offset += header2Bytes.length;
+    bodyBytes.set(fileBytes, offset);
+    offset += fileBytes.length;
+    bodyBytes.set(footerBytes, offset);
+    let response;
+    try {
+      response = await this.requestUrlWithRetry({
+        url,
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${this.settings.aiApiKey}`,
+          "Content-Type": `multipart/form-data; boundary=${boundary}`
+        },
+        body: bodyBytes.buffer,
+        throw: false
+      });
+    } catch (err) {
+      throw new Error(`Failed to request Cloud ASR API: ${err.message || err}`);
+    }
+    if (response.status !== 200) {
+      throw new Error(`Cloud ASR API error (${response.status}): ${response.text}`);
+    }
+    const json = typeof response.json === "object" && response.json !== null ? response.json : JSON.parse(response.text);
+    return json.text || json.transcript || "";
+  }
+  /**
+   * Public entry point for callers that have already constructed
+   * the prompt themselves (e.g. src/textbook-cleaner.ts drives
+   * per-chapter cleanup with chapter metadata substituted into the
+   * template before calling). Other internal call sites use this
+   * too via processTranscription.
+   */
+  async runRefinement(prompt) {
+    if (this.settings.aiApiStyle === "anthropic" || this.settings.aiProvider === "anthropic") {
+      return this.runAnthropicChat(prompt);
+    }
+    return this.runOpenAIChat(prompt);
+  }
+  getMaxTokens() {
+    const val = this.settings.aiMaxTokens || 4096;
+    if (this.isMiniMaxEndpoint()) {
+      const upper = this.isMiniMaxM3() ? 524288 : 204800;
+      return Math.min(val, upper);
+    }
+    if (this.settings.aiProvider === "deepseek") {
+      return Math.min(val, 384e3);
+    }
+    if (this.settings.aiProvider === "anthropic") {
+      return Math.min(val, 16384);
+    }
+    return Math.min(val, 1e6);
+  }
+  /** True when the configured model is MiniMax-M3 (vs older M2.x). */
+  isMiniMaxM3() {
+    return /m3/i.test(this.settings.aiModel);
+  }
+  async runOpenAIChat(prompt) {
+    const baseUrl = this.getNormalizedBaseUrl("openai");
+    const url = `${baseUrl}/chat/completions`;
+    const modelName = this.settings.aiModel.trim();
+    const maxTokens = this.getMaxTokens();
+    let response;
+    try {
+      response = await this.requestUrlWithRetry({
+        url,
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${this.settings.aiApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: modelName,
+          max_tokens: maxTokens,
+          messages: [
+            { role: "user", content: prompt }
+          ],
+          temperature: this.settings.aiTemperature ?? 1,
+          stream: true
+        }),
+        throw: false
+      }, void 0, void 0, (opts) => this.streamChatRequest(opts, "openai"), (res) => {
+        const json2 = typeof res.json === "object" && res.json !== null ? res.json : JSON.parse(res.text);
+        if (this.isTransientEmptyChatResponse(json2, "openai")) {
+          throw new Error(`empty chat response: ${JSON.stringify(json2)}`);
+        }
+      });
+    } catch (err) {
+      debugLog(this.app, "ai.openai.request-failed", {
+        provider: this.settings.aiProvider,
+        apiStyle: this.settings.aiApiStyle,
+        url,
+        model: modelName,
+        error: err?.message ?? String(err)
+      });
+      throw new Error(`Failed to request AI API: ${err.message || err}`);
+    }
+    if (response.status !== 200) {
+      debugLog(this.app, "ai.openai.non-200", {
+        provider: this.settings.aiProvider,
+        apiStyle: this.settings.aiApiStyle,
+        url,
+        model: modelName,
+        status: response.status,
+        body: String(response.text ?? "").slice(0, 2e3)
+      });
+      throw new Error(`Chat API error (${response.status}): ${response.text}`);
+    }
+    const json = typeof response.json === "object" && response.json !== null ? response.json : JSON.parse(response.text);
+    if (json.error) {
+      throw new Error(json.error.message || JSON.stringify(json.error));
+    }
+    const content = this.extractChatText(json, "openai");
+    if (!content.trim()) {
+      debugLog(this.app, "ai.openai.empty-content", {
+        provider: this.settings.aiProvider,
+        apiStyle: this.settings.aiApiStyle,
+        url,
+        model: modelName,
+        finishReason: json.choices?.[0]?.finish_reason,
+        usage: json.usage,
+        responsePreview: JSON.stringify(json).slice(0, 4e3)
+      });
+      throw new Error(`\u63A5\u53E3\u54CD\u5E94\u5185\u5BB9\u4E3A\u7A7A\u3002\u5B8C\u6574\u54CD\u5E94\u4F53: ${JSON.stringify(json)}`);
+    }
+    if (json.usage) {
+      debugLog(this.app, "ai.openai.usage", { model: modelName, usage: json.usage });
+    }
+    return content;
+  }
+  async runAnthropicChat(prompt) {
+    const baseUrl = this.getNormalizedBaseUrl("anthropic");
+    const url = `${baseUrl}/messages`;
+    const modelName = this.settings.aiModel.trim();
+    const maxTokens = this.getMaxTokens();
+    const headers = {
+      "Content-Type": "application/json"
+    };
+    headers["Authorization"] = `Bearer ${this.settings.aiApiKey}`;
+    headers["x-api-key"] = this.settings.aiApiKey;
+    headers["anthropic-version"] = "2023-06-01";
+    let response;
+    try {
+      response = await this.requestUrlWithRetry({
+        url,
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model: modelName,
+          max_tokens: maxTokens,
+          messages: [
+            { role: "user", content: prompt }
+          ],
+          temperature: this.settings.aiTemperature ?? 1,
+          // `thinking` is a MiniMax-M3-specific knob ("adaptive" lets
+          // the model decide whether to think — the official default).
+          // Only send it for M3; older M2.x have built-in thinking.
+          ...this.isMiniMaxM3() ? { thinking: { type: "adaptive" } } : {},
+          stream: true
+        }),
+        throw: false
+      }, void 0, void 0, (opts) => this.streamChatRequest(opts, "anthropic"), (res) => {
+        const json2 = typeof res.json === "object" && res.json !== null ? res.json : JSON.parse(res.text);
+        if (this.isTransientEmptyChatResponse(json2, "anthropic")) {
+          throw new Error(`empty chat response: ${JSON.stringify(json2)}`);
+        }
+      });
+    } catch (err) {
+      debugLog(this.app, "ai.anthropic.request-failed", {
+        provider: this.settings.aiProvider,
+        apiStyle: this.settings.aiApiStyle,
+        url,
+        model: modelName,
+        error: err?.message ?? String(err)
+      });
+      throw new Error(`Failed to request Anthropic API: ${err.message || err}`);
+    }
+    if (response.status !== 200) {
+      const body = (() => {
+        try {
+          return JSON.parse(response.text);
+        } catch {
+          return null;
+        }
+      })();
+      const apiErrMsg = body?.error?.message ?? response.text;
+      debugLog(this.app, "ai.anthropic.non-200", {
+        provider: this.settings.aiProvider,
+        apiStyle: this.settings.aiApiStyle,
+        url,
+        model: modelName,
+        status: response.status,
+        body: String(response.text ?? "").slice(0, 2e3)
+      });
+      throw new Error(`Anthropic Messages API error (${response.status}): ${apiErrMsg}`);
+    }
+    const json = typeof response.json === "object" && response.json !== null ? response.json : JSON.parse(response.text);
+    if (json.error) {
+      throw new Error(json.error.message || JSON.stringify(json.error));
+    }
+    const content = this.extractChatText(json, "anthropic");
+    if (!content.trim()) {
+      debugLog(this.app, "ai.anthropic.empty-content", {
+        provider: this.settings.aiProvider,
+        apiStyle: this.settings.aiApiStyle,
+        url,
+        model: modelName,
+        stopReason: json.stop_reason,
+        usage: json.usage,
+        responsePreview: JSON.stringify(json).slice(0, 4e3)
+      });
+      throw new Error(`\u63A5\u53E3\u54CD\u5E94\u5185\u5BB9\u4E3A\u7A7A\u3002\u5B8C\u6574\u54CD\u5E94\u4F53: ${JSON.stringify(json)}`);
+    }
+    if (json.usage) {
+      debugLog(this.app, "ai.anthropic.usage", { model: modelName, usage: json.usage });
+    }
+    return content;
+  }
+  /**
+   * Orchestrate full workflow: ASR -> Variable replacements -> LLM Refinement.
+   */
+  async processTranscription(audioFile, template, selection, wholeFileContent, onProgress) {
+    let transcription = "";
+    if (audioFile) {
+      if (this.settings.aiAsrSource === "local") {
+        onProgress("aiStatusDecoding");
+        const samples = await this.decodeAudioFile(audioFile);
+        transcription = await this.runLocalASR(samples, onProgress);
+      } else {
+        transcription = await this.runCloudASR(audioFile, onProgress);
+      }
+      if (!transcription.trim()) {
+        throw new Error("No speech transcription captured.");
+      }
+    }
+    onProgress("aiStatusRefining");
+    const dateStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+    let prompt = template.prompt;
+    prompt = prompt.replace(/\{\{selection\}\}/g, selection || "");
+    prompt = prompt.replace(/\{\{file:whole\}\}/g, wholeFileContent || "");
+    prompt = prompt.replace(/\{\{date\}\}/g, dateStr);
+    if (prompt.includes("{{transcription}}")) {
+      prompt = prompt.replace(/\{\{transcription\}\}/g, transcription);
+    } else if (transcription) {
+      prompt = `${prompt}
+
+\u5F85\u6574\u7406\u7684\u8F6C\u5F55\u6587\u672C\uFF1A
+${transcription}`;
+    }
+    if (!this.settings.aiApiKey.trim()) {
+      return transcription;
+    }
+    const refinedText = await this.runRefinement(prompt);
+    return refinedText || transcription;
+  }
+};
+
+// src/textbook-cleaner.ts
+var DEFAULT_TEXTBOOK_WINDOW_CHARS = 8e4;
+var DEFAULT_TEXTBOOK_WINDOW_OVERLAP_CHARS = 2e3;
+var MIN_TEXTBOOK_WINDOW_CHARS = 2e3;
+var MAX_TEXTBOOK_WINDOW_CHARS = 12e4;
+var MIN_TEXTBOOK_WINDOW_OVERLAP_CHARS = 300;
+var MAX_TEXTBOOK_WINDOW_OVERLAP_CHARS = 8e3;
+var TEXTBOOK_WINDOW_PROMPT = `\u4F60\u662F\u4E2D\u6587/\u82F1\u6587\u6559\u6750 OCR \u6392\u7248\u4FEE\u590D\u4E13\u5BB6\u3002\u5F53\u524D\u8F93\u5165\u662F\u6559\u6750 OCR \u7684\u4E00\u4E2A\u8FDE\u7EED\u7A97\u53E3\uFF0C\u800C\u4E0D\u662F\u5B8C\u6574\u7AE0\u8282\u3002
+
+\u2500\u2500 \u4EFB\u52A1 \u2500\u2500
+- \u4FEE\u590D OCR \u9519\u5B57\u3001\u9519\u8BEF\u65AD\u884C\u3001\u9875\u7709\u9875\u811A\u3001\u4E71\u7801\u548C\u6392\u7248\u6DF7\u4E71
+- \u4FDD\u7559\u539F\u6587\u4FE1\u606F\uFF0C\u4E0D\u6269\u5199\uFF0C\u4E0D\u5220\u51CF\uFF0C\u4E0D\u603B\u7ED3\uFF0C\u4E0D\u628A\u6559\u6750\u6574\u7406\u6210\u6458\u8981
+- \u5B9A\u4E49\u3001\u5B9A\u7406\u3001\u516C\u5F0F\u3001\u4F8B\u9898\u3001\u4E60\u9898\u3001\u8868\u683C\u3001\u56FE\u6CE8\u3001\u7F16\u53F7\u3001\u811A\u6CE8\u5FC5\u987B\u4FDD\u7559
+- \u5F53\u524D\u7A97\u53E3\u53EF\u80FD\u4E0E\u4E0A\u4E00\u7A97\u53E3\u6709\u5C11\u91CF\u91CD\u53E0\uFF1B\u91CD\u53E0\u5185\u5BB9\u53EA\u7528\u4E8E\u8854\u63A5\uFF0C\u4E0D\u8981\u91CD\u590D\u8F93\u51FA\u5DF2\u5728\u4E0A\u4E00\u7A97\u53E3\u6574\u7406\u8FC7\u7684\u5185\u5BB9
+- \u516C\u5F0F\u7528 LaTeX\uFF0C\u8868\u683C\u5C3D\u91CF\u8FD8\u539F\u4E3A Markdown \u8868\u683C\uFF0C\u590D\u6742\u8868\u683C\u53EF\u7528 HTML <table>
+- \u56FE\u8868\u53EA\u4FDD\u7559\u6807\u9898/\u8BF4\u660E\uFF0C\u5360\u4F4D\u4E3A [\u56FE X.Y \u63CF\u8FF0\uFF1A...]
+- OCR \u731C\u6D4B\u8865\u5168\uFF1A\u5982\u679C\u80FD\u4ECE\u672C\u7A97\u53E3\u3001\u4E0A\u4E00\u7A97\u53E3\u5C3E\u90E8\u3001\u7AE0\u8282\u6807\u9898\u3001\u5B66\u79D1\u672F\u8BED\u6216\u76F8\u90BB\u53E5\u552F\u4E00\u63A8\u65AD\u51FA\u7F3A\u5B57/\u9519\u5B57\uFF0C\u76F4\u63A5\u4FEE\u6B63\u4E3A\u6700\u53EF\u80FD\u539F\u6587
+- \u4E0D\u786E\u5B9A\u5904\u7406\uFF1A\u4E0D\u8981\u628A\u5927\u91CF\u5B57\u7B26\u66FF\u6362\u6210 ? \u6216 [?]\u3002\u65E0\u6CD5\u53EF\u9760\u5224\u65AD\u65F6\u4FDD\u7559\u539F OCR \u7247\u6BB5\uFF0C\u5E76\u5728\u540E\u9762\u8FFD\u52A0\u5C11\u91CF\u6807\u8BB0 \u3014\u7591\u4F3C\uFF1A...\u3015
+- \u53EA\u5220\u9664\u91CD\u590D\u9875\u7709\u9875\u811A\u3001\u5B64\u7ACB\u9875\u7801\u3001\u6C34\u5370\u548C\u660E\u663E OCR \u566A\u58F0
+
+\u2500\u2500 \u4E0A\u4E0B\u6587 \u2500\u2500
+\u6559\u6750\u540D\uFF1A{{book_title}}
+\u7AE0\u8282\u6807\u9898\uFF1A{{chapter_title}}
+\u7A97\u53E3\uFF1A{{window_index}} / {{window_total}}
+\u4E0A\u4E00\u7AE0\u672B\u5C3E\u4E24\u6BB5\uFF08\u4EC5\u4F9B\u8854\u63A5\uFF0C\u4E0D\u8981\u91CD\u590D\u8F93\u51FA\uFF09\uFF1A{{prev_tail_2_paragraphs}}
+\u4E0B\u4E00\u7AE0\u5F00\u5934\u4E24\u6BB5\uFF08\u4EC5\u4F9B\u672F\u8BED\u53C2\u8003\uFF0C\u4E0D\u8981\u8F93\u51FA\uFF09\uFF1A{{next_head_2_paragraphs}}
+\u4E0A\u4E00\u7A97\u53E3\u672B\u5C3E\u7247\u6BB5\uFF08\u4EC5\u4F9B\u8854\u63A5\uFF0C\u4E0D\u8981\u91CD\u590D\u8F93\u51FA\uFF09\uFF1A{{prev_window_tail}}
+
+\u2500\u2500 \u5F53\u524D OCR \u7A97\u53E3\u6587\u672C \u2500\u2500
+{{window_ocr_text}}
+
+\u2500\u2500 \u8F93\u51FA\u683C\u5F0F \u2500\u2500
+\u53EA\u8F93\u51FA\u5F53\u524D\u7A97\u53E3\u6E05\u7406\u540E\u7684 Markdown \u6B63\u6587\u3002
+\u4E0D\u8981\u7528 \`\`\`markdown \u5305\u88F9\u3002
+\u4E0D\u8981\u8F93\u51FA"\u4EE5\u4E0B\u662F..."\u7B49\u89E3\u91CA\u3002
+\u5982\u679C\u5F00\u5934\u660E\u663E\u63A5\u7EED\u4E0A\u4E00\u7A97\u53E3\uFF0C\u4E0D\u8981\u5F3A\u884C\u65B0\u5EFA\u5927\u6807\u9898\u3002
+`;
+async function parseManifest(app, manifestPath) {
+  const file = app.vault.getAbstractFileByPath(manifestPath);
+  if (!file || typeof file.path !== "string") {
+    throw new Error(`manifest \u8DEF\u5F84\u65E0\u6548\u6216\u6587\u4EF6\u4E0D\u5B58\u5728: ${manifestPath}`);
+  }
+  let raw;
+  try {
+    raw = await app.vault.read(file);
+  } catch (e) {
+    throw new Error(`\u8BFB\u53D6 manifest \u5931\u8D25: ${e.message ?? e}`);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`manifest JSON \u89E3\u6790\u5931\u8D25 (\u68C0\u67E5\u7B2C ${e.message.match(/\d+/) ?? "?"} \u5B57\u7B26): ${e.message}`);
+  }
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("manifest \u5FC5\u987B\u662F JSON object");
+  }
+  const m = parsed;
+  if (typeof m.book_title !== "string" || !m.book_title.trim()) {
+    throw new Error("manifest \u7F3A\u5C11 book_title");
+  }
+  if (typeof m.output_dir !== "string" || !m.output_dir.trim()) {
+    throw new Error("manifest \u7F3A\u5C11 output_dir");
+  }
+  if (!Array.isArray(m.chapters) || m.chapters.length === 0) {
+    throw new Error("manifest.chapters \u5FC5\u987B\u662F\u81F3\u5C11\u542B 1 \u4E2A\u7AE0\u8282\u7684\u6570\u7EC4");
+  }
+  for (let i = 0; i < m.chapters.length; i++) {
+    const c = m.chapters[i];
+    if (typeof c.id !== "string" || !c.id.trim()) {
+      throw new Error(`chapters[${i}].id \u7F3A\u5931\u6216\u4E3A\u7A7A`);
+    }
+    if (typeof c.number !== "number") {
+      throw new Error(`chapters[${i}].number \u5FC5\u987B\u662F\u6570\u5B57`);
+    }
+    if (typeof c.title !== "string" || !c.title.trim()) {
+      throw new Error(`chapters[${i}].title \u7F3A\u5931\u6216\u4E3A\u7A7A`);
+    }
+    if (typeof c.source_note !== "string" || !c.source_note.trim()) {
+      throw new Error(`chapters[${i}].source_note \u7F3A\u5931\u6216\u4E3A\u7A7A`);
+    }
+  }
+  return m;
+}
+function extractTailParagraphs(text, count = 2) {
+  const paragraphs = text.split(/\n\s*\n/).map((p) => p.trim()).filter((p) => p.length > 0 && !/^[#\-|>\d]/.test(p));
+  return paragraphs.slice(-count).join("\n\n");
+}
+function extractHeadParagraphs(text, count = 2) {
+  const paragraphs = text.split(/\n\s*\n/).map((p) => p.trim()).filter((p) => p.length > 0 && !/^[#\-|>\d]/.test(p));
+  return paragraphs.slice(0, count).join("\n\n");
+}
+function sanitizeForFilename(title) {
+  return title.replace(/\s+/g, " ").trim().replace(/[/\\:*?"<>|\x00-\x1f]/g, "_").replace(/^\.+|\.+$/g, "");
+}
+function resolveVaultPath(app, vaultRelative) {
+  const adapter = app.vault.adapter;
+  const base = adapter.getBasePath?.() ?? "";
+  return base ? `${base}/${vaultRelative}` : vaultRelative;
+}
+function splitTextbookWindows(text, maxChars = DEFAULT_TEXTBOOK_WINDOW_CHARS, overlapChars = DEFAULT_TEXTBOOK_WINDOW_OVERLAP_CHARS) {
+  const normalized = text.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return [];
+  if (normalized.length <= maxChars) {
+    return [{ index: 0, total: 1, text: normalized, prevTail: "" }];
+  }
+  const windows = [];
+  let offset = 0;
+  while (offset < normalized.length) {
+    const hardEnd = Math.min(normalized.length, offset + maxChars);
+    let end = hardEnd;
+    if (hardEnd < normalized.length) {
+      const paragraphBreak = normalized.lastIndexOf("\n\n", hardEnd);
+      const lineBreak = normalized.lastIndexOf("\n", hardEnd);
+      const candidate = paragraphBreak > offset + Math.floor(maxChars * 0.55) ? paragraphBreak : lineBreak > offset + Math.floor(maxChars * 0.65) ? lineBreak : hardEnd;
+      end = Math.max(offset + 1, candidate);
+    }
+    const chunk = normalized.slice(offset, end).trim();
+    if (chunk) {
+      const prev = windows.at(-1)?.text ?? "";
+      windows.push({
+        text: chunk,
+        prevTail: prev ? prev.slice(Math.max(0, prev.length - overlapChars)).trim() : ""
+      });
+    }
+    if (end >= normalized.length) break;
+    offset = Math.max(end - overlapChars, offset + 1);
+  }
+  return windows.map((window2, index) => ({
+    index,
+    total: windows.length,
+    text: window2.text,
+    prevTail: window2.prevTail
+  }));
+}
+function isTransientAiWindowError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /EMPTY_RESPONSE|CONNECTION_CLOSED|CONNECTION_RESET|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ERR_|timeout|aborted|network|empty chat response|接口响应内容为空|AI 返回内容为空/i.test(message);
+}
+function getTextbookCleanerSettings(settings) {
+  const configured = Number(settings.aiMaxTokens);
+  const isMiniMax = settings.aiProvider === "minimax" || /minimax/i.test(settings.aiModel);
+  const isMiniMaxM3 = /m3/i.test(settings.aiModel);
+  const upper = isMiniMax ? isMiniMaxM3 ? 524288 : 204800 : 65536;
+  const recommended = isMiniMax ? 131072 : 32768;
+  const safeOutputBudget = Number.isFinite(configured) ? Math.min(Math.max(configured, recommended), upper) : recommended;
+  return {
+    ...settings,
+    aiMaxTokens: safeOutputBudget
+  };
+}
+function clampInt(value, fallback, min, max) {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(Math.round(parsed), min), max);
+}
+function getTextbookWindowOptions(manifest) {
+  const maxChars = clampInt(
+    manifest.window_chars,
+    DEFAULT_TEXTBOOK_WINDOW_CHARS,
+    MIN_TEXTBOOK_WINDOW_CHARS,
+    MAX_TEXTBOOK_WINDOW_CHARS
+  );
+  const overlapChars = clampInt(
+    manifest.window_overlap_chars,
+    DEFAULT_TEXTBOOK_WINDOW_OVERLAP_CHARS,
+    MIN_TEXTBOOK_WINDOW_OVERLAP_CHARS,
+    Math.min(MAX_TEXTBOOK_WINDOW_OVERLAP_CHARS, Math.max(MIN_TEXTBOOK_WINDOW_OVERLAP_CHARS, Math.floor(maxChars / 4)))
+  );
+  return { maxChars, overlapChars };
+}
+function isVaultTextFile(file) {
+  return !!file && typeof file.path === "string";
+}
+async function writeVaultText(app, path3, content) {
+  const existing = app.vault.getAbstractFileByPath(path3);
+  if (isVaultTextFile(existing)) {
+    await app.vault.modify(existing, content);
+    return;
+  }
+  await app.vault.create(path3, content);
+}
+function renderProgressOutput(cleanedParts, status) {
+  const body = cleanedParts.map((part) => part.trim()).filter(Boolean).join("\n\n");
+  const marker = `> [!info] ${status}`;
+  return body ? `${body}
+
+${marker}` : marker;
+}
+function renderFailedWindowFallback(windowText, error) {
+  return [
+    `> [!warning] \u672C\u7A97\u53E3 AI \u6574\u7406\u5931\u8D25\uFF0C\u5DF2\u4FDD\u7559\u539F\u59CB OCR \u6587\u672C\u4EE5\u907F\u514D\u5185\u5BB9\u4E22\u5931\u3002\u9519\u8BEF\uFF1A${error}`,
+    "",
+    "```text",
+    windowText.trim(),
+    "```"
+  ].join("\n");
+}
+async function cleanWindowWithFallback(ai, promptTemplate, context, windowText, prevWindowTailOverride) {
+  const effectivePrevWindowTail = prevWindowTailOverride ?? context.prevWindowTail;
+  const buildPrompt = (text, prevWindowTail) => promptTemplate.replace(/\{\{book_title\}\}/g, context.bookTitle).replace(/\{\{chapter_number\}\}/g, String(context.chapterNumber)).replace(/\{\{chapter_title\}\}/g, context.chapterTitle).replace(/\{\{page_range\}\}/g, context.pageRange).replace(/\{\{prev_tail_2_paragraphs\}\}/g, context.prevTail || "\uFF08\u65E0\uFF09").replace(/\{\{next_head_2_paragraphs\}\}/g, context.nextHead || "\uFF08\u65E0\uFF09").replace(/\{\{window_index\}\}/g, String(context.windowIndex + 1)).replace(/\{\{window_total\}\}/g, String(context.windowTotal)).replace(/\{\{prev_window_tail\}\}/g, prevWindowTail || "\uFF08\u65E0\uFF09").replace(/\{\{window_ocr_text\}\}/g, text).replace(/\{\{chapter_ocr_text\}\}/g, text);
+  try {
+    const cleaned = await ai.runRefinement(buildPrompt(windowText, effectivePrevWindowTail));
+    if (!cleaned.trim()) {
+      throw new Error("AI \u8FD4\u56DE\u5185\u5BB9\u4E3A\u7A7A");
+    }
+    return [cleaned.trim()];
+  } catch (error) {
+    if (!isTransientAiWindowError(error) || windowText.length <= MIN_TEXTBOOK_WINDOW_CHARS) {
+      throw error;
+    }
+    const retryWindows = splitTextbookWindows(
+      windowText,
+      Math.max(MIN_TEXTBOOK_WINDOW_CHARS, Math.ceil(windowText.length / 2)),
+      Math.min(DEFAULT_TEXTBOOK_WINDOW_OVERLAP_CHARS, 300)
+    );
+    if (retryWindows.length < 2) {
+      throw error;
+    }
+    const cleanedParts = [];
+    let prevWindowTail = effectivePrevWindowTail;
+    for (const retryWindow of retryWindows) {
+      const parts = await cleanWindowWithFallback(ai, promptTemplate, context, retryWindow.text, prevWindowTail);
+      cleanedParts.push(...parts);
+      prevWindowTail = parts.at(-1)?.slice(-DEFAULT_TEXTBOOK_WINDOW_OVERLAP_CHARS) ?? prevWindowTail;
+    }
+    return cleanedParts;
+  }
+}
+async function cleanBook(app, settings, manifest, options) {
+  const ai = new AIService(app, getTextbookCleanerSettings(settings));
+  const byId = /* @__PURE__ */ new Map();
+  for (const c of manifest.chapters) byId.set(c.id, c);
+  const outputById = /* @__PURE__ */ new Map();
+  const tailById = /* @__PURE__ */ new Map();
+  const failures = [];
+  let succeeded = 0;
+  const outputDir = manifest.output_dir.replace(/\/+$/, "");
+  try {
+    await app.vault.createFolder(outputDir).catch((e) => {
+      if (!String(e?.message ?? "").includes("already exists")) throw e;
+    });
+  } catch (e) {
+    throw new Error(`\u521B\u5EFA\u8F93\u51FA\u76EE\u5F55\u5931\u8D25 ${outputDir}: ${e.message ?? e}`);
+  }
+  for (let i = 0; i < manifest.chapters.length; i++) {
+    const chapter = manifest.chapters[i];
+    options?.onProgress?.({
+      phase: "started",
+      index: i,
+      total: manifest.chapters.length,
+      chapter
+    });
+    try {
+      const sourceFile = app.vault.getAbstractFileByPath(chapter.source_note);
+      if (!sourceFile || typeof sourceFile.path !== "string") {
+        throw new Error(`\u6E90\u7B14\u8BB0\u4E0D\u5B58\u5728: ${chapter.source_note}`);
+      }
+      const ocrText = await app.vault.read(sourceFile);
+      let prevTail = "";
+      if (chapter.prev_chapter_id && outputById.has(chapter.prev_chapter_id)) {
+        const prevOutputPath = outputById.get(chapter.prev_chapter_id);
+        const prevFile = app.vault.getAbstractFileByPath(prevOutputPath);
+        if (prevFile instanceof import_obsidian10.TFile) {
+          const prevText = await app.vault.read(prevFile);
+          prevTail = extractTailParagraphs(prevText);
+        } else if (tailById.has(chapter.prev_chapter_id)) {
+          prevTail = tailById.get(chapter.prev_chapter_id);
+        }
+      }
+      let nextHead = "";
+      if (chapter.next_chapter_id && byId.has(chapter.next_chapter_id)) {
+        const nextChapter = byId.get(chapter.next_chapter_id);
+        const nextFile = app.vault.getAbstractFileByPath(nextChapter.source_note);
+        if (nextFile instanceof import_obsidian10.TFile) {
+          const nextText = await app.vault.read(nextFile);
+          nextHead = extractHeadParagraphs(nextText);
+        }
+      }
+      const safeTitle = sanitizeForFilename(chapter.title);
+      const numPad = String(chapter.number).padStart(2, "0");
+      const fileName = `ch${numPad}-${safeTitle}.md`;
+      const outputPath = `${outputDir}/${fileName}`;
+      const partDir = `${outputDir}/${fileName.replace(/\.md$/i, "")}-parts`;
+      await app.vault.createFolder(partDir).catch((e) => {
+        if (!String(e?.message ?? "").includes("already exists")) throw e;
+      });
+      const windowOptions = getTextbookWindowOptions(manifest);
+      const windows = splitTextbookWindows(ocrText, windowOptions.maxChars, windowOptions.overlapChars);
+      if (windows.length === 0) {
+        throw new Error("\u6E90\u7B14\u8BB0\u5185\u5BB9\u4E3A\u7A7A\uFF0C\u65E0\u6CD5\u6574\u7406");
+      }
+      const cleanedParts = [];
+      const failedWindows = [];
+      for (const windowInfo of windows) {
+        await writeVaultText(app, outputPath, renderProgressOutput(
+          cleanedParts,
+          `\u6559\u6750\u6574\u7406\u5904\u7406\u4E2D\uFF1A\u7A97\u53E3 ${windowInfo.index + 1}/${windowInfo.total} \u6B63\u5728\u8C03\u7528 AI\u3002\u5DF2\u5B8C\u6210 ${cleanedParts.length} \u6BB5\u3002`
+        ));
+        options?.onProgress?.({
+          phase: "started",
+          index: i,
+          total: manifest.chapters.length,
+          chapter,
+          windowIndex: windowInfo.index,
+          windowTotal: windowInfo.total
+        });
+        const promptTemplate = manifest.prompt_override?.trim() || TEXTBOOK_WINDOW_PROMPT;
+        let windowParts;
+        try {
+          windowParts = await cleanWindowWithFallback(ai, promptTemplate, {
+            bookTitle: manifest.book_title,
+            chapterNumber: chapter.number,
+            chapterTitle: chapter.title,
+            pageRange: chapter.page_range ? `${chapter.page_range[0]}\u2013${chapter.page_range[1]}` : "\uFF08\u672A\u6307\u5B9A\uFF09",
+            prevTail,
+            nextHead,
+            windowIndex: windowInfo.index,
+            windowTotal: windowInfo.total,
+            prevWindowTail: windowInfo.prevTail
+          }, windowInfo.text);
+        } catch (windowErr) {
+          const error = windowErr?.message ?? String(windowErr);
+          failedWindows.push({ window: windowInfo.index + 1, error });
+          console.error(`[textbook-cleaner] chapter ${chapter.id} window ${windowInfo.index + 1}/${windowInfo.total} failed:`, windowErr);
+          windowParts = [renderFailedWindowFallback(windowInfo.text, error)];
+          options?.onProgress?.({
+            phase: "failed",
+            index: i,
+            total: manifest.chapters.length,
+            chapter,
+            windowIndex: windowInfo.index,
+            windowTotal: windowInfo.total,
+            result: { ok: false, error }
+          });
+        }
+        for (const cleanedPart of windowParts) {
+          cleanedParts.push(cleanedPart.trim());
+          const partName = `part-${String(cleanedParts.length).padStart(3, "0")}.md`;
+          const partPath = `${partDir}/${partName}`;
+          await writeVaultText(app, partPath, cleanedPart.trim());
+          await writeVaultText(app, outputPath, renderProgressOutput(
+            cleanedParts,
+            `\u6559\u6750\u6574\u7406\u5904\u7406\u4E2D\uFF1A\u7A97\u53E3 ${windowInfo.index + 1}/${windowInfo.total} \u5DF2\u5199\u5165\u3002\u7EE7\u7EED\u5904\u7406\u5269\u4F59\u7A97\u53E3\u3002`
+          ));
+          options?.onProgress?.({
+            phase: "succeeded",
+            index: i,
+            total: manifest.chapters.length,
+            chapter,
+            windowIndex: windowInfo.index,
+            windowTotal: windowInfo.total,
+            result: { ok: true, outputPath: resolveVaultPath(app, partPath), chars: cleanedPart.length }
+          });
+        }
+      }
+      const cleaned = cleanedParts.join("\n\n");
+      const finalOutput = failedWindows.length > 0 ? [
+        cleaned,
+        "",
+        "## AI \u6574\u7406\u5931\u8D25\u7A97\u53E3",
+        "",
+        ...failedWindows.map((failure) => `- \u7A97\u53E3 ${failure.window}/${windows.length}: ${failure.error}`)
+      ].join("\n") : cleaned;
+      await writeVaultText(app, outputPath, finalOutput);
+      outputById.set(chapter.id, outputPath);
+      tailById.set(chapter.id, extractTailParagraphs(finalOutput));
+      succeeded++;
+      options?.onProgress?.({
+        phase: "succeeded",
+        index: i,
+        total: manifest.chapters.length,
+        chapter,
+        result: { ok: true, outputPath: resolveVaultPath(app, outputPath), chars: finalOutput.length }
+      });
+    } catch (e) {
+      const msg = e?.message ?? String(e);
+      console.error(`[textbook-cleaner] chapter ${chapter.id} failed:`, e);
+      failures.push({ chapter, error: msg });
+      options?.onProgress?.({
+        phase: "failed",
+        index: i,
+        total: manifest.chapters.length,
+        chapter,
+        result: { ok: false, error: msg }
+      });
+    }
+  }
+  return {
+    total: manifest.chapters.length,
+    succeeded,
+    failed: failures.length,
+    failures
+  };
+}
+async function pickManifestFile(app) {
+  return new Promise((resolve2) => {
+    let chosen = null;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json,application/json";
+    input.style.display = "none";
+    input.addEventListener("change", () => {
+      const f = input.files?.[0];
+      if (f) chosen = resolvePickedManifestVaultPath(app, f);
+      document.body.removeChild(input);
+      resolve2(chosen);
+    });
+    document.body.appendChild(input);
+    input.click();
+    setTimeout(() => {
+      if (input.parentNode) {
+        document.body.removeChild(input);
+        resolve2(chosen);
+      }
+    }, 6e4);
+  });
+}
+function resolvePickedManifestVaultPath(app, file) {
+  const absolutePath = (0, import_obsidian10.normalizePath)(file.path ?? "");
+  const adapter = app.vault.adapter;
+  const vaultBase = (0, import_obsidian10.normalizePath)(adapter.getBasePath?.() ?? "").replace(/\/$/, "");
+  if (absolutePath && vaultBase && absolutePath.startsWith(`${vaultBase}/`)) {
+    return absolutePath.slice(vaultBase.length + 1);
+  }
+  return file.name;
+}
+
+// src/reference-preview.ts
+function clamp2(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+var _ReferencePreviewPopover = class _ReferencePreviewPopover {
+  constructor() {
+    this.rootEl = null;
+    this.kindEl = null;
+    this.locationEl = null;
+    this.titleEl = null;
+    this.pathEl = null;
+    this.snippetEl = null;
+    this.hideTimer = null;
+    this.activeAnchor = null;
+    this.onHide = null;
+    this.repositionHandler = () => {
+      if (this.rootEl && this.activeAnchor) {
+        this.position(this.activeAnchor);
+      }
+    };
+  }
+  setOnHide(handler) {
+    this.onHide = handler;
+  }
+  show(anchor, data) {
+    this.ensureRoot();
+    this.cleanupDuplicateRoots();
+    this.cancelHide();
+    this.activeAnchor = anchor;
+    if (!this.rootEl || !this.kindEl || !this.locationEl || !this.titleEl || !this.pathEl || !this.snippetEl) {
+      return;
+    }
+    this.rootEl.classList.toggle("is-missing", data.missing === true);
+    this.kindEl.textContent = data.location ? `${data.kindLabel} \xB7 ${data.location}` : data.kindLabel;
+    this.locationEl.textContent = "";
+    this.locationEl.hidden = true;
+    this.titleEl.textContent = data.title;
+    this.pathEl.textContent = data.path;
+    this.pathEl.hidden = !data.path;
+    this.snippetEl.textContent = data.snippet;
+    this.rootEl.hidden = false;
+    this.rootEl.setAttribute("aria-hidden", "false");
+    this.position(anchor);
+    window.requestAnimationFrame(() => {
+      if (this.rootEl && this.activeAnchor === anchor && !this.rootEl.hidden) {
+        this.position(anchor);
+      }
+    });
+    window.addEventListener("scroll", this.repositionHandler, true);
+    window.addEventListener("resize", this.repositionHandler);
+  }
+  scheduleHide(delay = 140) {
+    this.cancelHide();
+    this.hideTimer = window.setTimeout(() => this.hide(true), delay);
+  }
+  cancelHide() {
+    if (this.hideTimer !== null) {
+      window.clearTimeout(this.hideTimer);
+      this.hideTimer = null;
+    }
+  }
+  hide(immediate = false) {
+    this.cancelHide();
+    const hadAnchor = this.activeAnchor !== null;
+    this.activeAnchor = null;
+    if (!this.rootEl) {
+      return;
+    }
+    this.rootEl.hidden = true;
+    this.rootEl.setAttribute("aria-hidden", "true");
+    if (immediate) {
+      window.removeEventListener("scroll", this.repositionHandler, true);
+      window.removeEventListener("resize", this.repositionHandler);
+    }
+    if (hadAnchor) {
+      this.onHide?.();
+    }
+  }
+  destroy() {
+    this.hide(true);
+    this.rootEl?.remove();
+    this.rootEl = null;
+    this.kindEl = null;
+    this.locationEl = null;
+    this.titleEl = null;
+    this.pathEl = null;
+    this.snippetEl = null;
+  }
+  ensureRoot() {
+    if (this.rootEl) {
+      return;
+    }
+    for (const existing of Array.from(document.querySelectorAll(_ReferencePreviewPopover.ROOT_SELECTOR))) {
+      existing.remove();
+    }
+    const root = document.createElement("div");
+    root.className = "lti-hover-preview";
+    root.id = "lti-hover-preview-root";
+    root.hidden = true;
+    root.setAttribute("aria-hidden", "true");
+    const head = document.createElement("div");
+    head.className = "lti-hover-preview-head";
+    const kind = document.createElement("span");
+    kind.className = "lti-hover-preview-kind";
+    head.append(kind);
+    const location = document.createElement("span");
+    location.className = "lti-hover-preview-location";
+    head.append(location);
+    const title = document.createElement("div");
+    title.className = "lti-hover-preview-title";
+    const path3 = document.createElement("div");
+    path3.className = "lti-hover-preview-path";
+    const snippet = document.createElement("pre");
+    snippet.className = "lti-hover-preview-snippet";
+    root.append(head, title, path3, snippet);
+    root.addEventListener("mouseenter", () => this.cancelHide());
+    root.addEventListener("mouseleave", () => this.scheduleHide());
+    document.body.appendChild(root);
+    this.rootEl = root;
+    this.kindEl = kind;
+    this.locationEl = location;
+    this.titleEl = title;
+    this.pathEl = path3;
+    this.snippetEl = snippet;
+  }
+  cleanupDuplicateRoots() {
+    for (const existing of Array.from(document.querySelectorAll(_ReferencePreviewPopover.ROOT_SELECTOR))) {
+      if (existing !== this.rootEl) {
+        existing.remove();
+      }
+    }
+  }
+  position(anchor) {
+    if (!this.rootEl) {
+      return;
+    }
+    const gap = 10;
+    const margin = 12;
+    const safeTop = 20;
+    const anchorRect = anchor.getBoundingClientRect();
+    this.rootEl.setCssProps({
+      "--lti-preview-left": "0px",
+      "--lti-preview-top": "0px",
+      "--lti-preview-max-width": `min(28rem, calc(100vw - ${margin * 2}px))`,
+      "--lti-preview-max-height": `calc(100vh - ${margin * 2}px)`
+    });
+    const previewRect = this.rootEl.getBoundingClientRect();
+    const left = clamp2(anchorRect.left, margin, window.innerWidth - previewRect.width - margin);
+    const availableHeight = Math.max(160, window.innerHeight - margin * 2);
+    const previewHeight = Math.min(previewRect.height, availableHeight);
+    const spaceAbove = anchorRect.top - safeTop;
+    const spaceBelow = window.innerHeight - anchorRect.bottom - margin;
+    const canPlaceAbove = spaceAbove >= previewHeight + gap;
+    const canPlaceBelow = spaceBelow >= previewHeight + gap;
+    let top;
+    if (canPlaceBelow) {
+      top = anchorRect.bottom + gap;
+    } else if (canPlaceAbove) {
+      top = anchorRect.top - previewHeight - gap;
+    } else if (spaceBelow >= spaceAbove) {
+      top = anchorRect.bottom + gap;
+    } else {
+      top = anchorRect.top - previewHeight - gap;
+    }
+    top = clamp2(top, safeTop, window.innerHeight - previewHeight - margin);
+    this.rootEl.setCssProps({
+      "--lti-preview-left": `${left}px`,
+      "--lti-preview-top": `${top}px`
+    });
+  }
+};
+_ReferencePreviewPopover.ROOT_SELECTOR = ".lti-hover-preview";
+var ReferencePreviewPopover = _ReferencePreviewPopover;
+
+// src/reading-hover-controller.ts
 var import_obsidian11 = require("obsidian");
+var controllerMap = /* @__PURE__ */ new WeakMap();
+function buildReadingHoverContent(doc, data) {
+  const root = doc.createElement("div");
+  root.className = "lti-reading-hover-content";
+  const head = doc.createElement("div");
+  head.className = "lti-reading-hover-head";
+  const kind = doc.createElement("span");
+  kind.className = "lti-reading-hover-kind";
+  kind.textContent = data.location ? `${data.kindLabel} \xB7 ${data.location}` : data.kindLabel;
+  head.append(kind);
+  root.append(head);
+  const title = doc.createElement("div");
+  title.className = "lti-reading-hover-title";
+  title.textContent = data.title;
+  root.append(title);
+  if (data.path) {
+    const path3 = doc.createElement("div");
+    path3.className = "lti-reading-hover-path";
+    path3.textContent = data.path;
+    root.append(path3);
+  }
+  const snippet = doc.createElement("pre");
+  snippet.className = "lti-reading-hover-snippet";
+  snippet.textContent = data.snippet;
+  root.append(snippet);
+  return root;
+}
+function resolveFallbackHost(containerEl) {
+  return containerEl.closest(".markdown-preview-view") ?? containerEl.closest(".markdown-rendered") ?? containerEl.closest(".workspace-leaf-content") ?? containerEl;
+}
+function findMarkdownView(app, containerEl) {
+  const activeView = app.workspace.getActiveViewOfType(import_obsidian11.MarkdownView);
+  const views = [];
+  if (activeView) {
+    views.push(activeView);
+  }
+  for (const leaf of app.workspace.getLeavesOfType("markdown")) {
+    const view = leaf.view;
+    if (view instanceof import_obsidian11.MarkdownView && !views.includes(view)) {
+      views.push(view);
+    }
+  }
+  for (const view of views) {
+    if (view.previewMode?.containerEl?.contains(containerEl) || view.containerEl.contains(containerEl)) {
+      return view;
+    }
+  }
+  return views[0] ?? null;
+}
+function resolveHoverHost(app, containerEl) {
+  const markdownView = findMarkdownView(app, containerEl);
+  if (!markdownView) {
+    return {
+      hostEl: resolveFallbackHost(containerEl),
+      hoverParent: null
+    };
+  }
+  const hoverParent = markdownView.previewMode ?? markdownView;
+  return {
+    hostEl: containerEl.closest(".markdown-preview-view") ?? markdownView.previewMode?.containerEl ?? markdownView.containerEl,
+    hoverParent
+  };
+}
+var LegacyReadingHoverController = class extends import_obsidian11.MarkdownRenderChild {
+  constructor(app, hostEl, sentinelEl, hoverParent, getPreviewData) {
+    super(sentinelEl);
+    this.popover = null;
+    this.fallbackEl = null;
+    this.hideTimer = null;
+    this.previewToken = 0;
+    this.handlePopoverEnter = () => this.cancelHide();
+    this.handlePopoverLeave = () => this.scheduleHide();
+    this.app = app;
+    this.hostEl = hostEl;
+    this.hoverParent = hoverParent;
+    this.getPreviewData = getPreviewData;
+    this.win = hostEl.ownerDocument.defaultView ?? window;
+  }
+  async show(anchor, options) {
+    const token = ++this.previewToken;
+    this.cancelHide();
+    debugLog(this.app, "reading.hover.show-request", {
+      token,
+      target: options.target,
+      sourcePath: options.sourcePath,
+      kind: options.kind,
+      startLine: options.startLine,
+      endLine: options.endLine,
+      hoverParentType: this.hoverParent?.constructor?.name ?? "null",
+      anchorClass: anchor.className
+    });
+    const data = await this.getPreviewData(options);
+    if (token !== this.previewToken || !anchor.isConnected) {
+      debugLog(this.app, "reading.hover.show-abort", {
+        token,
+        currentToken: this.previewToken,
+        anchorConnected: anchor.isConnected,
+        target: options.target
+      });
+      return;
+    }
+    if (this.hoverParent) {
+      const popover = this.ensurePopover(anchor);
+      const hoverEl = popover.hoverEl;
+      hoverEl.classList.add("lti-reading-hover-popover");
+      hoverEl.classList.toggle("is-missing", data.missing === true);
+      hoverEl.replaceChildren(buildReadingHoverContent(anchor.ownerDocument, data));
+      debugLog(this.app, "reading.hover.show-commit", {
+        token,
+        target: options.target,
+        hoverElClass: hoverEl.className,
+        parentHoverPopoverMatches: this.hoverParent.hoverPopover === popover,
+        snippetPreview: data.snippet.slice(0, 120)
+      });
+    } else {
+      this.showFallbackPopover(anchor, data);
+      debugLog(this.app, "reading.hover.show-fallback", {
+        token,
+        target: options.target,
+        snippetPreview: data.snippet.slice(0, 120)
+      });
+    }
+  }
+  cancelHide() {
+    if (this.hideTimer !== null) {
+      this.win.clearTimeout(this.hideTimer);
+      this.hideTimer = null;
+    }
+  }
+  scheduleHide(delay = 140) {
+    this.cancelHide();
+    debugLog(this.app, "reading.hover.schedule-hide", {
+      delay,
+      token: this.previewToken
+    });
+    this.hideTimer = this.win.setTimeout(() => {
+      this.previewToken += 1;
+      this.hide();
+    }, delay);
+  }
+  onunload() {
+    this.previewToken += 1;
+    this.cancelHide();
+    this.hide();
+    controllerMap.delete(this.hostEl);
+    this.containerEl.remove();
+  }
+  ensurePopover(anchor) {
+    debugLog(this.app, "reading.hover.ensure-popover", {
+      hadExistingPopover: Boolean(this.popover),
+      parentExistingPopover: Boolean(this.hoverParent?.hoverPopover),
+      hoverParentType: this.hoverParent?.constructor?.name ?? "unknown",
+      targetClass: anchor.className
+    });
+    this.destroyPopover();
+    const popover = new import_obsidian11.HoverPopover(this.hoverParent, anchor, 0);
+    popover.hoverEl.addEventListener("mouseenter", this.handlePopoverEnter);
+    popover.hoverEl.addEventListener("mouseleave", this.handlePopoverLeave);
+    this.popover = popover;
+    return popover;
+  }
+  showFallbackPopover(anchor, data) {
+    this.destroyFallbackPopover();
+    const doc = anchor.ownerDocument;
+    const el = doc.createElement("div");
+    el.className = "lti-reading-hover-popover lti-fallback-popover";
+    el.classList.toggle("is-missing", data.missing === true);
+    el.replaceChildren(buildReadingHoverContent(doc, data));
+    el.addEventListener("mouseenter", this.handlePopoverEnter);
+    el.addEventListener("mouseleave", this.handlePopoverLeave);
+    doc.body.appendChild(el);
+    this.fallbackEl = el;
+    const gap = 8;
+    const margin = 12;
+    const rect = anchor.getBoundingClientRect();
+    el.setCssProps({
+      "--lti-reading-hover-max-width": `min(28rem, calc(100vw - ${margin * 2}px))`
+    });
+    const elRect = el.getBoundingClientRect();
+    const left = Math.min(rect.left, doc.documentElement.clientWidth - elRect.width - margin);
+    const spaceBelow = doc.documentElement.clientHeight - rect.bottom - margin;
+    const top = spaceBelow >= elRect.height + gap ? rect.bottom + gap : rect.top - elRect.height - gap;
+    el.setCssProps({
+      "--lti-reading-hover-left": `${Math.max(margin, left)}px`,
+      "--lti-reading-hover-top": `${Math.max(margin, top)}px`
+    });
+  }
+  destroyFallbackPopover() {
+    if (!this.fallbackEl) {
+      return;
+    }
+    this.fallbackEl.removeEventListener("mouseenter", this.handlePopoverEnter);
+    this.fallbackEl.removeEventListener("mouseleave", this.handlePopoverLeave);
+    this.fallbackEl.remove();
+    this.fallbackEl = null;
+  }
+  hide() {
+    debugLog(this.app, "reading.hover.hide", {
+      token: this.previewToken
+    });
+    this.destroyPopover();
+    this.destroyFallbackPopover();
+  }
+  destroyPopover() {
+    if (!this.popover) {
+      return;
+    }
+    this.popover.hoverEl.removeEventListener("mouseenter", this.handlePopoverEnter);
+    this.popover.hoverEl.removeEventListener("mouseleave", this.handlePopoverLeave);
+    this.popover.unload();
+    debugLog(this.app, "reading.hover.destroy-popover", {
+      hoverParentType: this.hoverParent?.constructor?.name ?? "null"
+    });
+    if (this.hoverParent?.hoverPopover === this.popover) {
+      this.hoverParent.hoverPopover = null;
+    }
+    this.popover = null;
+  }
+};
+function getReadingReferenceHoverController(app, containerEl, ctx, getPreviewData) {
+  const { hostEl, hoverParent } = resolveHoverHost(app, containerEl);
+  const existing = controllerMap.get(hostEl);
+  if (existing) {
+    return existing;
+  }
+  const sentinel = hostEl.ownerDocument.createElement("span");
+  sentinel.className = "lti-reading-hover-sentinel";
+  sentinel.hidden = true;
+  hostEl.append(sentinel);
+  const controller = new LegacyReadingHoverController(app, hostEl, sentinel, hoverParent, getPreviewData);
+  controllerMap.set(hostEl, controller);
+  ctx.addChild(controller);
+  return controller;
+}
+
+// src/local-ocr-picker.ts
+function pickLocalOcrFileWithHtmlInput(options = {}) {
+  const doc = options.doc ?? document;
+  const win = options.win ?? window;
+  const cancelDelayMs = options.cancelDelayMs ?? 250;
+  const timeoutMs = options.timeoutMs ?? 6e4;
+  return new Promise((resolve2) => {
+    const fileInput = doc.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = "image/*,application/pdf";
+    fileInput.style.display = "none";
+    doc.body.appendChild(fileInput);
+    let settled = false;
+    let cancelTimer = null;
+    let timeoutTimer = null;
+    const cleanup = () => {
+      if (cancelTimer) clearTimeout(cancelTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      win.removeEventListener("focus", onFocus);
+      if (fileInput.parentNode) {
+        fileInput.parentNode.removeChild(fileInput);
+      }
+    };
+    const settle = (selection) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve2(selection);
+    };
+    const resolveCurrentFile = () => {
+      const file = fileInput.files?.[0];
+      if (!file) {
+        settle(null);
+        return;
+      }
+      const pathVal = file.path;
+      if (!pathVal) {
+        settle(null);
+        return;
+      }
+      settle({
+        absolutePath: pathVal,
+        fileName: file.name,
+        isPdf: file.name.toLowerCase().endsWith(".pdf")
+      });
+    };
+    const onFocus = () => {
+      cancelTimer = setTimeout(() => {
+        if (!fileInput.files || fileInput.files.length === 0) {
+          settle(null);
+        }
+      }, cancelDelayMs);
+    };
+    fileInput.addEventListener("change", resolveCurrentFile);
+    win.addEventListener("focus", onFocus);
+    timeoutTimer = setTimeout(() => settle(null), timeoutMs);
+    fileInput.click();
+  });
+}
+
+// src/view.ts
+var import_obsidian12 = require("obsidian");
 
 // src/view-refresh.ts
 var REFRESH_REASON_PRIORITY = {
@@ -6860,7 +8434,7 @@ function dedupePaths(paths) {
   if (!paths || paths.length === 0) {
     return void 0;
   }
-  const unique = [...new Set(paths.filter((path) => path.length > 0))];
+  const unique = [...new Set(paths.filter((path3) => path3.length > 0))];
   return unique.length > 0 ? unique : void 0;
 }
 function mergeViewRefreshRequests(current, next) {
@@ -6890,7 +8464,7 @@ function shouldHandleViewRefresh(request, dependencyPaths) {
   if (dependencies.size === 0) {
     return true;
   }
-  return request.changedPaths.some((path) => dependencies.has(path));
+  return request.changedPaths.some((path3) => dependencies.has(path3));
 }
 
 // src/view.ts
@@ -6917,7 +8491,7 @@ var FILE_REQUIRED_ACTIONS = /* @__PURE__ */ new Set([
 function serializeSnapshot(value) {
   return JSON.stringify(value);
 }
-var LinkTagIntelligenceView = class extends import_obsidian11.ItemView {
+var LinkTagIntelligenceView = class extends import_obsidian12.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.sectionState = /* @__PURE__ */ new Map();
@@ -7063,7 +8637,13 @@ var LinkTagIntelligenceView = class extends import_obsidian11.ItemView {
       ["addRelation", () => this.plugin.openRelationFlow()],
       ["manageTags", () => this.plugin.openTagManager()],
       ["suggestTags", () => this.plugin.openTagSuggestion()],
-      ["semanticSearch", () => this.plugin.openSemanticSearch()]
+      ["semanticSearch", () => this.plugin.openSemanticSearch()],
+      ["ocr", () => {
+        void this.plugin.runLocalOcrTask();
+      }],
+      ["textbookCleanup", () => {
+        void this.plugin.runTextbookCleaner("current-note");
+      }]
     ];
   }
   createSectionShell(parent, definition) {
@@ -7120,7 +8700,7 @@ var LinkTagIntelligenceView = class extends import_obsidian11.ItemView {
   async buildSnapshot() {
     const toolbar = this.buildToolbarSnapshot();
     const activeFile = this.plugin.getContextNoteFile();
-    if (!(activeFile instanceof import_obsidian11.TFile)) {
+    if (!(activeFile instanceof import_obsidian12.TFile)) {
       return {
         toolbar,
         hasContext: false,
@@ -7864,15 +9444,15 @@ var LinkTagIntelligenceView = class extends import_obsidian11.ItemView {
     }
     this.plugin.openFile(file);
   }
-  openFileByPath(path) {
-    const file = this.resolveFileByPath(path);
+  openFileByPath(path3) {
+    const file = this.resolveFileByPath(path3);
     if (file) {
       this.plugin.openFile(file);
     }
   }
-  resolveFileByPath(path) {
-    const file = this.app.vault.getAbstractFileByPath(path);
-    return file instanceof import_obsidian11.TFile ? file : null;
+  resolveFileByPath(path3) {
+    const file = this.app.vault.getAbstractFileByPath(path3);
+    return file instanceof import_obsidian12.TFile ? file : null;
   }
   getSectionExpanded(id, defaultExpanded) {
     return this.sectionState.get(id) ?? defaultExpanded;
@@ -8213,7 +9793,7 @@ var LinkTagIntelligenceView = class extends import_obsidian11.ItemView {
 };
 
 // src/speech-recorder.ts
-var import_obsidian12 = require("obsidian");
+var import_obsidian13 = require("obsidian");
 
 // src/speech-capture.ts
 var WORKLET_CODE = `
@@ -8426,13 +10006,13 @@ var SpeechRecorder = class {
       this.registerDeviceChangeHandler(t);
       if (!this.asrProcess) {
         const adapter = this.appRef?.vault.adapter;
-        const basePath = adapter instanceof import_obsidian12.FileSystemAdapter ? adapter.getBasePath() : "";
+        const basePath = adapter instanceof import_obsidian13.FileSystemAdapter ? adapter.getBasePath() : "";
         const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence";
         const workerPath = pluginDir + "/asr-worker.js";
         try {
-          const cp = require("child_process");
+          const cp3 = require("child_process");
           const isWindows = process.platform === "win32";
-          this.asrProcess = cp.spawn("node", ["asr-worker.js"], {
+          this.asrProcess = cp3.spawn("node", ["asr-worker.js"], {
             cwd: pluginDir,
             stdio: ["pipe", "pipe", "pipe"],
             shell: isWindows ? false : true,
@@ -8509,7 +10089,7 @@ var SpeechRecorder = class {
       if (hotwordsFile) {
         try {
           const adapter = this.appRef?.vault.adapter;
-          const basePath = adapter instanceof import_obsidian12.FileSystemAdapter ? adapter.getBasePath() : "";
+          const basePath = adapter instanceof import_obsidian13.FileSystemAdapter ? adapter.getBasePath() : "";
           const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
           const pathModule = require("path");
           hotwordsFile = pathModule.relative(pluginDir, hotwordsFile);
@@ -8529,7 +10109,7 @@ var SpeechRecorder = class {
         ...hotwordsFile ? { hotwordsFile } : {}
       }) + "\n";
       this.asrStdin?.write(initMsg);
-      await new Promise((resolve, reject) => {
+      await new Promise((resolve2, reject) => {
         const timeout = setTimeout(() => {
           clearInterval(check);
           reject(new Error("ASR Worker init timed out"));
@@ -8538,7 +10118,7 @@ var SpeechRecorder = class {
           if (this.asrReady) {
             clearTimeout(timeout);
             clearInterval(check);
-            resolve();
+            resolve2();
           }
           if (this.asrInitError) {
             clearTimeout(timeout);
@@ -8673,7 +10253,7 @@ var SpeechRecorder = class {
           this.errorKey = "speechMicDisconnected";
           this.cleanupCapture();
           this.removeDeviceChangeHandler();
-          new import_obsidian12.Notice(t("speechMicDisconnected"));
+          new import_obsidian13.Notice(t("speechMicDisconnected"));
         }
       } catch {
         if (this.phase === "recording") {
@@ -8681,7 +10261,7 @@ var SpeechRecorder = class {
           this.errorKey = "speechMicDisconnected";
           this.cleanupCapture();
           this.removeDeviceChangeHandler();
-          new import_obsidian12.Notice(t("speechMicDisconnected"));
+          new import_obsidian13.Notice(t("speechMicDisconnected"));
         }
       }
     };
@@ -8810,38 +10390,38 @@ var SpeechRecorder = class {
     }
     return map;
   }
-  setHotwordsFile(path) {
-    this.hotwordsPath = path || null;
+  setHotwordsFile(path3) {
+    this.hotwordsPath = path3 || null;
   }
   /** Resolve hotwords file path: user setting → default → null if none exists. */
   getHotwordsPath() {
-    let path = null;
+    let path3 = null;
     const adapter = this.appRef?.vault.adapter;
-    const basePath = adapter instanceof import_obsidian12.FileSystemAdapter ? adapter.getBasePath() : "";
+    const basePath = adapter instanceof import_obsidian13.FileSystemAdapter ? adapter.getBasePath() : "";
     if (this.hotwordsPath) {
       try {
         const pathModule = require("path");
         if (pathModule.isAbsolute(this.hotwordsPath)) {
-          path = this.hotwordsPath;
+          path3 = this.hotwordsPath;
         } else {
           const pluginRelativePath = pathModule.join(basePath, ".obsidian", "plugins", "link-tag-intelligence", this.hotwordsPath);
           const fs = require("fs");
           if (fs.existsSync(pluginRelativePath)) {
-            path = pluginRelativePath;
+            path3 = pluginRelativePath;
           } else {
-            path = pathModule.join(basePath, this.hotwordsPath);
+            path3 = pathModule.join(basePath, this.hotwordsPath);
           }
         }
       } catch {
-        path = this.hotwordsPath;
+        path3 = this.hotwordsPath;
       }
     } else {
-      if (basePath) path = basePath + "/.obsidian/plugins/link-tag-intelligence/models/hotwords.txt";
+      if (basePath) path3 = basePath + "/.obsidian/plugins/link-tag-intelligence/models/hotwords.txt";
     }
-    if (!path) return null;
+    if (!path3) return null;
     try {
       const fs = require("fs");
-      return fs.existsSync(path) ? path : null;
+      return fs.existsSync(path3) ? path3 : null;
     } catch {
       return null;
     }
@@ -8850,7 +10430,7 @@ var SpeechRecorder = class {
   getModelDirInternal(language) {
     const lang = language ?? this.settingsLanguage;
     const adapter = this.appRef?.vault.adapter;
-    const basePath = adapter instanceof import_obsidian12.FileSystemAdapter ? adapter.getBasePath() : "";
+    const basePath = adapter instanceof import_obsidian13.FileSystemAdapter ? adapter.getBasePath() : "";
     const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence/";
     if (lang === "zh") {
       return pluginDir + "models/" + (this.speechModelChoice === "sensevoice" ? "sensevoice" : "zh-2025") + "/";
@@ -8861,7 +10441,7 @@ var SpeechRecorder = class {
     if (!this.appRef || !this.speechAutoHotwords) return;
     try {
       const adapter = this.appRef.vault.adapter;
-      if (!(adapter instanceof import_obsidian12.FileSystemAdapter)) return;
+      if (!(adapter instanceof import_obsidian13.FileSystemAdapter)) return;
       const basePath = adapter.getBasePath();
       const pathModule = require("path");
       const fs = require("fs");
@@ -8895,48 +10475,40 @@ var SpeechRecorder = class {
   }
 };
 
-// src/speech-model.ts
-var ZH_MODEL_ARCHIVE = "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2";
-var ZH_MODEL_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/" + ZH_MODEL_ARCHIVE;
-var ZH_MODEL_FILENAMES = [
-  "encoder.int8.onnx",
-  "decoder.onnx",
-  "joiner.int8.onnx",
-  "tokens.txt"
-];
-var EN_MODEL_REPO = "csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20";
-var EN_MODEL_FILES = [
-  { filename: "encoder-epoch-99-avg-1.int8.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
-  { filename: "decoder-epoch-99-avg-1.int8.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
-  { filename: "joiner-epoch-99-avg-1.int8.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
-  { filename: "tokens.txt", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" }
-];
-async function sha256Hex(buffer) {
-  const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+// src/main.ts
+init_speech_model();
+
+// src/paddle-model.ts
+var DEFAULT_HF_BASE_URL = "https://hf-mirror.com";
+function getPaddleHfBaseUrl() {
+  const override = globalThis.__LTI_PADDLE_HF_BASE__;
+  if (typeof override === "string" && override.length > 0) return override;
+  return DEFAULT_HF_BASE_URL;
 }
-async function verifyChecksum(buffer, expectedSha256) {
-  const actual = await sha256Hex(buffer);
-  return actual === expectedSha256;
+function buildPaddleFileUrl(spec, baseUrl = getPaddleHfBaseUrl()) {
+  return `${baseUrl.replace(/\/+$/, "")}/${spec.repo}/resolve/main/${spec.filename}`;
 }
-function getModelFileList(language) {
-  return language === "zh" ? [...ZH_MODEL_FILENAMES] : EN_MODEL_FILES.map((f) => f.filename);
+function getPaddleTierFileList(tier) {
+  const s = PADDLE_TIER_SPECS[tier];
+  return [
+    { role: "det", spec: s.det },
+    { role: "rec", spec: s.rec },
+    { role: s.dict.role, spec: s.dict }
+  ];
 }
-function getModelRepo(language) {
-  return language === "zh" ? ZH_MODEL_URL : EN_MODEL_REPO;
+function getPaddleTierTotalBytes(tier) {
+  const s = PADDLE_TIER_SPECS[tier];
+  return s.det.sizeBytes + s.rec.sizeBytes + s.dict.sizeBytes;
 }
-function isArchiveDownload(language) {
-  return language === "zh";
-}
-async function downloadModelFile(repo, filename, onProgress) {
-  const url = `https://huggingface.co/${repo}/resolve/main/${filename}`;
+var PLACEHOLDER_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+async function downloadPaddleFile(url, filename, onProgress) {
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText} for ${filename}`);
+    throw new Error(`HTTP ${response.status} ${response.statusText} for ${filename}`);
   }
   const contentLength = Number(response.headers.get("content-length") || "0");
-  const reader = response.body.getReader();
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error(`No response body for ${filename}`);
   const chunks = [];
   let loaded = 0;
   while (true) {
@@ -8944,7 +10516,7 @@ async function downloadModelFile(repo, filename, onProgress) {
     if (done) break;
     chunks.push(value);
     loaded += value.length;
-    onProgress({
+    onProgress?.({
       percent: contentLength > 0 ? loaded / contentLength : 0,
       loadedBytes: loaded,
       totalBytes: contentLength
@@ -8959,62 +10531,1741 @@ async function downloadModelFile(repo, filename, onProgress) {
   }
   return result.buffer;
 }
-async function downloadWithRetry(repo, filename, expectedSha256, onProgress, maxRetries = 3) {
+async function downloadPaddleFileWithRetry(role, spec, onFileProgress, maxRetries = 3, baseUrl = getPaddleHfBaseUrl()) {
   const backoffDelays = [1e3, 2e3, 4e3];
-  const PLACEHOLDER_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const buffer = await downloadModelFile(repo, filename, onProgress);
-      const skipVerify = expectedSha256 === PLACEHOLDER_SHA256;
-      const valid = skipVerify || await verifyChecksum(buffer, expectedSha256);
+      const url = buildPaddleFileUrl(spec, baseUrl);
+      const buffer = await downloadPaddleFile(url, spec.filename, onFileProgress);
+      const skipVerify = spec.sha256 === PLACEHOLDER_SHA256;
       if (skipVerify) {
-        return { filename, success: true, buffer };
+        return { filename: spec.filename, role, success: true, bytes: buffer.byteLength, buffer };
       }
-      if (!valid) {
+      const { sha256Hex: sha256Hex2 } = await Promise.resolve().then(() => (init_speech_model(), speech_model_exports));
+      const actual = await sha256Hex2(buffer);
+      if (actual !== spec.sha256) {
         if (attempt < maxRetries) {
           await new Promise((r) => setTimeout(r, backoffDelays[attempt] ?? 4e3));
           continue;
         }
-        return { filename, success: false, error: "sha256 mismatch after retries" };
+        return {
+          filename: spec.filename,
+          role,
+          success: false,
+          error: `sha256 mismatch (expected ${spec.sha256}, got ${actual})`
+        };
       }
-      return { filename, success: true, buffer };
+      return { filename: spec.filename, role, success: true, bytes: buffer.byteLength, buffer };
     } catch (error) {
       if (attempt < maxRetries) {
         await new Promise((r) => setTimeout(r, backoffDelays[attempt] ?? 4e3));
         continue;
       }
-      return { filename, success: false, error: String(error) };
+      return {
+        filename: spec.filename,
+        role,
+        success: false,
+        error: String(error)
+      };
     }
   }
-  return { filename, success: false, error: "unknown error" };
+  return { filename: spec.filename, role, success: false, error: "unknown" };
 }
-async function downloadModelFiles(language, writeFile, onProgress) {
-  const repo = getModelRepo(language);
-  const files = getModelFileList(language);
+async function downloadPaddleTier(tier, writeFile, onProgress, baseUrl = getPaddleHfBaseUrl()) {
+  const files = getPaddleTierFileList(tier);
   const results = [];
+  let totalBytes = 0;
   for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    const result = await downloadWithRetry(
-      repo,
-      file.filename,
-      file.sha256,
-      (fp) => onProgress({
-        currentFile: file.filename,
+    const { role, spec } = files[i];
+    onProgress?.({
+      currentFile: spec.filename,
+      role,
+      fileIndex: i,
+      totalFiles: files.length,
+      fileProgress: { percent: 0, loadedBytes: 0, totalBytes: spec.sizeBytes }
+    });
+    const result = await downloadPaddleFileWithRetry(
+      role,
+      spec,
+      (p) => onProgress?.({
+        currentFile: spec.filename,
+        role,
         fileIndex: i,
         totalFiles: files.length,
-        fileProgress: fp
+        fileProgress: p
       }),
-      3
+      3,
+      baseUrl
     );
     if (result.success && result.buffer) {
-      await writeFile(file.filename, result.buffer);
+      try {
+        await writeFile({ role, filename: spec.filename }, result.buffer);
+      } catch (e) {
+        result.success = false;
+        result.error = `writeFile failed: ${e}`;
+      }
+      totalBytes += result.buffer.byteLength;
     }
     results.push(result);
   }
-  return results;
+  return { tier, files: results, anyFailed: results.some((r) => !r.success), totalBytes };
+}
+function isPaddleTierInstalled(tier, existsSync, modelDir) {
+  const files = getPaddleTierFileList(tier);
+  const missing = [];
+  for (const { role, spec } of files) {
+    const p = `${modelDir.replace(/\/+$/, "")}/${role}/${spec.filename}`;
+    if (!existsSync(p)) missing.push(p);
+  }
+  return { installed: missing.length === 0, missing };
+}
+
+// src/ocr-service.ts
+var path2 = __toESM(require("path"), 1);
+
+// src/kreuzberg-ocr-service.ts
+var cp = __toESM(require("child_process"), 1);
+var path = __toESM(require("path"), 1);
+var import_crypto = require("crypto");
+var _KreuzbergOcrService = class _KreuzbergOcrService {
+  /**
+   * @param tessdataPath  Directory containing the official Tesseract
+   *                       `eng.traineddata` and `chi_sim.traineddata` files.
+   *                       Kreuzberg's precompiled Rust binaries ship a
+   *                       build-time `TESSDATA_PREFIX` that points at
+   *                       `/home/runner/work/kreuzberg/...` (the GitHub
+   *                       Actions runner) and is wrong on every other
+   *                       machine, so we override it via the process env
+   *                       before each call (the child worker also does
+   *                       the same override; defense in depth).
+   * @param workerPath    Absolute path to the compiled kreuzberg-worker
+   *                       .cjs file. In production this is
+   *                       {pluginDir}/kreuzberg-worker.cjs. In tests
+   *                       it's the project's dist/kreuzberg-worker.cjs
+   *                       (built by `npm run build`).
+   */
+  constructor(tessdataPath, workerPath) {
+    // 2 minutes
+    this.idleTimer = null;
+    this.destroyed = false;
+    /** Spawned on first runOcr; reused across calls. */
+    this.child = null;
+    /** Per-job resolvers, keyed by jobId. */
+    this.pending = /* @__PURE__ */ new Map();
+    /** Resolves when the worker has emitted its first "ready" message. */
+    this.readyPromise = null;
+    this.readyResolve = null;
+    this.readyReject = null;
+    this.tessdataPath = tessdataPath;
+    this.workerPath = workerPath;
+  }
+  /**
+   * Spawn the child worker (idempotent) and wait for it to send the
+   * first "ready" message. Subsequent calls return the cached promise.
+   *
+   * We pass NODE_PATH pointing at the project's node_modules so the
+   * child can find @kreuzberg/node when running from the dev tree
+   * (the smoke test in particular). In the production vault install,
+   * the child's own cwd + relative node_modules lookup works without
+   * NODE_PATH because the package files are in dist/node_modules/.
+   */
+  ensureWorker() {
+    if (this.readyPromise) return this.readyPromise;
+    this.readyPromise = new Promise((resolve2, reject) => {
+      this.readyResolve = resolve2;
+      this.readyReject = reject;
+    });
+    const isWindows = process.platform === "win32";
+    const projectNodeModules = "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/node_modules";
+    const childEnv = { ...process.env };
+    if (!childEnv.NODE_PATH || !childEnv.NODE_PATH.includes(projectNodeModules)) {
+      childEnv.NODE_PATH = projectNodeModules + (childEnv.NODE_PATH ? `:${childEnv.NODE_PATH}` : "");
+    }
+    const childDir = path.dirname(this.workerPath);
+    this.child = cp.spawn("node", [this.workerPath], {
+      env: childEnv,
+      detached: !isWindows,
+      cwd: childDir,
+      shell: false
+    });
+    this.child.on("error", (e) => {
+      const err = new Error(`kreuzberg-worker spawn failed: ${e.message}`);
+      this.readyReject?.(err);
+      for (const job of this.pending.values()) job.reject(err);
+      this.pending.clear();
+      this.child = null;
+      this.readyPromise = null;
+      this.readyResolve = null;
+      this.readyReject = null;
+    });
+    this.child.on("exit", (code, signal) => {
+      const err = new Error(
+        `kreuzberg-worker exited unexpectedly (code=${code}, signal=${signal})`
+      );
+      this.readyReject?.(err);
+      if (this.pending.size > 0) {
+        for (const job of this.pending.values()) job.reject(err);
+        this.pending.clear();
+      }
+      this.child = null;
+      this.readyPromise = null;
+      this.readyResolve = null;
+      this.readyReject = null;
+    });
+    this.child.on("error", () => {
+    });
+    const readline = require("readline");
+    const rl = readline.createInterface({ input: this.child.stdout });
+    rl.on("line", (raw) => {
+      let msg;
+      try {
+        msg = JSON.parse(raw);
+      } catch {
+        return;
+      }
+      if (msg.type === "ready") {
+        this.readyResolve?.();
+        this.readyResolve = null;
+        this.readyReject = null;
+        return;
+      }
+      if (msg.type === "progress") {
+        const job = this.pending.get(msg.jobId);
+        if (job?.onStatus) job.onStatus(msg.message);
+        return;
+      }
+      if (msg.type === "result" || msg.type === "error") {
+        const job = this.pending.get(msg.jobId);
+        if (!job) return;
+        this.pending.delete(msg.jobId);
+        if (msg.type === "result") {
+          job.resolve(msg.text);
+        } else {
+          job.reject(new Error(msg.error));
+        }
+      }
+    });
+    this.child.stderr?.on("data", (chunk) => {
+      process.stderr.write(`[lti-kreuzberg-worker-stderr] ${chunk.toString().trim()}
+`);
+    });
+    return this.readyPromise;
+  }
+  /**
+   * Run OCR / document extraction on a local file path. Returns the
+   * extracted text (kreuzberg auto-detects MIME from the file extension,
+   * so .png/.jpg/.pdf all work the same way).
+   */
+  async runOcr(imageSource, onStatus) {
+    if (this.destroyed) throw new Error("KreuzbergOcrService \u5DF2\u88AB\u9500\u6BC1");
+    this.clearIdleTimer();
+    if (onStatus) onStatus("\u6B63\u5728\u901A\u8FC7 Kreuzberg (Rust) \u63D0\u53D6\u6587\u5B57...");
+    try {
+      const worker = await this.ensureWorker();
+      if (!this.child) {
+        await this.ensureWorker();
+      }
+      worker;
+      const jobId = (0, import_crypto.randomUUID)();
+      const text = await new Promise((resolve2, reject) => {
+        if (!this.child) {
+          reject(new Error("kreuzberg-worker not running"));
+          return;
+        }
+        this.pending.set(jobId, { resolve: resolve2, reject });
+        const entry = this.pending.get(jobId);
+        entry.onStatus = onStatus;
+        this.child.stdin?.write(
+          JSON.stringify({
+            type: "extract",
+            filePath: imageSource,
+            tessdataPath: this.tessdataPath,
+            jobId
+          }) + "\n"
+        );
+      });
+      return text;
+    } catch (e) {
+      console.error("[lti-kreuzberg-ocr] extract failed:", e);
+      throw new Error(`Kreuzberg OCR \u63A8\u7406\u5F02\u5E38: ${e?.message ?? e}`);
+    } finally {
+      this.resetIdleTimer();
+    }
+  }
+  resetIdleTimer() {
+    this.clearIdleTimer();
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      this.stopWorker();
+    }, _KreuzbergOcrService.IDLE_TIMEOUT_MS);
+  }
+  clearIdleTimer() {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+  }
+  stopWorker() {
+    if (!this.child) {
+      this.readyPromise = null;
+      this.readyResolve = null;
+      this.readyReject = null;
+      return;
+    }
+    const child = this.child;
+    this.child = null;
+    this.readyPromise = null;
+    this.readyResolve = null;
+    this.readyReject = null;
+    try {
+      child.stdin?.end();
+    } catch {
+    }
+    setTimeout(() => {
+      if (!child.killed) {
+        try {
+          process.kill(-(child.pid ?? 0), "SIGTERM");
+        } catch {
+        }
+        setTimeout(() => {
+          if (!child.killed) {
+            try {
+              process.kill(-(child.pid ?? 0), "SIGKILL");
+            } catch {
+            }
+          }
+        }, 500).unref?.();
+      }
+    }, 100).unref?.();
+  }
+  /**
+   * Destroy lifecycle for plugin unload. Terminates the child with
+   * SIGTERM (and SIGKILL after a short grace period if it doesn't
+   * exit cleanly). Mirrors the OCR child-process escalation pattern.
+   */
+  destroy() {
+    this.destroyed = true;
+    this.clearIdleTimer();
+    this.stopWorker();
+    for (const job of this.pending.values()) {
+      job.reject(new Error("KreuzbergOcrService \u5DF2\u88AB\u9500\u6BC1"));
+    }
+    this.pending.clear();
+    this.readyReject?.(new Error("KreuzbergOcrService \u5DF2\u88AB\u9500\u6BC1"));
+  }
+};
+_KreuzbergOcrService.IDLE_TIMEOUT_MS = 12e4;
+var KreuzbergOcrService = _KreuzbergOcrService;
+
+// src/paddle-ocr-service.ts
+var cp2 = __toESM(require("child_process"), 1);
+var import_crypto2 = require("crypto");
+var import_node_readline = require("node:readline");
+var _PaddleOcrEngine = class _PaddleOcrEngine {
+  constructor(modelDir, deps) {
+    this.ort = null;
+    this.sharp = null;
+    // Lazily-initialized ONNX sessions.
+    this.detSession = null;
+    this.recSession = null;
+    this.clsSession = null;
+    this.dictionary = [];
+    // Lifecycle tracking.
+    this.initPromise = null;
+    this.isInitialized = false;
+    this.idleTimer = null;
+    this.modelDir = modelDir;
+    this.fs = deps?.fs ?? require("fs");
+    this.pathLib = deps?.path ?? require("path");
+    this.ort = deps?.ort ?? null;
+    this.sharp = deps?.sharp ?? null;
+    this.detConfig = { ...PADDLE_DET_DEFAULTS, ...deps?.detConfig ?? {} };
+    this.sessionOptions = this.buildSessionOptions(deps?.cpuThreads);
+    this.tier = deps?.tier ?? DEFAULT_PADDLE_TIER;
+  }
+  /**
+   * Check whether all required PaddleOCR model files exist on disk.
+   * Returns a list of missing file paths (relative to the model dir) — empty if all present.
+   *
+   * The cls (orientation classification) model is OPTIONAL — PaddlePaddle has not
+   * published a PP-OCRv5 mobile cls ONNX export as of this writing, so we accept
+   * its absence. When missing, runPipeline() simply skips the cls branch.
+   *
+   * Tier-aware: managed bundles embed the character dictionary inside
+   * the rec model's `inference.yml`. The standalone `dict/ppocr_keys_v5.txt`
+   * remains supported as a back-compat fallback, so either dictionary source
+   * is sufficient.
+   */
+  checkModelFiles() {
+    const required = [
+      this.pathLib.join(PADDLE_MODEL_SUBDIRS.det, PADDLE_MODEL_FILES.det),
+      this.pathLib.join(PADDLE_MODEL_SUBDIRS.rec, PADDLE_MODEL_FILES.rec)
+    ];
+    const ymlDictionary = this.pathLib.join(PADDLE_MODEL_SUBDIRS.rec, "inference.yml");
+    const legacyDictionary = this.pathLib.join(PADDLE_MODEL_SUBDIRS.dict, PADDLE_MODEL_FILES.dict);
+    const optional = [
+      this.pathLib.join(PADDLE_MODEL_SUBDIRS.cls, PADDLE_MODEL_FILES.cls)
+    ];
+    const missing = required.filter((rel) => !this.fs.existsSync(this.pathLib.join(this.modelDir, rel)));
+    const hasDictionary = this.fs.existsSync(this.pathLib.join(this.modelDir, ymlDictionary)) || this.fs.existsSync(this.pathLib.join(this.modelDir, legacyDictionary));
+    if (!hasDictionary) {
+      missing.push(ymlDictionary);
+    }
+    const missingOptional = optional.filter((rel) => !this.fs.existsSync(this.pathLib.join(this.modelDir, rel)));
+    return { present: missing.length === 0, missing, missingOptional, modelDir: this.modelDir };
+  }
+  /**
+   * Lazily load the 3 ONNX sessions and the character dictionary.
+   * Idempotent: a second call returns the same in-flight or completed promise.
+   */
+  async init(onStatus) {
+    if (this.isInitialized) return;
+    if (this.initPromise) return this.initPromise;
+    this.initPromise = (async () => {
+      const check = this.checkModelFiles();
+      if (!check.present) {
+        throw new Error(
+          `PaddleOCR \u6A21\u578B\u6587\u4EF6\u7F3A\u5931 (${check.missing.length} \u4E2A): ${check.missing.join(", ")}. \u8BF7\u5728\u63D2\u4EF6\u76EE\u5F55\u4E0B\u521B\u5EFA ${check.modelDir} \u5E76\u4E0B\u8F7D PP-OCRv5 mobile ONNX \u6A21\u578B\u3002`
+        );
+      }
+      const ort = this.resolveOrt();
+      const sharp = this.resolveSharp();
+      if (onStatus) onStatus("\u6B63\u5728\u52A0\u8F7D PaddleOCR \u6587\u672C\u68C0\u6D4B\u6A21\u578B...");
+      this.detSession = await ort.InferenceSession.create(
+        this.pathLib.join(this.modelDir, PADDLE_MODEL_SUBDIRS.det, PADDLE_MODEL_FILES.det),
+        this.sessionOptions
+      );
+      if (check.missingOptional.length === 0) {
+        if (onStatus) onStatus("\u6B63\u5728\u52A0\u8F7D PaddleOCR \u65B9\u5411\u5206\u7C7B\u6A21\u578B...");
+        try {
+          this.clsSession = await ort.InferenceSession.create(
+            this.pathLib.join(this.modelDir, PADDLE_MODEL_SUBDIRS.cls, PADDLE_MODEL_FILES.cls),
+            this.sessionOptions
+          );
+        } catch (e) {
+          console.warn("[lti-paddle-ocr] cls \u6A21\u578B\u52A0\u8F7D\u5931\u8D25\uFF0C\u8DF3\u8FC7\u65B9\u5411\u5206\u7C7B:", e);
+          this.clsSession = null;
+        }
+      } else {
+        if (onStatus) onStatus("(\u53EF\u9009) \u65B9\u5411\u5206\u7C7B\u6A21\u578B\u7F3A\u5931\uFF0C\u8DF3\u8FC7 0\xB0/180\xB0 \u5224\u5B9A");
+      }
+      if (onStatus) onStatus("\u6B63\u5728\u52A0\u8F7D PaddleOCR \u6587\u672C\u8BC6\u522B\u6A21\u578B...");
+      this.recSession = await ort.InferenceSession.create(
+        this.pathLib.join(this.modelDir, PADDLE_MODEL_SUBDIRS.rec, PADDLE_MODEL_FILES.rec),
+        this.sessionOptions
+      );
+      if (onStatus) onStatus("\u6B63\u5728\u52A0\u8F7D\u5B57\u7B26\u5B57\u5178...");
+      this.dictionary = await this.loadDictionary();
+      if (this.dictionary.length === 0) {
+        throw new Error(
+          `PaddleOCR \u5B57\u5178\u52A0\u8F7D\u5931\u8D25\uFF1A\u672A\u5728 ${this.modelDir} \u627E\u5230\u5B57\u5178\u3002\u5E94\u5B58\u5728 rec/inference.yml\uFF08\u542B character_dict \u5B57\u6BB5\uFF09\uFF1B\u65E7\u7248 mobile \u76EE\u5F55\u4E5F\u53EF\u4F7F\u7528 dict/ppocr_keys_v5.txt\u3002`
+        );
+      }
+      this.isInitialized = true;
+    })();
+    return this.initPromise;
+  }
+  /**
+   * Run OCR on a local image path. Returns concatenated text from all detected regions.
+   * Throws if init or inference fails — caller is expected to fall back to Tesseract.
+   */
+  async runOcr(imagePath, onStatus) {
+    this.clearIdleTimer();
+    try {
+      await this.init();
+      if (!this.detSession || !this.recSession || this.dictionary.length === 0) {
+        throw new Error("PaddleOCR \u5F15\u64CE\u672A\u5C31\u7EEA (sessions not loaded)");
+      }
+      if (onStatus) onStatus("\u6B63\u5728\u4F7F\u7528 PaddleOCR \u8BC6\u522B\u56FE\u50CF...");
+      const sharp = this.resolveSharp();
+      const image = sharp(imagePath);
+      const { data, info } = await image.raw({ ensureAlpha: false }).toBuffer({ resolveWithObject: true });
+      const regions = await this.runPipeline(new Uint8Array(data.buffer, data.byteOffset, data.byteLength), info.width, info.height, info.channels, onStatus);
+      return regions.map((r) => r.text).join("\n");
+    } finally {
+      this.resetIdleTimer();
+    }
+  }
+  /**
+   * Release all ONNX sessions and clear cached dictionary. Idempotent.
+   */
+  async dispose() {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+    await Promise.allSettled([
+      this.detSession?.release(),
+      this.clsSession?.release(),
+      this.recSession?.release()
+    ]);
+    this.detSession = null;
+    this.clsSession = null;
+    this.recSession = null;
+    this.dictionary = [];
+    this.isInitialized = false;
+    this.initPromise = null;
+  }
+  /** Plugin unload hook — call dispose(). */
+  destroy() {
+    void this.dispose();
+  }
+  /** True if the model dir + files are present and the service can theoretically be initialized. */
+  get isReady() {
+    return this.checkModelFiles().present;
+  }
+  // ---------------------------------------------------------------------------
+  // Internals
+  // ---------------------------------------------------------------------------
+  buildSessionOptions(cpuThreads) {
+    const threads = Number.isFinite(cpuThreads) && cpuThreads && cpuThreads > 0 ? Math.max(1, Math.min(32, Math.round(cpuThreads))) : Math.max(1, Math.min(8, Math.floor((require("os").cpus()?.length ?? 2) / 2)));
+    return {
+      executionProviders: ["cpu"],
+      intraOpNumThreads: threads,
+      interOpNumThreads: Math.max(1, Math.min(2, Math.floor(threads / 2))),
+      executionMode: "parallel",
+      graphOptimizationLevel: "all"
+    };
+  }
+  /**
+   * Run the full det → cls → rec pipeline on a decoded image.
+   * Image is provided as raw RGB pixels (or RGBA; alpha is dropped).
+   */
+  async runPipeline(raw, width, height, channels, onStatus) {
+    const detBoxes = await this.runDet(raw, width, height, channels);
+    if (process.env.LTI_PADDLE_DIAG && detBoxes.length > 0) {
+      const sample = detBoxes.slice(0, 3);
+      console.log(`[runPipeline] detBoxes=${detBoxes.length} sample[0]=${JSON.stringify(sample[0])} sample[1]=${JSON.stringify(sample[1])}`);
+      console.log(`[runPipeline] raw.length=${raw.length} W=${width} H=${height} C=${channels}`);
+    }
+    if (detBoxes.length === 0) return [];
+    const regions = [];
+    for (let i = 0; i < detBoxes.length; i++) {
+      if (onStatus) onStatus(`PaddleOCR \u8BC6\u522B\u4E2D (${i + 1}/${detBoxes.length})...`);
+      const box = detBoxes[i];
+      const { data: cropped, width: cropW } = this.warpCrop(raw, width, height, channels, box);
+      const angle = this.clsSession ? await this.runCls(cropped) : 0;
+      const cropForRec = angle === 180 ? this.flipHorizontal(cropped, cropW) : cropped;
+      const text = await this.runRec(cropForRec, cropW);
+      if (text.length > 0) {
+        regions.push({ text, confidence: 1, quad: box });
+      }
+    }
+    return regions;
+  }
+  async runDet(raw, width, height, channels) {
+    if (!this.detSession) return [];
+    const ort = this.resolveOrt();
+    const targetLong = this.detConfig.limitSideLen;
+    const scale = Math.min(1, targetLong / Math.max(width, height));
+    const rw = Math.max(32, Math.round(width * scale / 32) * 32);
+    const rh = Math.max(32, Math.round(height * scale / 32) * 32);
+    const input = new Float32Array(1 * 3 * rh * rw);
+    this.hwcToNchw(raw, width, height, channels, rw, rh, input, PADDLE_DET_CLS_PREPROCESS);
+    const inputName = this.detSession.inputNames[0];
+    const outputName = this.detSession.outputNames[0];
+    if (!inputName || !outputName) return [];
+    const inputTensor = new ort.Tensor("float32", input, [1, 3, rh, rw]);
+    const out = await this.detSession.run({ [inputName]: inputTensor });
+    const map = out[outputName];
+    if (!map) return [];
+    return this.dbPostprocess(map.data, map.dims, width, height, scale);
+  }
+  async runCls(crop) {
+    if (!this.clsSession) return 0;
+    const ort = this.resolveOrt();
+    const inputName = this.clsSession.inputNames[0];
+    const outputName = this.clsSession.outputNames[0];
+    if (!inputName || !outputName) return 0;
+    const inputTensor = new ort.Tensor("float32", crop, [1, 3, _PaddleOcrEngine.CLS_IMG_HEIGHT, _PaddleOcrEngine.CLS_IMG_WIDTH]);
+    const out = await this.clsSession.run({ [inputName]: inputTensor });
+    const logits = out[outputName]?.data;
+    if (!logits || logits.length < 2) return 0;
+    return logits[1] > logits[0] ? 180 : 0;
+  }
+  async runRec(crop, actualWidth) {
+    if (!this.recSession) return "";
+    const ort = this.resolveOrt();
+    const inputName = this.recSession.inputNames[0];
+    const outputName = this.recSession.outputNames[0];
+    if (!inputName || !outputName) return "";
+    const inputTensor = new ort.Tensor("float32", crop, [1, 3, _PaddleOcrEngine.REC_IMG_HEIGHT, actualWidth]);
+    const out = await this.recSession.run({ [inputName]: inputTensor });
+    const raw = out[outputName];
+    if (!raw || raw.data.length === 0) return "";
+    const N = raw.dims.length === 3 ? raw.dims[2] : this.dictionary.length;
+    if (process.env.LTI_PADDLE_DIAG) {
+      const T = raw.data.length / N;
+      const seq = [];
+      for (let t = 0; t < Math.min(T, 20); t++) {
+        let best = 0, bestV = -Infinity;
+        for (let i = 0; i < N; i++) {
+          const v = raw.data[t * N + i];
+          if (v > bestV) {
+            bestV = v;
+            best = i;
+          }
+        }
+        seq.push(best);
+      }
+      const dict = this.dictionary;
+      console.log(`[runRec] N=${N} T=${T} argmax(seq)=${JSON.stringify(seq)}`);
+      console.log(`[runRec] decoded chars=${seq.filter((b) => b > 0 && b - 1 < dict.length).map((b) => dict[b - 1]).join("")}`);
+    }
+    return this.ctcDecode(raw.data, this.dictionary, N);
+  }
+  // ---------------------------------------------------------------------------
+  // Image utilities (sharp-based)
+  // ---------------------------------------------------------------------------
+  hwcToNchw(src, sw, sh, schannels, dw, dh, out, pre) {
+    const stride = dw * dh;
+    for (let y = 0; y < dh; y++) {
+      const sy = Math.min(sh - 1, Math.round(y * sh / dh));
+      for (let x = 0; x < dw; x++) {
+        const sx = Math.min(sw - 1, Math.round(x * sw / dw));
+        const si = (sy * sw + sx) * schannels;
+        const di = y * dw + x;
+        for (let c = 0; c < 3; c++) {
+          const v = schannels >= 3 ? src[si + c] : src[si];
+          out[c * stride + di] = (v / 255 - pre.mean[c]) / pre.std[c];
+        }
+      }
+    }
+  }
+  /**
+   * Warp the 4-point text region into a 48×W strip.
+   *
+   * The polygon may be axis-aligned (TL/TR/BR/BL corners of a rectangle) or a
+   * real rotated quad. For axis-aligned inputs the algorithm reduces to the
+   * previous behavior (start at TL, sample by widthPx/heightPx). For rotated
+   * inputs we compute the axis-aligned bounding box and sample that — this is
+   * a deliberate "best-effort" choice; full perspective warp (homography) is
+   * out of scope for this round and lives in Plan B.
+   *
+   * Returns the warp data + its actual width (NOT the max) — rec model has
+   * dynamic width dim so we pass the real value rather than padding.
+   */
+  warpCrop(src, sw, sh, schannels, quad) {
+    const xs = [quad[0], quad[2], quad[4], quad[6]];
+    const ys = [quad[1], quad[3], quad[5], quad[7]];
+    const minX = Math.max(0, Math.min(...xs));
+    const minY = Math.max(0, Math.min(...ys));
+    const maxX = Math.min(sw - 1, Math.max(...xs));
+    const maxY = Math.min(sh - 1, Math.max(...ys));
+    const widthPx = maxX - minX + 1;
+    const heightPx = maxY - minY + 1;
+    if (widthPx < 4 || heightPx < 4) {
+      return { data: new Float32Array(3 * _PaddleOcrEngine.REC_IMG_HEIGHT * 48), width: 48 };
+    }
+    const outW = Math.min(_PaddleOcrEngine.REC_MAX_WIDTH, Math.max(48, Math.round(widthPx / heightPx * _PaddleOcrEngine.REC_IMG_HEIGHT)));
+    const out = new Float32Array(3 * _PaddleOcrEngine.REC_IMG_HEIGHT * outW);
+    const stride = _PaddleOcrEngine.REC_IMG_HEIGHT * outW;
+    for (let y = 0; y < _PaddleOcrEngine.REC_IMG_HEIGHT; y++) {
+      const sy = Math.min(sh - 1, Math.round(y / _PaddleOcrEngine.REC_IMG_HEIGHT * heightPx + minY));
+      for (let x = 0; x < outW; x++) {
+        const sx = Math.min(sw - 1, Math.round(x / outW * widthPx + minX));
+        const si = (sy * sw + sx) * schannels;
+        const di = y * outW + x;
+        for (let c = 0; c < 3; c++) {
+          const v = schannels >= 3 ? src[si + c] : src[si];
+          out[c * stride + di] = (v / 255 - PADDLE_REC_PREPROCESS.mean[c]) / PADDLE_REC_PREPROCESS.std[c];
+        }
+      }
+    }
+    return { data: out, width: outW };
+  }
+  /** Mirror the crop horizontally — used when the cls model returns 180°. */
+  flipHorizontal(crop, actualWidth) {
+    const channels = 3;
+    const height = _PaddleOcrEngine.REC_IMG_HEIGHT;
+    const out = new Float32Array(crop.length);
+    const planeSize = height * actualWidth;
+    for (let c = 0; c < channels; c++) {
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < actualWidth; x++) {
+          out[c * planeSize + y * actualWidth + (actualWidth - 1 - x)] = crop[c * planeSize + y * actualWidth + x];
+        }
+      }
+    }
+    return out;
+  }
+  // ---------------------------------------------------------------------------
+  // DBNet postprocessing — PaddleOCR-standard pipeline.
+  //
+  // Steps:
+  //   1. Binarize at dbThresh (default 0.3)
+  //   2. Optional 3x3 dilation (useDilation)
+  //   3. Marching-squares contour extraction (lighter than findContours)
+  //   4. Per-contour minAreaRect → 4-point polygon
+  //   5. Probability mean filter (dbBoxThresh, default 0.6)
+  //   6. min_size filter on short side (default 3 px)
+  //   7. Aspect ratio filter (long/short <= 100)
+  //   8. Unclip via polygon offset (PaddleOCR formula)
+  //   9. Greedy NMS with polygon IoU (threshold 0.3)
+  //  10. Map boxes back to original image coordinates
+  //
+  // Returns polygons (8 numbers: TL, TR, BR, BL).
+  // ---------------------------------------------------------------------------
+  dbPostprocess(pred, dims, origW, origH, scale) {
+    if (dims.length < 4) return [];
+    const h = dims[2] ?? 0;
+    const w = dims[3] ?? 0;
+    if (h === 0 || w === 0) return [];
+    const cfg = this.detConfig;
+    const bitmap = new Uint8Array(h * w);
+    for (let i = 0; i < pred.length; i++) {
+      bitmap[i] = pred[i] > cfg.dbThresh ? 1 : 0;
+    }
+    if (cfg.useDilation) {
+      this.dilate3x3InPlace(bitmap, w, h);
+    }
+    const contours = this.marchingSquares(bitmap, w, h);
+    const polygons = [];
+    const scores = [];
+    let stats = { contours: contours.length, droppedContour: 0, droppedScore: 0, droppedSize: 0, droppedAspect: 0, droppedUnclip: 0, droppedFinal: 0 };
+    for (const contour of contours) {
+      if (contour.length < 4) {
+        stats.droppedContour++;
+        continue;
+      }
+      const rect = this.minAreaRect(contour);
+      if (!rect) {
+        stats.droppedContour++;
+        continue;
+      }
+      const aabb = this.polygonToAabb(rect);
+      const score = this.scorePolygonAabb(pred, w, h, aabb);
+      if (score < cfg.dbBoxThresh) {
+        stats.droppedScore++;
+        continue;
+      }
+      if (aabb[2] - aabb[0] < cfg.minSize || aabb[3] - aabb[1] < cfg.minSize) {
+        stats.droppedSize++;
+        continue;
+      }
+      const wSide = aabb[2] - aabb[0] + 1;
+      const hSide = aabb[3] - aabb[1] + 1;
+      const longSide = Math.max(wSide, hSide);
+      const shortSide = Math.min(wSide, hSide);
+      if (longSide / shortSide > _PaddleOcrEngine.DET_ASPECT_RATIO_THRESH) {
+        stats.droppedAspect++;
+        continue;
+      }
+      if (polygons.length >= cfg.maxCandidates) break;
+      const unclipDist = this.polygonOffsetDistance(rect, cfg.unclipRatio);
+      const unclipped = this.offsetPolygon(rect, unclipDist);
+      if (unclipped.length < 4) {
+        stats.droppedUnclip++;
+        continue;
+      }
+      const unclippedPoints = [
+        [unclipped[0], unclipped[1]],
+        [unclipped[2], unclipped[3]],
+        [unclipped[4], unclipped[5]],
+        [unclipped[6], unclipped[7]]
+      ];
+      const finalRect = this.minAreaRect(unclippedPoints);
+      if (!finalRect) {
+        stats.droppedUnclip++;
+        continue;
+      }
+      const finalAabb = this.polygonToAabb(finalRect);
+      if (finalAabb[2] - finalAabb[0] < cfg.minSize || finalAabb[3] - finalAabb[1] < cfg.minSize) {
+        stats.droppedFinal++;
+        continue;
+      }
+      polygons.push(finalRect);
+      scores.push(score);
+    }
+    if (process.env.LTI_PADDLE_DIAG) {
+      console.log(`[dbPostprocess] ${JSON.stringify(stats)} kept=${polygons.length}`);
+    }
+    if (polygons.length === 0) return [];
+    const kept = this.greedyNMS(polygons, scores, cfg.nmsIouThresh);
+    if (process.env.LTI_PADDLE_DIAG) {
+      console.log(`[dbPostprocess] kept=after_nms=${kept.length}`);
+    }
+    return kept.map((poly) => {
+      const [x1, y1, x2, y2, x3, y3, x4, y4] = poly;
+      return [
+        x1 / scale,
+        y1 / scale,
+        x2 / scale,
+        y2 / scale,
+        x3 / scale,
+        y3 / scale,
+        x4 / scale,
+        y4 / scale
+      ];
+    });
+  }
+  // ---------------------------------------------------------------------------
+  // DBNet postprocessing helpers
+  // ---------------------------------------------------------------------------
+  /**
+   * In-place 3x3 dilation of a 0/1 bitmap. Useful when the DBNet binarized
+   * map has gaps between text pixels that fragment a single line into many
+   * tiny contours. Mirrors PaddleOCR's `cv2.dilate(seg, ones((3,3)))`.
+   */
+  dilate3x3InPlace(bitmap, w, h) {
+    const src = bitmap.slice();
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let on = 0;
+        for (let dy = -1; dy <= 1 && on === 0; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const ny = y + dy, nx = x + dx;
+            if (ny < 0 || ny >= h || nx < 0 || nx >= w) continue;
+            if (src[ny * w + nx]) {
+              on = 1;
+              break;
+            }
+          }
+        }
+        bitmap[y * w + x] = on;
+      }
+    }
+  }
+  /**
+   * Marching-squares contour extraction.
+   * Returns an array of contours; each contour is an array of [x, y] points
+   * in order. Includes only the 1-pixels (text) and traces the outer boundary.
+   *
+   * This is a simplified replacement for OpenCV's findContours. We trace the
+   * boundary of each connected region using 4-connectivity. It's not as
+   * precise as Suzuki's algorithm but is sufficient for the well-smoothed
+   * probability maps that DBNet produces (where boundaries are simple).
+   */
+  marchingSquares(bitmap, w, h) {
+    const visited = new Uint8Array(w * h);
+    const contours = [];
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = y * w + x;
+        if (bitmap[idx] === 0 || visited[idx]) continue;
+        const queue = [idx];
+        visited[idx] = 1;
+        let minX = x, minY = y, maxX = x, maxY = y;
+        let head = 0;
+        while (head < queue.length) {
+          const cur = queue[head++];
+          const cy = cur / w | 0;
+          const cx = cur - cy * w;
+          if (cx < minX) minX = cx;
+          if (cx > maxX) maxX = cx;
+          if (cy < minY) minY = cy;
+          if (cy > maxY) maxY = cy;
+          if (cy > 0) {
+            const n = cur - w;
+            if (bitmap[n] && !visited[n]) {
+              visited[n] = 1;
+              queue.push(n);
+            }
+          }
+          if (cy < h - 1) {
+            const n = cur + w;
+            if (bitmap[n] && !visited[n]) {
+              visited[n] = 1;
+              queue.push(n);
+            }
+          }
+          if (cx > 0) {
+            const n = cur - 1;
+            if (bitmap[n] && !visited[n]) {
+              visited[n] = 1;
+              queue.push(n);
+            }
+          }
+          if (cx < w - 1) {
+            const n = cur + 1;
+            if (bitmap[n] && !visited[n]) {
+              visited[n] = 1;
+              queue.push(n);
+            }
+          }
+        }
+        const contour = [];
+        for (let x2 = minX; x2 <= maxX; x2++) {
+          if (bitmap[minY * w + x2]) contour.push([x2, minY]);
+        }
+        for (let y2 = minY + 1; y2 <= maxY; y2++) {
+          if (bitmap[y2 * w + maxX]) contour.push([maxX, y2]);
+        }
+        for (let x2 = maxX - 1; x2 >= minX; x2--) {
+          if (bitmap[maxY * w + x2]) contour.push([x2, maxY]);
+        }
+        for (let y2 = maxY - 1; y2 > minY; y2--) {
+          if (bitmap[y2 * w + minX]) contour.push([minX, y2]);
+        }
+        if (contour.length >= 4) contours.push(contour);
+      }
+    }
+    return contours;
+  }
+  /**
+   * Compute the minimum-area bounding rectangle for a 2D point set.
+   * Returns the 4 corners of the rectangle in [TL, TR, BR, BL] order, or
+   * null if the point set is degenerate.
+   *
+   * Implementation: rotating calipers (full version). For DBNet contours
+   * (~10-100 points) the standard O(n²) angle sweep is fast enough.
+   */
+  minAreaRect(points) {
+    if (points.length < 3) return null;
+    const hull = this.convexHull(points);
+    if (hull.length < 3) return null;
+    let bestArea = Infinity;
+    let bestRect = null;
+    for (let i = 0; i < hull.length; i++) {
+      const [x1, y1] = hull[i];
+      const [x2, y2] = hull[(i + 1) % hull.length];
+      const edgeDx = x2 - x1;
+      const edgeDy = y2 - y1;
+      const edgeLen = Math.hypot(edgeDx, edgeDy);
+      if (edgeLen < 1e-6) continue;
+      const ux = edgeDx / edgeLen, uy = edgeDy / edgeLen;
+      const px = -uy, py = ux;
+      let minU = Infinity, maxU = -Infinity, minP = Infinity, maxP = -Infinity;
+      for (const [hx, hy] of hull) {
+        const u = hx * ux + hy * uy;
+        const p = hx * px + hy * py;
+        if (u < minU) minU = u;
+        if (u > maxU) maxU = u;
+        if (p < minP) minP = p;
+        if (p > maxP) maxP = p;
+      }
+      const area = (maxU - minU) * (maxP - minP);
+      if (area < bestArea) {
+        bestArea = area;
+        const tlx = minU * ux + minP * px;
+        const tly = minU * uy + minP * py;
+        const trx = maxU * ux + minP * px;
+        const tr_y = maxU * uy + minP * py;
+        const brx = maxU * ux + maxP * px;
+        const br_y = maxU * uy + maxP * py;
+        const blx = minU * ux + maxP * px;
+        const bl_y = minU * uy + maxP * py;
+        bestRect = [tlx, tly, trx, tr_y, brx, br_y, blx, bl_y];
+      }
+    }
+    return bestRect;
+  }
+  /**
+   * Andrew's monotone-chain convex hull. O(n log n).
+   */
+  convexHull(points) {
+    const sorted = points.slice().sort((a, b) => a[0] === b[0] ? a[1] - b[1] : a[0] - b[0]);
+    const n = sorted.length;
+    if (n <= 1) return sorted.slice();
+    const lower = [];
+    for (const p of sorted) {
+      while (lower.length >= 2) {
+        const [ax, ay] = lower[lower.length - 2];
+        const [bx, by] = lower[lower.length - 1];
+        const cross = (bx - ax) * (p[1] - ay) - (by - ay) * (p[0] - ax);
+        if (cross <= 0) lower.pop();
+        else break;
+      }
+      lower.push(p);
+    }
+    const upper = [];
+    for (let i = n - 1; i >= 0; i--) {
+      const p = sorted[i];
+      while (upper.length >= 2) {
+        const [ax, ay] = upper[upper.length - 2];
+        const [bx, by] = upper[upper.length - 1];
+        const cross = (bx - ax) * (p[1] - ay) - (by - ay) * (p[0] - ax);
+        if (cross <= 0) upper.pop();
+        else break;
+      }
+      upper.push(p);
+    }
+    lower.pop();
+    upper.pop();
+    return lower.concat(upper);
+  }
+  /**
+   * Polygon → axis-aligned bounding box.
+   * Returns [minX, minY, maxX, maxY].
+   */
+  polygonToAabb(quad) {
+    const xs = [quad[0], quad[2], quad[4], quad[6]];
+    const ys = [quad[1], quad[3], quad[5], quad[7]];
+    return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  }
+  /**
+   * Mean probability of all pixels inside a polygon's axis-aligned bounding box.
+   * This is the PaddleOCR "fast" score mode. "Slow" mode (not implemented
+   * here) would integrate only over pixels inside the polygon proper.
+   */
+  scorePolygonAabb(pred, w, h, aabb) {
+    const [x1, y1, x2, y2] = aabb;
+    let sum = 0, count = 0;
+    for (let y = y1; y <= y2; y++) {
+      if (y < 0 || y >= h) continue;
+      for (let x = x1; x <= x2; x++) {
+        if (x < 0 || x >= w) continue;
+        sum += pred[y * w + x];
+        count++;
+      }
+    }
+    return count > 0 ? sum / count : 0;
+  }
+  /**
+   * PaddleOCR's unclip distance formula: `area * ratio / perimeter`.
+   * Used by `offsetPolygon` to know how far to push each vertex outward.
+   */
+  polygonOffsetDistance(quad, unclipRatio) {
+    const area = this.polygonArea(quad);
+    const perim = this.polygonPerimeter(quad);
+    if (perim < 1e-6) return 0;
+    return area * unclipRatio / perim;
+  }
+  /**
+   * Shoelace formula for polygon area.
+   */
+  polygonArea(quad) {
+    let area = 0;
+    for (let i = 0; i < quad.length; i += 2) {
+      const j = (i + 2) % quad.length;
+      area += quad[i] * quad[j + 1] - quad[j] * quad[i + 1];
+    }
+    return Math.abs(area) / 2;
+  }
+  /**
+   * Polygon perimeter (sum of edge lengths).
+   */
+  polygonPerimeter(quad) {
+    let perim = 0;
+    for (let i = 0; i < quad.length; i += 2) {
+      const j = (i + 2) % quad.length;
+      perim += Math.hypot(quad[j] - quad[i], quad[j + 1] - quad[i + 1]);
+    }
+    return perim;
+  }
+  /**
+   * Offset a convex polygon outward by `distance` along each edge's outward
+   * normal. Returns the new 4-point polygon in TL,TR,BR,BL order.
+   *
+   * This is PaddleOCR's vertex-shift unclip: for each edge, compute the
+   * outward normal, then push each vertex along the sum of the two adjacent
+   * edge normals (weighted by edge length). This is simpler than Vatti's
+   * algorithm but works well for the small angles in OCR contours.
+   */
+  offsetPolygon(quad, distance) {
+    if (distance <= 0) return quad.slice();
+    const n = 4;
+    const cx = (quad[0] + quad[2] + quad[4] + quad[6]) / 4;
+    const cy = (quad[1] + quad[3] + quad[5] + quad[7]) / 4;
+    const normals = [];
+    for (let i = 0; i < n; i++) {
+      const ax = quad[i * 2], ay = quad[i * 2 + 1];
+      const bx = quad[(i + 1) % n * 2], by = quad[(i + 1) % n * 2 + 1];
+      const ex = bx - ax, ey = by - ay;
+      const len = Math.hypot(ex, ey);
+      if (len < 1e-6) {
+        normals.push([0, 0]);
+        continue;
+      }
+      const cand1 = [-ey / len, ex / len];
+      const cand2 = [ey / len, -ex / len];
+      const midx = (ax + bx) / 2, midy = (ay + by) / 2;
+      const d1 = Math.hypot(midx + cand1[0] - cx, midy + cand1[1] - cy);
+      const d2 = Math.hypot(midx + cand2[0] - cx, midy + cand2[1] - cy);
+      normals.push(d1 > d2 ? cand1 : cand2);
+    }
+    const out = new Array(8);
+    for (let i = 0; i < n; i++) {
+      const [nx1, ny1] = normals[(i - 1 + n) % n];
+      const [nx2, ny2] = normals[i];
+      const wx = (nx1 + nx2) * 0.5;
+      const wy = (ny1 + ny2) * 0.5;
+      const norm = Math.hypot(wx, wy);
+      const sx = norm > 1e-6 ? wx / norm : 0;
+      const sy = norm > 1e-6 ? wy / norm : 0;
+      out[i * 2] = quad[i * 2] + sx * distance;
+      out[i * 2 + 1] = quad[i * 2 + 1] + sy * distance;
+    }
+    return out;
+  }
+  // ---------------------------------------------------------------------------
+  // Polygon IoU + NMS
+  // ---------------------------------------------------------------------------
+  /**
+   * Compute IoU between two 4-point convex polygons.
+   * Uses Sutherland-Hodgman polygon clipping to compute the intersection
+   * area, then divides by the union.
+   *
+   * Returns a value in [0, 1]. Two identical quads → 1.0; disjoint → 0.0.
+   */
+  polygonIoU(a, b) {
+    const interArea = this.polygonClipArea(a, b);
+    if (interArea === 0) return 0;
+    const areaA = this.polygonArea(a);
+    const areaB = this.polygonArea(b);
+    const union = areaA + areaB - interArea;
+    if (union < 1e-6) return 0;
+    return interArea / union;
+  }
+  /**
+   * Area of the intersection of two 4-point polygons, computed via
+   * Sutherland-Hodgman polygon clipping. Both polygons must be convex and
+   * in CCW or CW order (we accept both here; orientation is irrelevant for
+   * the area calculation).
+   *
+   * Returns 0 if the polygons are disjoint.
+   */
+  polygonClipArea(a, b) {
+    const subj = [
+      [a[0], a[1]],
+      [a[2], a[3]],
+      [a[4], a[5]],
+      [a[6], a[7]]
+    ];
+    const clip = [
+      [b[0], b[1]],
+      [b[2], b[3]],
+      [b[4], b[5]],
+      [b[6], b[7]]
+    ];
+    return this.sutherlandHodgmanArea(subj, clip);
+  }
+  /**
+   * Sutherland-Hodgman polygon clipping. Subject polygon is clipped against
+   * the clip polygon. Both must be convex. The result is a new polygon
+   * (also convex) representing the intersection.
+   *
+   * We compute the area of the resulting polygon via the shoelace formula.
+   */
+  sutherlandHodgmanArea(subject, clip) {
+    let output = subject;
+    for (let i = 0; i < clip.length; i++) {
+      if (output.length === 0) return 0;
+      const input = output;
+      output = [];
+      const edgeStart = clip[i];
+      const edgeEnd = clip[(i + 1) % clip.length];
+      for (let j = 0; j < input.length; j++) {
+        const current = input[j];
+        const previous = input[(j - 1 + input.length) % input.length];
+        const currentInside = this.isInsideEdge(current, edgeStart, edgeEnd);
+        const previousInside = this.isInsideEdge(previous, edgeStart, edgeEnd);
+        if (currentInside) {
+          if (!previousInside) {
+            output.push(this.lineIntersection(previous, current, edgeStart, edgeEnd));
+          }
+          output.push(current);
+        } else if (previousInside) {
+          output.push(this.lineIntersection(previous, current, edgeStart, edgeEnd));
+        }
+      }
+    }
+    return this.polygonAreaFromPoints(output);
+  }
+  /** Point-on-the-inside-side test for a directed edge (CCW convention). */
+  isInsideEdge(p, a, b) {
+    return (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) >= 0;
+  }
+  /**
+   * Intersection of the infinite lines through (a1, a2) and (b1, b2).
+   * Returns a single point. Assumes the two lines are not parallel
+   * (caller should only invoke this when an intersection is known to exist).
+   */
+  lineIntersection(a1, a2, b1, b2) {
+    const ax = a2[0] - a1[0], ay = a2[1] - a1[1];
+    const bx = b2[0] - b1[0], by = b2[1] - b1[1];
+    const denom = ax * by - ay * bx;
+    if (Math.abs(denom) < 1e-9) return a1;
+    const t = ((b1[0] - a1[0]) * by - (b1[1] - a1[1]) * bx) / denom;
+    return [a1[0] + t * ax, a1[1] + t * ay];
+  }
+  /** Shoelace area for an arbitrary point array. */
+  polygonAreaFromPoints(points) {
+    if (points.length < 3) return 0;
+    let area = 0;
+    for (let i = 0; i < points.length; i++) {
+      const [x1, y1] = points[i];
+      const [x2, y2] = points[(i + 1) % points.length];
+      area += x1 * y2 - x2 * y1;
+    }
+    return Math.abs(area) / 2;
+  }
+  /**
+   * Greedy non-maximum suppression over 4-point polygons.
+   * Returns the subset of `polygons` that survive NMS at the given IoU
+   * threshold. Boxes with higher scores are preferred.
+   */
+  greedyNMS(polygons, scores, iouThresh) {
+    if (polygons.length === 0) return [];
+    const order = polygons.map((_, i) => i).sort((a, b) => scores[b] - scores[a]);
+    const keep = [];
+    const suppressed = new Array(polygons.length).fill(false);
+    for (const i of order) {
+      if (suppressed[i]) continue;
+      keep.push(i);
+      for (const j of order) {
+        if (j === i || suppressed[j]) continue;
+        const iou = this.polygonIoU(polygons[i], polygons[j]);
+        if (iou > iouThresh) suppressed[j] = true;
+      }
+    }
+    return keep.map((i) => polygons[i]);
+  }
+  // ---------------------------------------------------------------------------
+  // CTC decode for rec output
+  // ---------------------------------------------------------------------------
+  ctcDecode(logits, dict, modelOutputDim) {
+    const N = modelOutputDim ?? dict.length;
+    if (N === 0) return "";
+    const total = logits.length;
+    if (total % N !== 0) {
+      const candidates = [dict.length, dict.length + 1, dict.length + 2];
+      for (const candidate of candidates) {
+        if (total % candidate === 0) {
+          return this.ctcDecodeReshape(logits, total / candidate, candidate, dict);
+        }
+      }
+      return "";
+    }
+    const T = total / N;
+    return this.ctcDecodeReshape(logits, T, N, dict);
+  }
+  ctcDecodeReshape(logits, T, N, dict) {
+    let prev = -1;
+    let out = "";
+    for (let t = 0; t < T; t++) {
+      let best = 0;
+      let bestVal = -Infinity;
+      const base = t * N;
+      for (let i = 0; i < N; i++) {
+        const v = logits[base + i];
+        if (v > bestVal) {
+          bestVal = v;
+          best = i;
+        }
+      }
+      if (best !== prev && best > 0 && best - 1 < dict.length) {
+        out += dict[best - 1];
+      }
+      prev = best;
+    }
+    return out;
+  }
+  // ---------------------------------------------------------------------------
+  // Dependency resolution
+  // ---------------------------------------------------------------------------
+  resolveOrt() {
+    if (this.ort) return this.ort;
+    try {
+      return require("onnxruntime-node");
+    } catch (e) {
+      throw new Error(
+        `PaddleOCR \u5728\u5F53\u524D Obsidian \u6E32\u67D3\u8FDB\u7A0B\u4E2D\u65E0\u6CD5\u52A0\u8F7D onnxruntime-node\uFF08\u6C99\u7BB1\u9650\u5236\uFF09\u3002\u5DF2\u81EA\u52A8\u56DE\u9000\u5230 Kreuzberg (Rust)\uFF0C\u4E0D\u5F71\u54CD OCR\u3002\u539F\u59CB\u9519\u8BEF: ${e?.message ?? e}`
+      );
+    }
+  }
+  resolveSharp() {
+    if (this.sharp) return this.sharp;
+    try {
+      return require("sharp");
+    } catch (e) {
+      throw new Error("PaddleOCR \u4F9D\u8D56 sharp \u672A\u5B89\u88C5");
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // Idle timer — auto-dispose to reclaim memory when idle.
+  // ---------------------------------------------------------------------------
+  resetIdleTimer() {
+    this.clearIdleTimer();
+    this.idleTimer = setTimeout(() => {
+      void this.dispose();
+    }, _PaddleOcrEngine.IDLE_TIMEOUT_MS);
+  }
+  clearIdleTimer() {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // Dictionary loading — tier-aware
+  //
+  // Mobile bundle (legacy): a flat text file at
+  //   `<modelDir>/dict/ppocr_keys_v5.txt`, one token per line.
+  //
+  // Server / Hybrid bundle: the dictionary is embedded inside
+  //   `<modelDir>/rec/inference.yml` under `PostProcess.character_dict`,
+  //   as a YAML list of strings. PaddleOCR ships the rec model with
+  //   its companion yml; we parse it with a tiny dependency-free
+  //   reader that only supports the limited subset used here.
+  // ---------------------------------------------------------------------------
+  /**
+   * Load the PaddleOCR character dictionary. Mobile falls back to a
+   * `.txt` file; server/hybrid fall back to parsing the rec model's
+   * `inference.yml`. Returns [] if neither source is available
+   * (caller is expected to treat that as a hard error).
+   */
+  async loadDictionary() {
+    const txtPath = this.pathLib.join(this.modelDir, PADDLE_MODEL_SUBDIRS.dict, PADDLE_MODEL_FILES.dict);
+    if (this.fs.existsSync(txtPath)) {
+      const raw = await this.fs.promises.readFile(txtPath, "utf-8");
+      const dict = raw.split(/\r?\n/).filter((line) => line.length > 0);
+      if (dict.length > 0) return dict;
+    }
+    const ymlPath = this.pathLib.join(this.modelDir, PADDLE_MODEL_SUBDIRS.rec, "inference.yml");
+    if (this.fs.existsSync(ymlPath)) {
+      const ymlRaw = await this.fs.promises.readFile(ymlPath, "utf-8");
+      const dict = parsePaddleOcrDictFromYml(ymlRaw);
+      if (dict.length > 0) return dict;
+    }
+    return [];
+  }
+};
+_PaddleOcrEngine.IDLE_TIMEOUT_MS = 18e4;
+// 3 minutes, matches OCR service convention
+_PaddleOcrEngine.REC_IMG_HEIGHT = 48;
+_PaddleOcrEngine.REC_MAX_WIDTH = 320;
+_PaddleOcrEngine.CLS_IMG_HEIGHT = 48;
+_PaddleOcrEngine.CLS_IMG_WIDTH = 192;
+/** Aspect ratio (long side / short side) above which a box is rejected. */
+_PaddleOcrEngine.DET_ASPECT_RATIO_THRESH = 100;
+var PaddleOcrEngine = _PaddleOcrEngine;
+function parsePaddleOcrDictFromYml(yml) {
+  const startMatch = yml.match(/^\s*character_dict:\s*$/m);
+  if (!startMatch) return [];
+  const startIdx = startMatch.index + startMatch[0].length;
+  const tail = yml.slice(startIdx);
+  const lines = tail.split(/\r?\n/);
+  const result = [];
+  for (const line of lines) {
+    if (line.trim() === "" || /^\s*#/.test(line)) continue;
+    const m = line.match(/^(\s*)-(\s?)(.*)$/);
+    if (m) {
+      result.push(unquoteYamlString(m[3]));
+      continue;
+    }
+    break;
+  }
+  return result;
+}
+function unquoteYamlString(raw) {
+  let s = raw.replace(/^[ \t]+|[ \t]+$/g, "");
+  if (s.startsWith('"') && s.endsWith('"') && s.length >= 2) {
+    s = s.slice(1, -1);
+  } else if (s.startsWith("'") && s.endsWith("'") && s.length >= 2) {
+    s = s.slice(1, -1);
+  }
+  return s.replace(/\\\\/g, "\0BACKSLASH\0").replace(/\\"/g, '"').replace(/\\n/g, "\n").replace(/\\t/g, "	").replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16))).replace(/\x00BACKSLASH\x00/g, "\\");
+}
+var PaddleOcrService = class {
+  constructor(modelDir, workerPath, opts) {
+    this.child = null;
+    this.pending = /* @__PURE__ */ new Map();
+    this.readyPromise = null;
+    this.readyResolve = null;
+    this.readyReject = null;
+    this.destroyed = false;
+    this.initialized = false;
+    this.modelDir = modelDir;
+    this.workerPath = workerPath;
+    this.detConfig = opts?.detConfig ?? {};
+    this.tier = opts?.tier ?? "mobile";
+    this.cpuThreads = Number.isFinite(opts?.cpuThreads) ? Math.max(0, Math.min(32, Math.round(opts?.cpuThreads ?? 0))) : 0;
+  }
+  /**
+   * Spawn the child worker (idempotent) and wait for its first
+   * "ready" message. Subsequent calls return the cached promise.
+   */
+  ensureWorker() {
+    if (this.readyPromise) return this.readyPromise;
+    this.readyPromise = new Promise((resolve2, reject) => {
+      this.readyResolve = resolve2;
+      this.readyReject = reject;
+    });
+    const isWindows = process.platform === "win32";
+    const projectNodeModules = "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/node_modules";
+    const childEnv = { ...process.env };
+    if (!childEnv.NODE_PATH || !childEnv.NODE_PATH.includes(projectNodeModules)) {
+      childEnv.NODE_PATH = projectNodeModules + (childEnv.NODE_PATH ? `:${childEnv.NODE_PATH}` : "");
+    }
+    const childDir = require("path").dirname(this.workerPath);
+    this.child = cp2.spawn("node", [this.workerPath], {
+      env: childEnv,
+      detached: !isWindows,
+      cwd: childDir,
+      shell: false
+    });
+    this.child.on("error", (e) => {
+      const err = new Error(`paddle-ocr-worker spawn failed: ${e.message}`);
+      this.readyReject?.(err);
+      for (const job of this.pending.values()) job.reject(err);
+      this.pending.clear();
+      this.child = null;
+      this.initialized = false;
+      this.readyPromise = null;
+      this.readyResolve = null;
+      this.readyReject = null;
+    });
+    this.child.on("exit", (code, signal) => {
+      const err = new Error(
+        `paddle-ocr-worker exited unexpectedly (code=${code}, signal=${signal})`
+      );
+      this.readyReject?.(err);
+      if (this.pending.size > 0) {
+        for (const job of this.pending.values()) job.reject(err);
+        this.pending.clear();
+      }
+      this.child = null;
+      this.initialized = false;
+      this.readyPromise = null;
+      this.readyResolve = null;
+      this.readyReject = null;
+    });
+    const rl = (0, import_node_readline.createInterface)({ input: this.child.stdout });
+    rl.on("line", (raw) => {
+      let msg;
+      try {
+        msg = JSON.parse(raw);
+      } catch {
+        return;
+      }
+      if (msg.type === "ready") {
+        this.readyResolve?.();
+        this.readyResolve = null;
+        this.readyReject = null;
+        return;
+      }
+      if (msg.type === "progress") {
+        const job = this.pending.get(msg.jobId);
+        if (job?.onStatus) job.onStatus(msg.message);
+        return;
+      }
+      if (msg.type === "result" || msg.type === "error") {
+        const job = this.pending.get(msg.jobId);
+        if (!job) return;
+        this.pending.delete(msg.jobId);
+        if (msg.type === "result") job.resolve(msg.text);
+        else job.reject(new Error(msg.error));
+      }
+    });
+    this.child.stderr?.on("data", (chunk) => {
+      process.stderr.write(`[lti-paddle-ocr-worker-stderr] ${chunk.toString().trim()}
+`);
+    });
+    return this.readyPromise;
+  }
+  /** Lazy init: tell the child to load its ONNX models. */
+  async init(onStatus) {
+    if (this.initialized) return;
+    await this.ensureWorker();
+    if (!this.child) await this.ensureWorker();
+    const jobId = (0, import_crypto2.randomUUID)();
+    await new Promise((resolve2, reject) => {
+      if (!this.child) {
+        reject(new Error("paddle-ocr-worker not running"));
+        return;
+      }
+      this.pending.set(jobId, { resolve: () => resolve2(), reject, onStatus });
+      this.child.stdin?.write(
+        JSON.stringify({
+          type: "init",
+          modelDir: this.modelDir,
+          detConfig: this.detConfig,
+          tier: this.tier,
+          cpuThreads: this.cpuThreads,
+          jobId
+        }) + "\n"
+      );
+    });
+    this.initialized = true;
+  }
+  /** Run OCR on a local image path. Returns concatenated text. */
+  async runOcr(imagePath, onStatus) {
+    if (this.destroyed) throw new Error("PaddleOcrService \u5DF2\u88AB\u9500\u6BC1");
+    await this.init(onStatus);
+    if (!this.child) throw new Error("paddle-ocr-worker not running");
+    const jobId = (0, import_crypto2.randomUUID)();
+    return new Promise((resolve2, reject) => {
+      if (!this.child) {
+        reject(new Error("paddle-ocr-worker not running"));
+        return;
+      }
+      this.pending.set(jobId, { resolve: resolve2, reject, onStatus });
+      this.child.stdin?.write(
+        JSON.stringify({ type: "extract", imagePath, jobId }) + "\n"
+      );
+    });
+  }
+  /** Release the child. Idempotent. */
+  async dispose() {
+    this.destroy();
+  }
+  destroy() {
+    this.destroyed = true;
+    if (this.child) {
+      const child = this.child;
+      try {
+        child.stdin?.end();
+      } catch {
+      }
+      setTimeout(() => {
+        if (!child.killed) {
+          try {
+            process.kill(-(child.pid ?? 0), "SIGTERM");
+          } catch {
+          }
+          setTimeout(() => {
+            if (!child.killed) {
+              try {
+                process.kill(-(child.pid ?? 0), "SIGKILL");
+              } catch {
+              }
+            }
+          }, 500).unref?.();
+        }
+      }, 100).unref?.();
+    }
+    for (const job of this.pending.values()) {
+      job.reject(new Error("PaddleOcrService \u5DF2\u88AB\u9500\u6BC1"));
+    }
+    this.pending.clear();
+    this.readyReject?.(new Error("PaddleOcrService \u5DF2\u88AB\u9500\u6BC1"));
+    this.readyPromise = null;
+    this.readyResolve = null;
+    this.readyReject = null;
+  }
+};
+
+// src/ocr-service.ts
+var LATIN_RATIO_TESSERACT_TRIGGER = 0.6;
+var MIN_CHARS_FOR_RATIO_CHECK = 30;
+var MIN_CHARS_FOR_SHORT_RESULT_CHALLENGE = 400;
+function scoreOcrTextQuality(text) {
+  let cjk = 0;
+  let latin = 0;
+  let replacementNoise = 0;
+  for (const ch of text) {
+    const code = ch.charCodeAt(0);
+    if (code >= 13312 && code <= 40959 || code >= 65280 && code <= 65519) cjk++;
+    else if (code >= 48 && code <= 57 || code >= 65 && code <= 90 || code >= 97 && code <= 122) latin++;
+    if (ch === "\uFFFD" || ch === "\u25A1") replacementNoise++;
+  }
+  return {
+    score: cjk * 2 + latin * 0.5 + text.trim().length * 0.1 - replacementNoise * 20,
+    chars: text.trim().length,
+    cjk,
+    latin,
+    replacementNoise
+  };
+}
+function shouldChallengePaddleOcrResult(text) {
+  const trimmedLength = text.trim().length;
+  if (trimmedLength === 0) return true;
+  if (trimmedLength < MIN_CHARS_FOR_SHORT_RESULT_CHALLENGE) return true;
+  if (text.length < MIN_CHARS_FOR_RATIO_CHECK) return false;
+  let latin = 0;
+  let total = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    const isLatin = code >= 48 && code <= 57 || code >= 65 && code <= 90 || code >= 97 && code <= 122 || code >= 32 && code <= 47 || code >= 58 && code <= 64 || code >= 91 && code <= 96 || code >= 123 && code <= 126;
+    const isCjk = code >= 12288 && code <= 40959 || code >= 65280 && code <= 65519;
+    if (isLatin) latin++;
+    if (isLatin || isCjk) total++;
+  }
+  if (total === 0) return false;
+  return latin / total >= LATIN_RATIO_TESSERACT_TRIGGER;
+}
+var LocalOfflineOcrService = class {
+  constructor(app, settings) {
+    this.lastPaddleError = null;
+    this.app = app;
+    this.settings = settings ?? {};
+    const pluginDir = this.getPluginDir();
+    const paddleTier = this.settings?.paddleOcrTier ?? DEFAULT_PADDLE_TIER;
+    let paddleOcrDir = this.settings?.paddleOcrModelPath;
+    if (!paddleOcrDir) {
+      paddleOcrDir = path2.join(pluginDir, getPaddleTierModelDir(paddleTier));
+    } else if (!path2.isAbsolute(paddleOcrDir)) {
+      const adapter = this.app.vault.adapter;
+      const vaultPath = adapter.getBasePath ? adapter.getBasePath() : "";
+      paddleOcrDir = path2.resolve(vaultPath, paddleOcrDir);
+    }
+    const paddleOcrWorkerPath = path2.join(pluginDir, "paddle-ocr-worker.cjs");
+    this.paddleOcrService = new PaddleOcrService(paddleOcrDir, paddleOcrWorkerPath, {
+      tier: paddleTier,
+      detConfig: {
+        dbThresh: this.settings.paddleDetDbThresh,
+        dbBoxThresh: this.settings.paddleDetBoxThresh,
+        unclipRatio: this.settings.paddleDetUnclipRatio,
+        minSize: this.settings.paddleDetMinSize,
+        nmsIouThresh: this.settings.paddleDetNmsIouThresh,
+        maxCandidates: this.settings.paddleDetMaxCandidates,
+        limitSideLen: this.settings.paddleDetLimitSideLen,
+        scoreMode: this.settings.paddleDetScoreMode,
+        useDilation: this.settings.paddleDetUseDilation
+      },
+      cpuThreads: this.settings.paddleOcrCpuThreads
+    });
+    let kreuzbergTessdataDir = this.settings?.tesseractDataPath;
+    if (!kreuzbergTessdataDir) {
+      kreuzbergTessdataDir = path2.join(pluginDir, "models", "tessdata");
+    } else if (!path2.isAbsolute(kreuzbergTessdataDir)) {
+      const adapter = this.app.vault.adapter;
+      const vaultPath = adapter.getBasePath ? adapter.getBasePath() : "";
+      kreuzbergTessdataDir = path2.resolve(vaultPath, kreuzbergTessdataDir);
+    }
+    const kreuzbergWorkerPath = path2.join(pluginDir, "kreuzberg-worker.cjs");
+    this.kreuzbergOcrService = new KreuzbergOcrService(
+      kreuzbergTessdataDir,
+      kreuzbergWorkerPath
+    );
+  }
+  getPluginDir() {
+    const adapter = this.app.vault.adapter;
+    const vaultPath = adapter.getBasePath ? adapter.getBasePath() : "";
+    const manifestDir = this.app.vault.configDir + "/plugins/link-tag-intelligence";
+    return path2.resolve(vaultPath, manifestDir);
+  }
+  async processTask(imagePath, task, isSmartRoutingEnabled = true, onStatus) {
+    if (task !== "<OCR>") {
+      throw new Error("LocalOfflineOcrService only supports OCR tasks.");
+    }
+    if (isSmartRoutingEnabled) {
+      return this.runOcrWithFallback(imagePath, onStatus);
+    }
+    if (onStatus) onStatus("\u6B63\u5728\u4F7F\u7528 PaddleOCR \u63D0\u53D6\u6587\u5B57...");
+    return this.paddleOcrService.runOcr(imagePath, onStatus);
+  }
+  async runOcrWithFallback(imagePath, onStatus) {
+    let kreuzbergResult = "";
+    let kreuzbergOk = false;
+    try {
+      if (onStatus) onStatus("\u6B63\u5728\u4F7F\u7528 Kreuzberg/Tesseract \u4E2D\u6587 OCR \u63D0\u53D6\u6587\u5B57...");
+      kreuzbergResult = await this.kreuzbergOcrService.runOcr(imagePath, onStatus);
+      kreuzbergOk = true;
+      if (!shouldChallengePaddleOcrResult(kreuzbergResult)) {
+        return kreuzbergResult;
+      }
+      if (onStatus) onStatus("Kreuzberg \u7ED3\u679C\u504F\u77ED\uFF0C\u8C03\u7528 PaddleOCR \u8FDB\u884C\u8865\u5145\u5BF9\u6BD4...");
+    } catch (kreuzbergErr) {
+      console.warn("[lti-ocr-service] Kreuzberg OCR \u5931\u8D25\uFF0C\u56DE\u9000\u5230 PaddleOCR:", kreuzbergErr);
+      if (onStatus) onStatus("Kreuzberg OCR \u5931\u8D25\uFF0C\u81EA\u52A8\u56DE\u9000\u5230 PaddleOCR...");
+    }
+    let paddleResult = "";
+    let paddleOk = false;
+    try {
+      if (onStatus) onStatus("\u6B63\u5728\u4F7F\u7528 PaddleOCR \u63D0\u53D6\u6587\u5B57...");
+      paddleResult = await this.paddleOcrService.runOcr(imagePath, onStatus);
+      paddleOk = true;
+    } catch (paddleErr) {
+      this.lastPaddleError = paddleErr?.message ?? String(paddleErr);
+      console.warn("[lti-ocr-service] PaddleOCR \u4E5F\u5931\u8D25:", paddleErr);
+      if (!kreuzbergOk) {
+        throw new Error(
+          `OCR \u5168\u90E8\u5931\u8D25\u3002Kreuzberg: (failed) | PaddleOCR: ${this.lastPaddleError ?? "(unknown)"}`
+        );
+      }
+      return kreuzbergResult;
+    }
+    if (kreuzbergOk && paddleOk) {
+      const paddleScore = scoreOcrTextQuality(paddleResult);
+      const kreuzbergScore = scoreOcrTextQuality(kreuzbergResult);
+      return kreuzbergScore.score > paddleScore.score ? kreuzbergResult : paddleResult;
+    }
+    return paddleOk ? paddleResult : kreuzbergResult;
+  }
+  destroy() {
+    this.paddleOcrService.destroy();
+    this.kreuzbergOcrService.destroy();
+  }
+};
+
+// src/heavy-init-mutex.ts
+var HeavyInitMutex = class {
+  constructor() {
+    this.queue = [];
+    this.running = null;
+  }
+  /**
+   * Schedule a heavy operation. Returns a promise that resolves with
+   * the operation's result when its turn comes up.
+   *
+   * If the same name is queued while running, the new task is appended
+   * to the queue regardless — deduping would cause the second caller
+   * to wait on the first's return value, which is usually NOT what
+   * they want (e.g., a second OCR call should not see stale results).
+   */
+  run(name, task) {
+    return new Promise((resolve2, reject) => {
+      const entry = {
+        name,
+        task,
+        resolve: resolve2,
+        reject,
+        startedAt: 0
+      };
+      this.queue.push(entry);
+      this.pump();
+    });
+  }
+  pump() {
+    if (this.running) return;
+    const next = this.queue.shift();
+    if (!next) return;
+    this.running = next;
+    next.startedAt = Date.now();
+    console.log(`[lti-heavy-init] \u25B6 start "${next.name}" (queue: ${this.queue.map((e) => e.name).join(", ") || "empty"})`);
+    Promise.resolve().then(() => next.task()).then(
+      (value) => {
+        console.log(`[lti-heavy-init] \u2713 done  "${next.name}" in ${Date.now() - next.startedAt}ms`);
+        this.running = null;
+        this.pump();
+        next.resolve(value);
+      },
+      (err) => {
+        console.warn(`[lti-heavy-init] \u2717 fail  "${next.name}" after ${Date.now() - next.startedAt}ms:`, err);
+        this.running = null;
+        this.pump();
+        next.reject(err);
+      }
+    );
+  }
+  /** Inspect the current queue (for diagnostics). */
+  get pendingNames() {
+    return this.queue.map((e) => e.name);
+  }
+  get currentName() {
+    return this.running?.name ?? null;
+  }
+};
+var heavyInitMutex = new HeavyInitMutex();
+function withHeavyInit(name, task) {
+  return heavyInitMutex.run(name, task);
 }
 
 // src/main.ts
+async function runWithConcurrency(items, concurrency, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, async (_, workerIndex) => {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await worker(items[index], workerIndex);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+function replaceFirstEditorMarker(editor, marker, replacement) {
+  const value = editor.getValue();
+  const index = value.indexOf(marker);
+  if (index < 0) return false;
+  editor.replaceRange(replacement, editor.offsetToPos(index), editor.offsetToPos(index + marker.length));
+  return true;
+}
+function buildPdfOcrPageMarker(runId, page) {
+  return `<!-- lti-pdf-ocr:${runId}:page:${page} -->`;
+}
 var SentenceManager = class {
   constructor(plugin) {
     this.partialText = "";
@@ -9041,7 +12292,7 @@ var SentenceManager = class {
     this.partialText = "";
   }
 };
-var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
+var LinkTagIntelligencePlugin = class extends import_obsidian14.Plugin {
   constructor() {
     super(...arguments);
     this.settings = DEFAULT_SETTINGS;
@@ -9060,6 +12311,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
   }
   async onload() {
     await this.loadSettings();
+    this.ocrService = new LocalOfflineOcrService(this.app, this.settings);
     this.speechRecorder.setApp(this.app);
     this.speechRecorder.setSettingsLanguage(this.settings.speechLanguage);
     this.speechRecorder.setSettingsVadSensitivity(this.settings.speechVadSensitivity);
@@ -9174,7 +12426,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
       name: this.t("suggestTags"),
       checkCallback: (checking) => {
         const activeFile2 = this.getContextNoteFile();
-        if (!(activeFile2 instanceof import_obsidian13.TFile)) {
+        if (!(activeFile2 instanceof import_obsidian14.TFile)) {
           return false;
         }
         if (!checking) {
@@ -9192,6 +12444,22 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
       id: "semantic-search-external",
       name: this.t("semanticSearch"),
       callback: () => this.openSemanticSearch()
+    });
+    this.addCommand({
+      id: "clean-textbook",
+      name: "\u6E05\u7406\u6559\u6750 OCR\uFF08\u6309\u7AE0\u62C6\u5206 AI \u6574\u7406\uFF09",
+      callback: () => {
+        void this.runTextbookCleaner("manifest");
+      }
+    });
+    this.addCommand({
+      id: "reset-textbook-manifest",
+      name: "\u91CD\u7F6E\u6559\u6750\u6E05\u7406 manifest \u8DEF\u5F84",
+      callback: async () => {
+        this.settings.textbookManifestPath = "";
+        await this.saveSettings();
+        new import_obsidian14.Notice("\u5DF2\u91CD\u7F6E manifest \u8DEF\u5F84\u3002\u4E0B\u6B21 `clean-textbook` \u5C06\u91CD\u65B0\u5F39\u51FA\u6587\u4EF6\u9009\u62E9\u5668");
+      }
     });
     this.addCommand({
       id: "toggle-speech-recording",
@@ -9225,11 +12493,11 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
       debugLog(this.app, "file-open", {
         file: file?.path ?? null,
         isSupported: isSupportedNoteFile(file),
-        isExcalidraw: file instanceof import_obsidian13.TFile ? isExcalidrawFile(file) : false,
+        isExcalidraw: file instanceof import_obsidian14.TFile ? isExcalidrawFile(file) : false,
         lastSupportedFilePath: this.lastSupportedFilePath,
         lastExcalidrawFilePath: this.lastExcalidrawFilePath
       });
-      if (file instanceof import_obsidian13.TFile && isSupportedNoteFile(file)) {
+      if (file instanceof import_obsidian14.TFile && isSupportedNoteFile(file)) {
         this.captureSupportedFileContext(file);
         this.lastSupportedFilePath = file.path;
         if (isExcalidrawFile(file)) {
@@ -9239,12 +12507,12 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
       this.refreshAllViews({
         reason: "context",
         force: true,
-        changedPaths: file instanceof import_obsidian13.TFile ? [file.path] : void 0
+        changedPaths: file instanceof import_obsidian14.TFile ? [file.path] : void 0
       });
     }));
     this.registerEvent(this.app.metadataCache.on("changed", (file) => {
       const currentFile = this.getContextNoteFile();
-      if (!(file instanceof import_obsidian13.TFile) || !(currentFile instanceof import_obsidian13.TFile) || file.path !== currentFile.path) {
+      if (!(file instanceof import_obsidian14.TFile) || !(currentFile instanceof import_obsidian14.TFile) || file.path !== currentFile.path) {
         return;
       }
       if (this.speechRecorder.isActive && file.path === currentFile.path) {
@@ -9260,16 +12528,16 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
         const view = leaf?.view;
         let leafFile = null;
         let isExcalidrawViewReady = false;
-        if (view instanceof import_obsidian13.FileView) {
+        if (view instanceof import_obsidian14.FileView) {
           leafFile = view.file;
           const isExcalidraw = view.getViewType() === "excalidraw";
           if (isExcalidraw) {
-            if (leafFile instanceof import_obsidian13.TFile) {
+            if (leafFile instanceof import_obsidian14.TFile) {
               this.lastExcalidrawFilePath = leafFile.path;
               isExcalidrawViewReady = true;
             } else if (this.lastExcalidrawFilePath) {
               const lastFile = this.app.vault.getAbstractFileByPath(this.lastExcalidrawFilePath);
-              if (lastFile instanceof import_obsidian13.TFile && isSupportedNoteFile(lastFile)) {
+              if (lastFile instanceof import_obsidian14.TFile && isSupportedNoteFile(lastFile)) {
                 leafFile = lastFile;
                 isExcalidrawViewReady = true;
               }
@@ -9282,18 +12550,18 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
           this.refreshAllViews({
             reason: "context",
             force: true,
-            changedPaths: leafFile instanceof import_obsidian13.TFile ? [leafFile.path] : void 0
+            changedPaths: leafFile instanceof import_obsidian14.TFile ? [leafFile.path] : void 0
           });
         }
       }, 0);
     }));
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
-      if (!(file instanceof import_obsidian13.TFile)) {
+      if (!(file instanceof import_obsidian14.TFile)) {
         return;
       }
       this.refreshAllViews({
         reason: "metadata",
-        changedPaths: [file.path, oldPath].filter((path) => typeof path === "string" && path.length > 0)
+        changedPaths: [file.path, oldPath].filter((path3) => typeof path3 === "string" && path3.length > 0)
       });
     }));
     this.registerMarkdownPostProcessor((el, ctx) => renderLegacyReferences(el, ctx, {
@@ -9314,7 +12582,12 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
     this.flushSpeechInsertBuffer();
     this._sentenceManager = null;
     this.speechRecorder.destroy();
+    this.ocrService.destroy();
     this.referencePreview.destroy();
+  }
+  recreateOcrService() {
+    this.ocrService.destroy();
+    this.ocrService = new LocalOfflineOcrService(this.app, this.settings);
   }
   async loadSettings() {
     this.settings = normalizeLoadedSettings(await this.loadData(), this.app.vault.configDir);
@@ -9354,30 +12627,30 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
       await applyCompanionPresetToVault(this.app, companionId, state.profile);
     }
     this.refreshAllViews();
-    new import_obsidian13.Notice(this.t("settingsWorkbenchPresetApplied"));
+    new import_obsidian14.Notice(this.t("settingsWorkbenchPresetApplied"));
   }
   async applyCompanionPreset(id) {
     if (id === "semantic-bridge") {
       await this.saveSettings();
       this.refreshAllViews();
-      new import_obsidian13.Notice(this.t("settingsWorkbenchCompanionApplied", { name: "Semantic bridge" }));
+      new import_obsidian14.Notice(this.t("settingsWorkbenchCompanionApplied", { name: "Semantic bridge" }));
       return true;
     }
     const state = await this.getResearchWorkbenchState();
     const status = state.companions.find((item) => item.id === id);
     if (!status?.installed) {
-      new import_obsidian13.Notice(this.t("settingsWorkbenchPluginMissing"));
+      new import_obsidian14.Notice(this.t("settingsWorkbenchPluginMissing"));
       return false;
     }
     await applyCompanionPresetToVault(this.app, id, state.profile);
     this.refreshAllViews();
-    new import_obsidian13.Notice(this.t("settingsWorkbenchCompanionApplied", { name: this.getCompanionDisplayName(id) }));
+    new import_obsidian14.Notice(this.t("settingsWorkbenchCompanionApplied", { name: this.getCompanionDisplayName(id) }));
     return true;
   }
   openCompanionSettings(id) {
     const settingApi = this.app.setting;
     if (!settingApi?.open || !settingApi.openTabById) {
-      new import_obsidian13.Notice(this.t("settingsWorkbenchSettingsUnavailable"));
+      new import_obsidian14.Notice(this.t("settingsWorkbenchSettingsUnavailable"));
       return false;
     }
     settingApi.open();
@@ -9413,7 +12686,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
       return parseTagAliasMap(this.settings.tagAliasMapText);
     } catch (error) {
       console.warn(error);
-      new import_obsidian13.Notice(this.t("invalidAliasMap"));
+      new import_obsidian14.Notice(this.t("invalidAliasMap"));
       return /* @__PURE__ */ new Map();
     }
   }
@@ -9423,7 +12696,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
     } catch (error) {
       console.warn(error);
       if (!options.suppressNotice) {
-        new import_obsidian13.Notice(this.t("invalidFacetMap"));
+        new import_obsidian14.Notice(this.t("invalidFacetMap"));
       }
       return /* @__PURE__ */ new Map();
     }
@@ -9479,8 +12752,8 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
     return isSupportedNoteFile(activeFile) ? activeFile : null;
   }
   getActiveEditorLeaf() {
-    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian13.MarkdownView);
-    if (!(activeView?.file instanceof import_obsidian13.TFile) || !isSupportedNoteFile(activeView.file)) {
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian14.MarkdownView);
+    if (!(activeView?.file instanceof import_obsidian14.TFile) || !isSupportedNoteFile(activeView.file)) {
       return null;
     }
     return activeView.leaf;
@@ -9495,7 +12768,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
   }
   captureEditorContext(leaf) {
     const view = leaf?.view;
-    if (!(view instanceof import_obsidian13.MarkdownView) || !(view.file instanceof import_obsidian13.TFile) || !isSupportedNoteFile(view.file)) {
+    if (!(view instanceof import_obsidian14.MarkdownView) || !(view.file instanceof import_obsidian14.TFile) || !isSupportedNoteFile(view.file)) {
       return false;
     }
     const editorChanged = this.lastEditorLeaf !== leaf || this.lastEditorFilePath !== view.file.path;
@@ -9505,8 +12778,8 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
     return editorChanged || fileChanged;
   }
   getContextEditorView() {
-    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian13.MarkdownView);
-    if (activeView?.file instanceof import_obsidian13.TFile && isSupportedNoteFile(activeView.file)) {
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian14.MarkdownView);
+    if (activeView?.file instanceof import_obsidian14.TFile && isSupportedNoteFile(activeView.file)) {
       this.captureEditorContext(activeView.leaf);
       return activeView;
     }
@@ -9515,13 +12788,13 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
       return null;
     }
     const rememberedView = this.lastEditorLeaf?.view;
-    if (rememberedView instanceof import_obsidian13.MarkdownView && rememberedView.file instanceof import_obsidian13.TFile && isSupportedNoteFile(rememberedView.file)) {
+    if (rememberedView instanceof import_obsidian14.MarkdownView && rememberedView.file instanceof import_obsidian14.TFile && isSupportedNoteFile(rememberedView.file)) {
       this.lastEditorFilePath = rememberedView.file.path;
       return rememberedView;
     }
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
       const view = leaf.view;
-      if (!(view instanceof import_obsidian13.MarkdownView) || !(view.file instanceof import_obsidian13.TFile) || !isSupportedNoteFile(view.file)) {
+      if (!(view instanceof import_obsidian14.MarkdownView) || !(view.file instanceof import_obsidian14.TFile) || !isSupportedNoteFile(view.file)) {
         continue;
       }
       if (!this.lastEditorFilePath || view.file.path === this.lastEditorFilePath) {
@@ -9536,9 +12809,9 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
   }
   getContextNoteFile() {
     const activeFile = this.app.workspace.getActiveFile();
-    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian13.FileView);
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian14.FileView);
     const leafViewFile = activeView?.file ?? null;
-    if (activeFile instanceof import_obsidian13.TFile) {
+    if (activeFile instanceof import_obsidian14.TFile) {
       if (isSupportedNoteFile(activeFile)) {
         this.captureSupportedFileContext(activeFile);
         return activeFile;
@@ -9546,7 +12819,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
     }
     if (activeView) {
       const leafFile = activeView.file;
-      if (leafFile instanceof import_obsidian13.TFile && isSupportedNoteFile(leafFile)) {
+      if (leafFile instanceof import_obsidian14.TFile && isSupportedNoteFile(leafFile)) {
         this.captureSupportedFileContext(leafFile);
         if (isExcalidrawFile(leafFile)) {
           this.lastExcalidrawFilePath = leafFile.path;
@@ -9555,20 +12828,20 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
       }
       if (!leafFile && activeView.getViewType() === "excalidraw" && this.lastExcalidrawFilePath) {
         const lastFile = this.app.vault.getAbstractFileByPath(this.lastExcalidrawFilePath);
-        if (lastFile instanceof import_obsidian13.TFile && isSupportedNoteFile(lastFile)) {
+        if (lastFile instanceof import_obsidian14.TFile && isSupportedNoteFile(lastFile)) {
           return lastFile;
         }
       }
     }
     const view = this.getContextEditorView();
-    if (view?.file instanceof import_obsidian13.TFile && isSupportedNoteFile(view.file)) {
+    if (view?.file instanceof import_obsidian14.TFile && isSupportedNoteFile(view.file)) {
       return view.file;
     }
     if (!this.lastSupportedFilePath) {
       return null;
     }
     const file = this.app.vault.getAbstractFileByPath(this.lastSupportedFilePath);
-    return file instanceof import_obsidian13.TFile && isSupportedNoteFile(file) ? file : null;
+    return file instanceof import_obsidian14.TFile && isSupportedNoteFile(file) ? file : null;
   }
   getContextMarkdownFile() {
     return this.getContextNoteFile();
@@ -9581,7 +12854,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
     const activeFile = this.getActiveSupportedFile();
     if (mostRecentLeaf && activeFile) {
       this.captureSupportedFileContext(activeFile);
-      if (mostRecentLeaf.view instanceof import_obsidian13.MarkdownView) {
+      if (mostRecentLeaf.view instanceof import_obsidian14.MarkdownView) {
         this.captureEditorContext(mostRecentLeaf);
         return mostRecentLeaf;
       }
@@ -9647,14 +12920,14 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
     }
     const file = this.getContextNoteFile();
     if (!file) {
-      new import_obsidian13.Notice(this.t("noActiveNote"));
+      new import_obsidian14.Notice(this.t("noActiveNote"));
       return false;
     }
     await this.app.vault.process(
       file,
       (content) => appendTextToMarkdownSection(content, text, isExcalidrawFile(file))
     );
-    new import_obsidian13.Notice(this.t("appendedToFile", { title: file.basename }));
+    new import_obsidian14.Notice(this.t("appendedToFile", { title: file.basename }));
     this.refreshAllViews();
     return true;
   }
@@ -9692,14 +12965,14 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
         ea.addEmbeddable(100, 100, 200, 50, void 0, file, void 0);
         await ea.addElementsToView(true, true);
         this.pushRecentTarget(file.path);
-        new import_obsidian13.Notice(this.t("insertedLink", { title: file.basename }));
+        new import_obsidian14.Notice(this.t("insertedLink", { title: file.basename }));
         this.refreshAllViews();
         return;
       }
     }
     if (await this.insertTextIntoFile(linkText)) {
       this.pushRecentTarget(file.path);
-      new import_obsidian13.Notice(this.t("insertedLink", { title: file.basename }));
+      new import_obsidian14.Notice(this.t("insertedLink", { title: file.basename }));
     }
   }
   async insertBlockReferenceIntoEditor(file, startLine, endLine) {
@@ -9708,7 +12981,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
     const text = formatLegacyBlockReference(target, startLine, endLine);
     if (await this.insertTextIntoFile(text)) {
       this.pushRecentTarget(file.path);
-      new import_obsidian13.Notice(this.t("blockRefInserted", { title: file.basename }));
+      new import_obsidian14.Notice(this.t("blockRefInserted", { title: file.basename }));
     }
   }
   async insertLineReferenceIntoEditor(file, startLine, endLine) {
@@ -9717,7 +12990,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
     const text = formatLegacyLineReference(target, startLine, endLine);
     if (await this.insertTextIntoFile(text)) {
       this.pushRecentTarget(file.path);
-      new import_obsidian13.Notice(this.t("lineRefInserted", { title: file.basename }));
+      new import_obsidian14.Notice(this.t("lineRefInserted", { title: file.basename }));
     }
   }
   async getReferenceTooltip(options) {
@@ -9835,8 +13108,8 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
     });
     this.referencePreview.hide(true);
   }
-  pushRecentTarget(path) {
-    this.settings.recentLinkTargets = [path, ...this.settings.recentLinkTargets.filter((item) => item !== path)].slice(
+  pushRecentTarget(path3) {
+    this.settings.recentLinkTargets = [path3, ...this.settings.recentLinkTargets.filter((item) => item !== path3)].slice(
       0,
       this.settings.recentLinkMemorySize
     );
@@ -9844,7 +13117,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
   }
   openRelationFlow() {
     const currentFile = this.getContextNoteFile();
-    if (!(currentFile instanceof import_obsidian13.TFile)) {
+    if (!(currentFile instanceof import_obsidian14.TFile)) {
       return;
     }
     new RelationKeyModal(this, (relationKey) => {
@@ -9855,7 +13128,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
           frontmatter[relationKey] = next;
         });
         this.pushRecentTarget(candidate.file.path);
-        new import_obsidian13.Notice(this.t("savedRelation", { relation: this.relationLabel(relationKey) }));
+        new import_obsidian14.Notice(this.t("savedRelation", { relation: this.relationLabel(relationKey) }));
         this.refreshAllViews();
       }).open();
     }).open();
@@ -9865,7 +13138,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
   }
   openTagSuggestion() {
     const currentFile = this.getContextNoteFile();
-    if (!(currentFile instanceof import_obsidian13.TFile)) {
+    if (!(currentFile instanceof import_obsidian14.TFile)) {
       return;
     }
     new TagSuggestionModal(this, currentFile).open();
@@ -9875,6 +13148,99 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
   }
   openSemanticSearch() {
     new SemanticSearchModal(this).open();
+  }
+  async runTextbookCleaner(source = "current-note") {
+    try {
+      let manifest;
+      if (source === "current-note") {
+        const currentFile = this.getContextMarkdownFile();
+        if (!(currentFile instanceof import_obsidian14.TFile)) {
+          new import_obsidian14.Notice("\u8BF7\u5148\u6253\u5F00\u5305\u542B\u6559\u6750 OCR \u539F\u6587\u7684 Markdown \u6587\u4EF6\u3002", 8e3);
+          return;
+        }
+        const parentDir = currentFile.path.includes("/") ? currentFile.path.slice(0, currentFile.path.lastIndexOf("/")) : "";
+        const outputDir = parentDir ? `${parentDir}/\u6574\u7406` : "\u6574\u7406";
+        manifest = {
+          book_title: currentFile.basename,
+          ocr_source: "hybrid",
+          output_dir: outputDir,
+          chapters: [
+            {
+              id: "current-note",
+              number: 1,
+              title: currentFile.basename,
+              source_note: currentFile.path
+            }
+          ]
+        };
+      } else {
+        let manifestPath = this.settings.textbookManifestPath;
+        if (!manifestPath) {
+          const picked = await pickManifestFile(this.app);
+          if (!picked) {
+            new import_obsidian14.Notice("\u672A\u9009\u62E9 manifest\uFF0C\u5DF2\u53D6\u6D88");
+            return;
+          }
+          manifestPath = picked;
+          this.settings.textbookManifestPath = manifestPath;
+          await this.saveSettings();
+        }
+        manifest = await parseManifest(this.app, manifestPath);
+      }
+      const progressNotice = new import_obsidian14.Notice(
+        `\u{1F4DA} \u6559\u6750\u6574\u7406\u51C6\u5907\u4E2D\uFF1A\u300A${manifest.book_title}\u300B\u5171 ${manifest.chapters.length} \u7AE0
+AI \u914D\u7F6E\uFF1A${this.settings.aiProvider} / ${this.settings.aiModel}`,
+        0
+      );
+      const result = await cleanBook(this.app, this.settings, manifest, {
+        onProgress: (info) => {
+          const chapterLabel = `\u7B2C ${info.chapter.number} \u7AE0 ${info.chapter.title} (${info.index + 1}/${info.total})`;
+          const windowLabel = info.windowTotal && info.windowTotal > 1 && info.windowIndex !== void 0 ? `
+\u7A97\u53E3\uFF1A${info.windowIndex + 1}/${info.windowTotal}` : "";
+          if (info.phase === "started") {
+            progressNotice.setMessage(
+              `\u23F3 \u6559\u6750\u6574\u7406\u6B63\u5728\u8C03\u7528 AI...
+\u4E66\u7C4D\uFF1A${manifest.book_title}
+\u5F53\u524D\uFF1A${chapterLabel}
+${windowLabel}
+AI\uFF1A${this.settings.aiProvider} / ${this.settings.aiModel}
+\u8F93\u51FA\u76EE\u5F55\uFF1A${manifest.output_dir}`
+            );
+            return;
+          }
+          if (info.phase === "succeeded" && info.result?.ok) {
+            progressNotice.setMessage(
+              `\u2705 \u5DF2\u5B8C\u6210 ${info.index + 1}/${info.total}\uFF1A${chapterLabel}
+${windowLabel}
+\u8F93\u51FA\uFF1A${info.result.outputPath}
+\u7EE7\u7EED\u5904\u7406\u5269\u4F59\u7AE0\u8282...`
+            );
+            return;
+          }
+          if (info.phase === "failed" && info.result && !info.result.ok) {
+            progressNotice.setMessage(
+              `\u26A0\uFE0F \u7AE0\u8282\u5931\u8D25 ${info.index + 1}/${info.total}\uFF1A${chapterLabel}
+${windowLabel}
+\u9519\u8BEF\uFF1A${info.result.error}
+\u7EE7\u7EED\u5904\u7406\u5269\u4F59\u7AE0\u8282...`
+            );
+          }
+        }
+      });
+      if (result.failed === 0) {
+        progressNotice.setMessage(`\u2705 \u6559\u6750\u6574\u7406\u5B8C\u6210\uFF1A${result.succeeded}/${result.total} \u7AE0\u5DF2\u4FDD\u5B58\u5230 ${manifest.output_dir}`);
+        setTimeout(() => progressNotice.hide(), 3e3);
+        return;
+      }
+      progressNotice.setMessage(
+        `\u26A0\uFE0F \u6E05\u7406\u90E8\u5206\u5931\u8D25\uFF1A${result.succeeded} \u6210\u529F / ${result.failed} \u5931\u8D25\u3002\u5931\u8D25\u7AE0\u8282\uFF1A${result.failures.map((f) => f.chapter.id).join(", ")}`
+      );
+      setTimeout(() => progressNotice.hide(), 8e3);
+      console.error("[textbook-cleaner] failures:", result.failures);
+    } catch (e) {
+      new import_obsidian14.Notice(`\u274C \u6E05\u7406\u5931\u8D25: ${e?.message ?? e}`, 8e3);
+      console.error("[textbook-cleaner]", e);
+    }
   }
   /**
    * Ensure model files exist for the current language.
@@ -9888,11 +13254,28 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
       return null;
     }
   }
+  /**
+   * Lazily get the Node fs.promises API (only on desktop). Used by
+   * PaddleOCR model download to write large files asynchronously.
+   */
+  getFsAsync() {
+    try {
+      const r = globalThis.require;
+      return r?.("fs").promises;
+    } catch {
+      return null;
+    }
+  }
   async ensurePunctuationModel() {
+    return withHeavyInit("punc-download", async () => {
+      return this.ensurePunctuationModelImpl();
+    });
+  }
+  async ensurePunctuationModelImpl() {
     const fs = this.getFs();
     if (!fs) return false;
     const adapter = this.app.vault.adapter;
-    const basePath = adapter instanceof import_obsidian13.FileSystemAdapter ? adapter.getBasePath() : "";
+    const basePath = adapter instanceof import_obsidian14.FileSystemAdapter ? adapter.getBasePath() : "";
     const puncDir = basePath + "/.obsidian/plugins/link-tag-intelligence/models/punc-zh-2024/";
     const modelFile = puncDir + "model.onnx";
     if (fs.existsSync(modelFile)) {
@@ -9905,47 +13288,146 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
     if (!fs.existsSync(puncDir)) {
       fs.mkdirSync(puncDir, { recursive: true });
     }
-    const notice = new import_obsidian13.Notice("\u6B63\u5728\u540E\u53F0\u4E0B\u8F7D\u79BB\u7EBF\u4E2D\u6587\u6807\u70B9\u9884\u6D4B\u6A21\u578B (~40MB)...", 0);
+    const notice = new import_obsidian14.Notice("\u6B63\u5728\u540E\u53F0\u4E0B\u8F7D\u79BB\u7EBF\u4E2D\u6587\u6807\u70B9\u9884\u6D4B\u6A21\u578B (~40MB)...", 0);
     try {
       const url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/punctuation-models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12.tar.bz2";
       const archiveName = "sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12.tar.bz2";
       const archivePath = puncDir + archiveName;
-      const cp = require("child_process");
-      cp.execSync(
+      const cp3 = require("child_process");
+      cp3.execSync(
         `curl -L -o "${archivePath}" "${url}" --progress-bar 2>&1`,
         { maxBuffer: 1024 * 1024 }
       );
       notice.setMessage("\u6B63\u5728\u89E3\u538B\u6807\u70B9\u6062\u590D\u6A21\u578B...");
-      cp.execSync(`tar -xjf "${archiveName}" --strip-components=1`, { cwd: puncDir, maxBuffer: 1024 * 1024 });
+      cp3.execSync(`tar -xjf "${archiveName}" --strip-components=1`, { cwd: puncDir, maxBuffer: 1024 * 1024 });
       const fs2 = require("fs");
       try {
         fs2.unlinkSync(archivePath);
       } catch {
       }
-      const { join } = require("path");
+      const { join: join2 } = require("path");
       for (const f of fs2.readdirSync(puncDir)) {
-        const p = join(puncDir, f);
+        const p = join2(puncDir, f);
         if (fs2.statSync(p).isFile() && f !== "model.onnx") {
           fs2.unlinkSync(p);
         }
       }
       notice.hide();
-      new import_obsidian13.Notice("\u79BB\u7EBF\u6807\u70B9\u7B26\u53F7\u9884\u6D4B\u6A21\u578B\u5C31\u7EEA\u3002");
+      new import_obsidian14.Notice("\u79BB\u7EBF\u6807\u70B9\u7B26\u53F7\u9884\u6D4B\u6A21\u578B\u5C31\u7EEA\u3002");
       return true;
     } catch (e) {
       notice.hide();
-      new import_obsidian13.Notice("\u6807\u70B9\u6A21\u578B\u79BB\u7EBF\u4E0B\u8F7D\u5931\u8D25: " + String(e), 8e3);
+      new import_obsidian14.Notice("\u6807\u70B9\u6A21\u578B\u79BB\u7EBF\u4E0B\u8F7D\u5931\u8D25: " + String(e), 8e3);
+      return false;
+    }
+  }
+  /**
+   * Ensure the PaddleOCR model files for `tier` are present on disk
+   * under `<pluginDir>/models/ocr/pp-ocrv5/<tier>/{det,rec}/inference.onnx`.
+   * If not, download them from HuggingFace via the paddle-model helper.
+   * Returns true iff every required file is present (post-download).
+   *
+   * Called by runLocalOcrTask() before the first OCR invocation per
+   * session. Tiers beyond the default are not auto-downloaded — the user
+   * must pick them via the settings UI (提交3) first.
+   */
+  async ensurePaddleModel() {
+    return withHeavyInit("paddle-download", async () => {
+      return this.ensurePaddleModelImpl();
+    });
+  }
+  async ensurePaddleModelImpl() {
+    const fs = this.getFs();
+    if (!fs) {
+      new import_obsidian14.Notice("PaddleOCR \u6A21\u578B\u7BA1\u7406\u9700\u8981\u684C\u9762\u7AEF fs API (\u4EC5 Obsidian Desktop \u53EF\u7528)\u3002", 8e3);
+      return false;
+    }
+    if (this.settings.paddleOcrModelPath && this.settings.paddleOcrModelPath.trim()) {
+      return true;
+    }
+    const tier = this.settings.paddleOcrTier ?? DEFAULT_PADDLE_TIER;
+    const modelDir = this.getPaddleModelDir(tier);
+    const installed = isPaddleTierInstalled(
+      tier,
+      (p) => fs.existsSync(p),
+      modelDir
+    );
+    if (installed.installed) return true;
+    return this.downloadPaddleModel(tier, modelDir);
+  }
+  /** Resolve the absolute path of the model dir for a given PaddleOCR tier. */
+  getPaddleModelDir(tier) {
+    const path3 = require("path");
+    return path3.join(this.getPluginInstallDir(), getPaddleTierModelDir(tier));
+  }
+  /**
+   * Download det + rec for a given PaddleOCR tier into `modelDir`.
+   * Emits progress via a long-lived Notice. Returns true iff all files
+   * wrote successfully (network errors or write failures resolve to false).
+   */
+  async downloadPaddleModel(tier, modelDir) {
+    const fs = this.getFs();
+    const fsAsync = this.getFsAsync();
+    if (!fs || !fsAsync) {
+      new import_obsidian14.Notice("PaddleOCR \u4E0B\u8F7D\u9700\u8981\u684C\u9762\u7AEF fs.promises (\u4EC5 Obsidian Desktop \u53EF\u7528)\u3002", 8e3);
+      return false;
+    }
+    const path3 = require("path");
+    const detDir = path3.join(modelDir, "det");
+    const recDir = path3.join(modelDir, "rec");
+    const dictDir = path3.join(modelDir, "dict");
+    fs.mkdirSync(detDir, { recursive: true });
+    fs.mkdirSync(recDir, { recursive: true });
+    fs.mkdirSync(dictDir, { recursive: true });
+    const totalBytes = getPaddleTierTotalBytes(tier);
+    const totalMB = (totalBytes / (1024 * 1024)).toFixed(0);
+    const notice = new import_obsidian14.Notice(
+      `\u23F3 [Local AI] \u6B63\u5728\u4E0B\u8F7D PaddleOCR ${tier} \u6A21\u578B (~${totalMB} MB)...`,
+      0
+    );
+    try {
+      const result = await downloadPaddleTier(
+        tier,
+        async ({ role, filename }, data) => {
+          const sub = role === "det" ? detDir : role === "dict" ? dictDir : recDir;
+          await fsAsync.writeFile(path3.join(sub, filename), new Uint8Array(data));
+        },
+        (p) => {
+          const mb = (p.fileProgress.loadedBytes / (1024 * 1024)).toFixed(1);
+          const total = (p.fileProgress.totalBytes / (1024 * 1024)).toFixed(0);
+          const pct = (p.fileProgress.percent * 100).toFixed(0);
+          notice.setMessage(
+            `\u23F3 [Local AI] \u4E0B\u8F7D PaddleOCR ${tier} (${p.fileIndex + 1}/${p.totalFiles}) ${p.role}/${p.currentFile}: ${mb}/${total} MB (${pct}%)`
+          );
+        }
+      );
+      notice.hide();
+      if (result.anyFailed) {
+        const failedNames = result.files.filter((f) => !f.success).map((f) => `${f.role}/${f.filename}`);
+        new import_obsidian14.Notice(`\u274C PaddleOCR \u6A21\u578B\u4E0B\u8F7D\u5931\u8D25: ${failedNames.join(", ")}\u3002\u8BF7\u68C0\u67E5\u7F51\u7EDC\u6216\u7A0D\u540E\u91CD\u8BD5\u3002`, 1e4);
+        return false;
+      }
+      new import_obsidian14.Notice(`\u2705 PaddleOCR ${tier} \u6A21\u578B\u5C31\u7EEA (~${totalMB} MB)\u3002`);
+      return true;
+    } catch (e) {
+      notice.hide();
+      new import_obsidian14.Notice(`\u274C PaddleOCR \u6A21\u578B\u4E0B\u8F7D\u5F02\u5E38: ${String(e)}`, 1e4);
       return false;
     }
   }
   async ensureSpeechModel() {
+    return withHeavyInit("speech-download", async () => {
+      return this.ensureSpeechModelImpl();
+    });
+  }
+  async ensureSpeechModelImpl() {
     const fs = this.getFs();
     const modelDir = this.speechRecorder.getModelDirInternal();
     const lang = this.settings.speechLanguage;
     const isSenseVoice = lang === "zh" && this.settings.speechModelChoice === "sensevoice";
     const fileList = isSenseVoice ? ["model.int8.onnx", "tokens.txt"] : getModelFileList(lang);
     if (!fs) {
-      new import_obsidian13.Notice(this.t("speechModelNotFound"));
+      new import_obsidian14.Notice(this.t("speechModelNotFound"));
       return false;
     }
     let allExist = true;
@@ -9964,7 +13446,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
       return true;
     }
     if (!anyExist) {
-      new import_obsidian13.Notice(
+      new import_obsidian14.Notice(
         this.t("speechModelFirstRunTitle") + "\n\n" + this.t("speechModelFirstRunGuide", {
           modelDir,
           zhSize: "~167 MB",
@@ -9984,11 +13466,11 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
     const archiveName = isSenseVoice ? "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2" : "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2";
     const url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/" + archiveName;
     const archivePath = modelDir + archiveName;
-    const notice = new import_obsidian13.Notice(this.t("speechModelDownloadStart", { lang: isSenseVoice ? "SenseVoice" : "\u4E2D\u6587" }), 0);
+    const notice = new import_obsidian14.Notice(this.t("speechModelDownloadStart", { lang: isSenseVoice ? "SenseVoice" : "\u4E2D\u6587" }), 0);
     try {
-      const cp = require("child_process");
+      const cp3 = require("child_process");
       notice.setMessage(isSenseVoice ? "Downloading SenseVoice-Small (~75MB)..." : "Downloading bilingual zh-en model (~80MB)...");
-      cp.execSync(
+      cp3.execSync(
         `curl -L -o "${archivePath}" "${url}" --progress-bar 2>&1`,
         { maxBuffer: 1024 * 1024 }
       );
@@ -9996,7 +13478,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
       const child_process2 = require("child_process");
       child_process2.execSync(`tar -xjf "${archiveName}" --strip-components=1`, { cwd: modelDir, maxBuffer: 1024 * 1024 });
       const fs2 = require("fs");
-      const { join } = require("path");
+      const { join: join2 } = require("path");
       const keepFiles = isSenseVoice ? ["model.int8.onnx", "tokens.txt"] : [
         "encoder.int8.onnx",
         "decoder.onnx",
@@ -10006,7 +13488,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
         "bpe.model"
       ];
       for (const f of fs2.readdirSync(modelDir)) {
-        const p = join(modelDir, f);
+        const p = join2(modelDir, f);
         const st = fs2.statSync(p);
         if (st.isFile() && !keepFiles.includes(f) && f !== archiveName) {
           fs2.unlinkSync(p);
@@ -10017,11 +13499,11 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
       } catch {
       }
       notice.hide();
-      new import_obsidian13.Notice(isSenseVoice ? "SenseVoice \u8BED\u97F3\u6A21\u578B\u5C31\u7EEA (~75 MB)\u3002" : "\u4E2D\u6587\u8BED\u97F3\u6A21\u578B\u5C31\u7EEA (~80 MB)\u3002\u73B0\u5728\u53EF\u4EE5\u5F00\u59CB\u5F55\u97F3\u3002");
+      new import_obsidian14.Notice(isSenseVoice ? "SenseVoice \u8BED\u97F3\u6A21\u578B\u5C31\u7EEA (~75 MB)\u3002" : "\u4E2D\u6587\u8BED\u97F3\u6A21\u578B\u5C31\u7EEA (~80 MB)\u3002\u73B0\u5728\u53EF\u4EE5\u5F00\u59CB\u5F55\u97F3\u3002");
       return true;
     } catch (e) {
       notice.hide();
-      new import_obsidian13.Notice("\u6A21\u578B\u4E0B\u8F7D\u5931\u8D25: " + String(e), 8e3);
+      new import_obsidian14.Notice("\u6A21\u578B\u4E0B\u8F7D\u5931\u8D25: " + String(e), 8e3);
       return false;
     }
   }
@@ -10030,22 +13512,22 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
     const lang = this.settings.speechLanguage;
     const modelDir = this.speechRecorder.getModelDirInternal();
     if (!fs) {
-      new import_obsidian13.Notice(this.t("speechModelNotFound"));
+      new import_obsidian14.Notice(this.t("speechModelNotFound"));
       return false;
     }
     fs.mkdirSync(modelDir, { recursive: true });
     if (isArchiveDownload(lang)) {
       return this.downloadZhArchive(modelDir);
     }
-    const progressNotice = new import_obsidian13.Notice(
+    const progressNotice = new import_obsidian14.Notice(
       this.t("speechModelDownloadStart", { lang: lang === "zh" ? "\u4E2D\u6587" : "English" }),
       0
     );
     const results = await downloadModelFiles(
       lang,
       async (filename, data) => {
-        const path = modelDir + filename;
-        fs.writeFileSync(path, new Uint8Array(data));
+        const path3 = modelDir + filename;
+        fs.writeFileSync(path3, new Uint8Array(data));
       },
       (progress) => {
         const pct = Math.round(progress.fileProgress.percent * 100);
@@ -10066,7 +13548,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
     const failed = results.filter((r) => !r.success);
     progressNotice.hide();
     if (failed.length === 0) {
-      new import_obsidian13.Notice(this.t("speechModelDownloadComplete", { lang: lang === "zh" ? "\u4E2D\u6587" : "English" }));
+      new import_obsidian14.Notice(this.t("speechModelDownloadComplete", { lang: lang === "zh" ? "\u4E2D\u6587" : "English" }));
       return true;
     }
     this.showManualDownloadGuide(lang, failed.map((r) => r.filename));
@@ -10084,7 +13566,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
       baseUrl,
       files: failedFiles.join(", ")
     });
-    new import_obsidian13.Notice(message, 15e3);
+    new import_obsidian14.Notice(message, 15e3);
   }
   async runResearchIngestion(request) {
     const result = await runIngestionCommand(
@@ -10102,19 +13584,19 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
         this.openFile(importedFile);
       }
     }
-    new import_obsidian13.Notice(
+    new import_obsidian14.Notice(
       result.warnings.length > 0 ? this.t("ingestionCreatedWithWarnings", { title: result.title, count: result.warnings.length }) : this.t("ingestionCreated", { title: result.title })
     );
     return result;
   }
-  async waitForVaultMarkdownFile(path, timeoutMs = 3e3) {
+  async waitForVaultMarkdownFile(path3, timeoutMs = 3e3) {
     const startedAt = Date.now();
     while (Date.now() - startedAt <= timeoutMs) {
-      const file = this.app.vault.getAbstractFileByPath(path);
-      if (file instanceof import_obsidian13.TFile) {
+      const file = this.app.vault.getAbstractFileByPath(path3);
+      if (file instanceof import_obsidian14.TFile) {
         return file;
       }
-      await new Promise((resolve) => window.setTimeout(resolve, 150));
+      await new Promise((resolve2) => window.setTimeout(resolve2, 150));
     }
     return null;
   }
@@ -10179,7 +13661,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
       this.captureSupportedFileContext(file);
       this.captureEditorContext(leaf);
       const view = leaf.view;
-      if (view instanceof import_obsidian13.MarkdownView) {
+      if (view instanceof import_obsidian14.MarkdownView) {
         const editor = view.editor;
         const start = Math.max(0, startLine - 1);
         const safeEndLine = Math.max(start, (endLine ?? startLine) - 1);
@@ -10197,9 +13679,9 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
       this.captureSupportedFileContext(file);
       this.captureEditorContext(leaf);
       const view = leaf.view;
-      if (view instanceof import_obsidian13.MarkdownView) {
+      if (view instanceof import_obsidian14.MarkdownView) {
         const cache = this.app.metadataCache.getFileCache(file);
-        const resolved = cache ? (0, import_obsidian13.resolveSubpath)(cache, `#^${blockId}`) : null;
+        const resolved = cache ? (0, import_obsidian14.resolveSubpath)(cache, `#^${blockId}`) : null;
         if (resolved?.type === "block") {
           const editor = view.editor;
           const start = Math.max(0, resolved.start.line);
@@ -10212,13 +13694,13 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
       this.app.workspace.setActiveLeaf(leaf, { focus: true });
     });
   }
-  openResolvedPath(path) {
-    const file = resolveNoteTarget(this.app, path);
+  openResolvedPath(path3) {
+    const file = resolveNoteTarget(this.app, path3);
     if (file) {
       this.openFile(file);
       return;
     }
-    new import_obsidian13.Notice(path);
+    new import_obsidian14.Notice(path3);
   }
   openResolvedLineReference(target, sourcePath, startLine, endLine) {
     const file = resolveNoteTarget(this.app, target, sourcePath);
@@ -10226,7 +13708,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
       this.openFileAtLine(file, startLine, endLine);
       return;
     }
-    new import_obsidian13.Notice(target);
+    new import_obsidian14.Notice(target);
   }
   openResolvedBlockReference(target, sourcePath, blockId) {
     const file = resolveNoteTarget(this.app, target, sourcePath);
@@ -10234,10 +13716,10 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
       this.openFileAtBlock(file, blockId);
       return;
     }
-    new import_obsidian13.Notice(target);
+    new import_obsidian14.Notice(target);
   }
-  async insertLinkFromPath(path) {
-    const file = resolveNoteTarget(this.app, path);
+  async insertLinkFromPath(path3) {
+    const file = resolveNoteTarget(this.app, path3);
     if (!file) {
       return;
     }
@@ -10245,7 +13727,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
   }
   async addSuggestedTags(tags) {
     const currentFile = this.getContextNoteFile();
-    if (!(currentFile instanceof import_obsidian13.TFile)) {
+    if (!(currentFile instanceof import_obsidian14.TFile)) {
       return;
     }
     await appendTagsToFrontmatter(this.app, currentFile, tags);
@@ -10281,12 +13763,12 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
     const commandIds = commandRegistry ? Object.keys(commandRegistry) : [];
     const resolved = candidates.find((candidate) => commandIds.includes(candidate)) ?? candidates.map((candidate) => commandIds.find((commandId) => commandId.endsWith(`:${candidate}`) || commandId.includes(candidate))).find(Boolean);
     if (!resolved || typeof commands?.executeCommandById !== "function") {
-      new import_obsidian13.Notice(this.t("settingsWorkbenchCommandUnavailable"));
+      new import_obsidian14.Notice(this.t("settingsWorkbenchCommandUnavailable"));
       return false;
     }
     const result = await commands.executeCommandById(resolved);
     if (result === false) {
-      new import_obsidian13.Notice(this.t("settingsWorkbenchCommandUnavailable"));
+      new import_obsidian14.Notice(this.t("settingsWorkbenchCommandUnavailable"));
       return false;
     }
     return true;
@@ -10325,7 +13807,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
     const wasRecording = recorder.getSnapshot().phase === "recording";
     const errorKey = await recorder.toggle((key, vars) => this.t(key, vars));
     if (errorKey) {
-      new import_obsidian13.Notice(this.t(errorKey));
+      new import_obsidian14.Notice(this.t(errorKey));
       this._sentenceManager?.reset();
       this.refreshAllViews();
       return;
@@ -10383,7 +13865,7 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
         this.speechRecorder.forceStop();
         this.cancelAutoStopTimer();
         this.refreshAllViews();
-        new import_obsidian13.Notice(this.t("speechAutoStopTimeoutReached"));
+        new import_obsidian14.Notice(this.t("speechAutoStopTimeoutReached"));
         return;
       }
       this.refreshAllViews();
@@ -10398,6 +13880,316 @@ var LinkTagIntelligencePlugin = class extends import_obsidian13.Plugin {
   }
   getAutoStopSecondsRemaining() {
     return this.autoStopSecondsRemaining;
+  }
+  async runLocalOcrTask() {
+    if (!this.settings.ocrEnabled) {
+      new import_obsidian14.Notice("\u8BF7\u5148\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u5F00\u542F\u300C\u672C\u5730 OCR\u300D\uFF01");
+      return;
+    }
+    const view = this.getContextMarkdownView();
+    if (!view) {
+      new import_obsidian14.Notice("\u8BF7\u5148\u6253\u5F00\u4E00\u7BC7\u53EF\u7F16\u8F91\u7684 Markdown \u7B14\u8BB0\u4EE5\u8FD0\u884C OCR\u3002");
+      return;
+    }
+    let absolutePath = "";
+    let fileName = "";
+    let isPdf = false;
+    let openedViaElectron = false;
+    try {
+      const desktopRequire = globalThis.require;
+      const electron = desktopRequire?.("electron");
+      const remote = electron?.remote || desktopRequire?.("@electron/remote");
+      const dialog = remote?.dialog;
+      if (dialog?.showOpenDialog) {
+        const result = await dialog.showOpenDialog({
+          title: "\u9009\u62E9\u672C\u5730\u56FE\u7247\u6216 PDF \u8FDB\u884C OCR \u63D0\u53D6",
+          properties: ["openFile"],
+          filters: [
+            { name: "Images and PDFs", extensions: ["png", "jpg", "jpeg", "webp", "bmp", "pdf"] }
+          ]
+        });
+        if (result.canceled || result.filePaths.length === 0) {
+          return;
+        }
+        absolutePath = result.filePaths[0];
+        const pathModule = require("path");
+        fileName = pathModule.basename(absolutePath);
+        isPdf = fileName.toLowerCase().endsWith(".pdf");
+        openedViaElectron = true;
+      }
+    } catch (dialogErr) {
+      console.warn("[lti-electron-dialog-failed], falling back to HTML input", dialogErr);
+    }
+    if (!openedViaElectron) {
+      const selection = await pickLocalOcrFileWithHtmlInput();
+      if (!selection) {
+        new import_obsidian14.Notice("\u65E0\u6CD5\u83B7\u53D6\u9009\u4E2D\u6587\u4EF6\u7684\u7EDD\u5BF9\u7269\u7406\u8DEF\u5F84\uFF0C\u8BF7\u91CD\u8BD5\uFF01");
+        return;
+      }
+      absolutePath = selection.absolutePath;
+      fileName = selection.fileName;
+      isPdf = selection.isPdf;
+    }
+    const editor = view.editor;
+    const cursor = editor.getCursor();
+    const notice = new import_obsidian14.Notice(`\u23F3 [Local AI] \u51C6\u5907\u5904\u7406: ${fileName}...`, 0);
+    try {
+      let insertText = "";
+      let insertedDuringProcessing = false;
+      const { execFile } = require("child_process");
+      const runPdfCommand = (command, args, options) => new Promise((resolve2, reject) => {
+        execFile(command, args, options, (error, stdout) => {
+          if (error) reject(error);
+          else resolve2(stdout);
+        });
+      });
+      if (isPdf) {
+        let pageCount = 1;
+        try {
+          const info = await runPdfCommand("pdfinfo", [absolutePath]);
+          const match = info.match(/^Pages:\s+(\d+)/m);
+          if (match) {
+            pageCount = Math.max(1, Number.parseInt(match[1], 10));
+          }
+        } catch (pageErr) {
+          console.warn("Failed to read PDF page count, falling back to first page:", pageErr);
+        }
+        notice.setMessage("\u23F3 [Local AI] \u6B63\u5728\u8C03\u7528\u7CFB\u7EDF\u63D0\u53D6 PDF \u6587\u5B57...");
+        let text = "";
+        try {
+          text = await runPdfCommand("pdftotext", [absolutePath, "-"], { maxBuffer: 50 * 1024 * 1024 });
+        } catch (textErr) {
+          console.warn("Digital PDF text extraction failed:", textErr);
+        }
+        const textQuality = assessPdfTextExtraction(text, pageCount);
+        if (textQuality.usable) {
+          insertText = text.trim();
+          notice.setMessage("\u2705 [Local AI] PDF \u6587\u672C\u63D0\u53D6\u6210\u529F\uFF01\u5DF2\u63D2\u5165\u5F53\u524D\u6587\u6863\u3002");
+        } else {
+          notice.setMessage("\u23F3 [Local AI] \u68C0\u6D4B\u5230\u626B\u63CF\u7248 PDF\uFF0C\u6B63\u5728\u51C6\u5907\u9010\u9875\u79BB\u7EBF OCR...");
+          console.warn("[lti-pdf-text-quality] pdftotext output rejected; falling back to page OCR", textQuality);
+          const paddleOk = await this.ensurePaddleModel();
+          if (!paddleOk && !this.settings.ocrSmartRouting) {
+            throw new Error("PaddleOCR \u6A21\u578B\u672A\u5C31\u7EEA\uFF0C\u65E0\u6CD5\u7EE7\u7EED\u6267\u884C\u626B\u63CF\u7248 PDF OCR\u3002");
+          }
+          if (!paddleOk) {
+            console.warn("[lti-local-ocr] PaddleOCR model is unavailable; continuing scanned PDF OCR with Kreuzberg fallback.");
+            notice.setMessage("\u23F3 [Local AI] PaddleOCR \u6A21\u578B\u672A\u5C31\u7EEA\uFF0C\u7EE7\u7EED\u4F7F\u7528 Kreuzberg/Tesseract \u626B\u63CF\u7248 PDF OCR...");
+          }
+          const fs = require("fs");
+          const os = require("os");
+          const path3 = require("path");
+          const tempPrefix = `lti_pdf_page_${Date.now()}`;
+          const tempDir = os.tmpdir();
+          const concurrency = Math.max(1, Math.min(
+            this.settings.paddleOcrPdfConcurrency || 2,
+            pageCount
+          ));
+          const dpi = Math.max(96, Math.min(300, this.settings.paddleOcrPdfDpi || 150));
+          const pageNumbers = Array.from({ length: pageCount }, (_, i) => i + 1);
+          const pdfOcrServices = Array.from(
+            { length: concurrency },
+            () => new LocalOfflineOcrService(this.app, this.settings)
+          );
+          let completedPages = 0;
+          let successfulPages = 0;
+          const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const endMarker = `<!-- lti-pdf-ocr:${runId}:end -->`;
+          const initialPdfOcrText = [
+            `<!-- OCR source: ${fileName}; pages: 0/${pageCount}; streaming: true -->`,
+            ...pageNumbers.map((page) => `## Page ${page}
+
+${buildPdfOcrPageMarker(runId, page)}`),
+            endMarker
+          ].join("\n\n");
+          editor.replaceRange(`${initialPdfOcrText}
+
+`, cursor);
+          insertedDuringProcessing = true;
+          const writePageResult = (page, body) => {
+            const marker = buildPdfOcrPageMarker(runId, page);
+            if (replaceFirstEditorMarker(editor, marker, body)) {
+              return;
+            }
+            const fallback = `## Page ${page}
+
+${body}
+
+${endMarker}`;
+            replaceFirstEditorMarker(editor, endMarker, fallback);
+          };
+          try {
+            const pageResults = await runWithConcurrency(
+              pageNumbers,
+              concurrency,
+              async (page, workerIndex) => {
+                const tempPattern = path3.join(tempDir, `${tempPrefix}_${page}`);
+                notice.setMessage(`\u23F3 [Local AI] \u6B63\u5728\u6E32\u67D3\u626B\u63CF\u7248 PDF \u7B2C ${page}/${pageCount} \u9875\uFF08\u5E76\u53D1 ${concurrency}\uFF0CDPI ${dpi}\uFF09...`);
+                try {
+                  await runPdfCommand("pdftoppm", [
+                    "-png",
+                    "-r",
+                    String(dpi),
+                    "-f",
+                    String(page),
+                    "-l",
+                    String(page),
+                    absolutePath,
+                    tempPattern
+                  ]);
+                } catch (renderErr) {
+                  const error = renderErr?.message ?? String(renderErr);
+                  writePageResult(page, `> [!warning] PDF \u9875\u9762\u6E32\u67D3\u5931\u8D25\uFF1A${error}`);
+                  return { page, ok: false, error };
+                }
+                const tmpFiles = fs.readdirSync(tempDir).filter((f) => f.startsWith(`${tempPrefix}_${page}`) && f.endsWith(".png")).sort();
+                if (tmpFiles.length === 0) {
+                  const error = "\u65E0\u6CD5\u5B9A\u4F4D\u8F6C\u6362\u540E\u7684 PDF \u9875\u9762\u56FE\u7247";
+                  writePageResult(page, `> [!warning] ${error}\u3002`);
+                  return { page, ok: false, error };
+                }
+                const tempImagePath = path3.join(tempDir, tmpFiles[0]);
+                try {
+                  const onStatusUpdate = (msg) => {
+                    notice.setMessage(
+                      `[Local AI] PDF \u7B2C ${page}/${pageCount} \u9875 \xB7 \u5DF2\u5B8C\u6210 ${completedPages}/${pageCount} \xB7 worker ${workerIndex + 1}/${concurrency} \xB7 ${msg}`
+                    );
+                  };
+                  const ocrResult = await pdfOcrServices[workerIndex].processTask(
+                    tempImagePath,
+                    "<OCR>",
+                    this.settings.ocrSmartRouting,
+                    onStatusUpdate
+                  );
+                  if (ocrResult && ocrResult.trim()) {
+                    successfulPages++;
+                    writePageResult(page, ocrResult.trim());
+                    return { page, ok: true, text: ocrResult.trim() };
+                  }
+                  writePageResult(page, "> [!warning] OCR \u672A\u63D0\u53D6\u51FA\u6709\u6548\u5185\u5BB9\u3002");
+                  return { page, ok: false, error: "OCR \u672A\u63D0\u53D6\u51FA\u6709\u6548\u5185\u5BB9" };
+                } catch (pageErr) {
+                  console.warn(`[lti-local-ocr] PDF page ${page} OCR failed:`, pageErr);
+                  const error = pageErr?.message ?? String(pageErr);
+                  writePageResult(page, `> [!warning] OCR \u5931\u8D25\uFF1A${error}`);
+                  return { page, ok: false, error };
+                } finally {
+                  completedPages++;
+                  notice.setMessage(`\u23F3 [Local AI] \u626B\u63CF\u7248 PDF OCR \u8FDB\u5EA6\uFF1A${completedPages}/${pageCount} \u9875\u5B8C\u6210\uFF0C${successfulPages} \u9875\u5DF2\u5199\u5165\u5F53\u524D\u6587\u6863...`);
+                  for (const tmpFile of tmpFiles) {
+                    try {
+                      fs.unlinkSync(path3.join(tempDir, tmpFile));
+                    } catch (cleanErr) {
+                      console.warn("Failed to clean up temp PDF page image:", cleanErr);
+                    }
+                  }
+                }
+              }
+            );
+            const pageOutputs = pageResults.filter((result) => result.ok).sort((a, b) => a.page - b.page).map((result) => `## Page ${result.page}
+
+${result.text}`);
+            const failedPages = pageResults.filter((result) => !result.ok).sort((a, b) => a.page - b.page);
+            if (pageOutputs.length === 0) {
+              throw new Error(
+                `\u626B\u63CF\u7248 PDF OCR \u672A\u63D0\u53D6\u51FA\u6709\u6548\u5185\u5BB9\u3002\u5931\u8D25\u9875\uFF1A${failedPages.map((p) => `${p.page}(${p.error})`).join(", ") || "\u5168\u90E8"}`
+              );
+            }
+            replaceFirstEditorMarker(
+              editor,
+              endMarker,
+              failedPages.length ? `## OCR Failed Pages
+
+${failedPages.map((p) => `- Page ${p.page}: ${p.error}`).join("\n")}` : ""
+            );
+            notice.setMessage(`\u2705 [Local AI] \u626B\u63CF\u7248 PDF OCR \u5B8C\u6210\uFF1A${pageOutputs.length}/${pageCount} \u9875\u5DF2\u6309\u9875\u5199\u5165\u5F53\u524D\u6587\u6863\u3002`);
+          } finally {
+            for (const service of pdfOcrServices) {
+              service.destroy();
+            }
+          }
+        }
+      } else {
+        const paddleOk = await this.ensurePaddleModel();
+        if (!paddleOk && !this.settings.ocrSmartRouting) {
+          throw new Error("PaddleOCR \u6A21\u578B\u672A\u5C31\u7EEA\uFF0C\u65E0\u6CD5\u7EE7\u7EED\u6267\u884C\u56FE\u7247 OCR\u3002");
+        }
+        if (!paddleOk) {
+          console.warn("[lti-local-ocr] PaddleOCR model is unavailable; continuing image OCR with Kreuzberg fallback.");
+          notice.setMessage("\u23F3 [Local AI] PaddleOCR \u6A21\u578B\u672A\u5C31\u7EEA\uFF0C\u7EE7\u7EED\u4F7F\u7528 Kreuzberg/Tesseract \u56FE\u7247 OCR...");
+        }
+        const onStatusUpdate = (msg) => {
+          notice.setMessage(`[Local AI] ${msg}`);
+        };
+        const result = await this.ocrService.processTask(
+          absolutePath,
+          "<OCR>",
+          this.settings.ocrSmartRouting,
+          onStatusUpdate
+        );
+        if (!result || !result.trim()) {
+          throw new Error("\u8BC6\u522B\u5B8C\u6210\uFF0C\u4F46\u672A\u63D0\u53D6\u51FA\u6709\u6548\u5185\u5BB9\u3002");
+        }
+        insertText = result.trim();
+        notice.setMessage("\u2705 [Local AI] \u56FE\u7247 OCR \u63D0\u53D6\u6210\u529F\uFF01\u5DF2\u63D2\u5165\u5F53\u524D\u6587\u6863\u3002");
+      }
+      if (!insertedDuringProcessing) {
+        editor.replaceRange(insertText, cursor);
+      }
+      setTimeout(() => notice.hide(), 1500);
+    } catch (err) {
+      notice.hide();
+      console.error("[lti-local-ocr-error]", err);
+      new import_obsidian14.Notice(`\u274C \u672C\u5730 OCR \u5931\u8D25: ${err.message}`, 8e3);
+    }
+  }
+  /**
+   * Public entry point used by the "Download PaddleOCR model now" button
+   * in the settings panel. Downloads the user's selected tier; if a custom
+   * paddleOcrModelPath is set we notify the user that the path is theirs
+   * to manage and exit early (no auto-overwrite).
+   */
+  async downloadPaddleModelFromSettings() {
+    if (this.settings.paddleOcrModelPath && this.settings.paddleOcrModelPath.trim()) {
+      new import_obsidian14.Notice(
+        `\u5DF2\u8BBE\u7F6E\u81EA\u5B9A\u4E49 PaddleOCR \u8DEF\u5F84\uFF1B\u4E0B\u8F7D\u529F\u80FD\u4EC5\u7BA1\u7406\u9ED8\u8BA4 tier \u5B50\u76EE\u5F55\u3002
+\u5F53\u524D\u8DEF\u5F84: ${this.settings.paddleOcrModelPath}`,
+        8e3
+      );
+      return;
+    }
+    const tier = this.settings.paddleOcrTier ?? DEFAULT_PADDLE_TIER;
+    const modelDir = this.getPaddleModelDir(tier);
+    const fs = this.getFs();
+    if (!fs) {
+      new import_obsidian14.Notice("PaddleOCR \u4E0B\u8F7D\u9700\u8981\u684C\u9762\u7AEF fs API (\u4EC5 Obsidian Desktop \u53EF\u7528)\u3002", 8e3);
+      return;
+    }
+    const installed = isPaddleTierInstalled(
+      tier,
+      (p) => fs.existsSync(p),
+      modelDir
+    );
+    if (installed.installed) {
+      new import_obsidian14.Notice(`PaddleOCR ${tier} \u6A21\u578B\u5DF2\u5B58\u5728 (~${(getPaddleTierTotalBytes(tier) / 1024 / 1024).toFixed(0)} MB)\u3002\u65E0\u9700\u91CD\u590D\u4E0B\u8F7D\u3002`, 6e3);
+      return;
+    }
+    await this.downloadPaddleModel(tier, modelDir);
+  }
+  /**
+   * Resolve the absolute path of the plugin's install directory.
+   * Mirrors getPluginDir() in ocr-service.ts.
+   */
+  getPluginInstallDir() {
+    const adapter = this.app.vault.adapter;
+    const vaultPath = adapter.getBasePath ? adapter.getBasePath() : "";
+    const manifestDir = this.app.vault.configDir + "/plugins/link-tag-intelligence";
+    return require("path").resolve(vaultPath, manifestDir);
+  }
+  /** Resolve the absolute path of the vault root for relative-path resolution. */
+  getVaultRoot() {
+    const adapter = this.app.vault.adapter;
+    return adapter.getBasePath ? adapter.getBasePath() : null;
   }
 };
 // Annotate the CommonJS export names for ESM import in node:

@@ -9,6 +9,7 @@ import {
 import type { LanguageSetting, UILanguage } from "./i18n";
 import type LinkTagIntelligencePlugin from "./main";
 import { AIService } from "./ai-service";
+import { DEFAULT_PADDLE_TIER, PADDLE_TIER_SPECS, type PaddleOcrModelTier } from "./paddle-ocr-types";
 
 export type WorkflowMode = "general" | "researcher";
 
@@ -203,14 +204,63 @@ export interface LinkTagIntelligenceSettings {
   speechModelChoice: "zipformer" | "sensevoice";
   speechAutoHotwords: boolean;
   speechConfusionMapText: string;
+  // OCR Settings
+  ocrEnabled: boolean;
+  ocrSmartRouting: boolean;
+  // PaddleOCR / Tesseract model paths (overridable; empty means use plugin defaults)
+  paddleOcrModelPath: string;
+  // Which PP-OCRv5 tier to use. Affects the default model dir layout
+  // and which HuggingFace repo is downloaded. Overridden if paddleOcrModelPath
+  // is set to a custom path.
+  paddleOcrTier: PaddleOcrModelTier;
+  // PaddleOCR detection hyperparameters (overridable; empty = use PADDLE_DET_DEFAULTS)
+  paddleDetDbThresh: number;
+  paddleDetBoxThresh: number;
+  paddleDetUnclipRatio: number;
+  paddleDetMinSize: number;
+  paddleDetNmsIouThresh: number;
+  paddleDetMaxCandidates: number;
+  paddleDetLimitSideLen: number;
+  paddleDetScoreMode: "fast" | "slow";
+  paddleDetUseDilation: boolean;
+  paddleOcrCpuThreads: number;
+  paddleOcrPdfConcurrency: number;
+  paddleOcrPdfDpi: number;
+  tesseractDataPath: string;
   // AI Settings
   aiProvider: "openai" | "anthropic" | "deepseek" | "minimax";
   aiModel: string;
   aiApiKey: string;
   aiBaseUrl: string;
+  aiMaxTokens: number;
+  // Sampling temperature [0,2]. Default 1.0 (DeepSeek/MiniMax official
+  // recommendation for data-cleaning / general tasks). Ignored by
+  // reasoning models, which clamp it server-side.
+  aiTemperature: number;
+  // Wire format style for the chosen endpoint. This is intentionally
+  // separate from aiProvider: DeepSeek, MiniMax, and custom gateways can expose
+  // OpenAI-compatible or Anthropic-compatible APIs on their own base URLs.
+  aiApiStyle: "openai" | "anthropic";
+  // Per-request retry count for transient network errors
+  // (EMPTY_RESPONSE, aborts, 5xx, 429). Default 5. Obsidian's
+  // requestUrl doesn't accept a timeout option, so the only knob
+  // we have is how many times we re-attempt. For MiniMax-M3 with
+  // very long contexts, set this to 7-8.
+  aiRequestRetries: number;
+  // Base delay between retries (ms); exponential backoff (×2 each
+  // attempt). Default 2000ms → 2s, 4s, 8s, 16s, 32s. For M3's
+  // known instability, bumping to 5000ms (5s, 10s, 20s, 40s,
+  // 80s) is recommended.
+  aiRequestRetryBaseMs: number;
   aiAsrSource: "local" | "cloud";
   aiLastUsedTemplateId: string;
   aiTemplates: AITemplate[];
+  // Textbook OCR cleaner — vault-relative path to the JSON manifest
+  // describing chapter list + source notes. Set via the
+  // `clean-textbook` command (which opens a file picker); persisted
+  // here so a re-run doesn't require re-picking. Empty string means
+  // "no manifest selected yet".
+  textbookManifestPath: string;
 }
 
 export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSettings {
@@ -254,17 +304,40 @@ export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSetting
     speechAutoPunctuate: true,
     speechDecodingMethod: "greedy_search",
     speechMaxUtteranceSec: 20,
-    speechModelChoice: "zipformer",
     speechAutoHotwords: true,
     speechConfusionMapText: "在显价值:在险价值\n风险穗:风险矩阵\n富力业:傅里叶",
+    // OCR Defaults
+    ocrEnabled: true,
+    ocrSmartRouting: true,
+    paddleOcrModelPath: "",
+    paddleOcrTier: DEFAULT_PADDLE_TIER,
+    paddleDetDbThresh: 0.2,
+    paddleDetBoxThresh: 0.3,
+    paddleDetUnclipRatio: 2.0,
+    paddleDetMinSize: 2,
+    paddleDetNmsIouThresh: 0.2,
+    paddleDetMaxCandidates: 4000,
+    paddleDetLimitSideLen: 2048,
+    paddleDetScoreMode: "fast",
+    paddleDetUseDilation: true,
+    paddleOcrCpuThreads: 0,
+    paddleOcrPdfConcurrency: 2,
+    paddleOcrPdfDpi: 240,
+    tesseractDataPath: "",
     // AI Settings defaults
     aiProvider: "openai",
     aiModel: "gpt-4o-mini",
     aiApiKey: "",
     aiBaseUrl: "https://api.openai.com/v1",
+    aiMaxTokens: 4096,
+    aiTemperature: 1.0,
+    aiApiStyle: "openai",
+    aiRequestRetries: 5,
+    aiRequestRetryBaseMs: 2000,
     aiAsrSource: "local",
     aiLastUsedTemplateId: "standard-markdown",
-    aiTemplates: [...DEFAULT_AI_TEMPLATES]
+    aiTemplates: [...DEFAULT_AI_TEMPLATES],
+    textbookManifestPath: "",
   };
 }
 
@@ -386,6 +459,13 @@ export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagI
     ...defaults,
     ...raw
   };
+  const clampNumber = (value: unknown, min: number, max: number, fallback: number, integer = false): number => {
+    if (!Number.isFinite(value)) {
+      return fallback;
+    }
+    const numeric = integer ? Math.round(value as number) : value as number;
+    return Math.max(min, Math.min(max, numeric));
+  };
 
   if (Array.isArray(raw.relationKeys) && arraysEqual(raw.relationKeys.map(String), LEGACY_RELATION_KEYS)) {
     normalized.relationKeys = [...RESEARCH_RELATION_KEYS];
@@ -431,6 +511,34 @@ export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagI
   normalized.smartConnectionsResultsLimit = Number.isFinite(normalized.smartConnectionsResultsLimit) && normalized.smartConnectionsResultsLimit > 0
     ? normalized.smartConnectionsResultsLimit
     : defaults.smartConnectionsResultsLimit;
+  const legacyVisionSettings = raw as Partial<LinkTagIntelligenceSettings> & {
+    visionEnabled?: unknown;
+    visionSmartRouting?: unknown;
+  };
+  normalized.ocrEnabled = typeof raw.ocrEnabled === "boolean"
+    ? raw.ocrEnabled
+    : (typeof legacyVisionSettings.visionEnabled === "boolean" ? legacyVisionSettings.visionEnabled : defaults.ocrEnabled);
+  normalized.ocrSmartRouting = typeof raw.ocrSmartRouting === "boolean"
+    ? raw.ocrSmartRouting
+    : (typeof legacyVisionSettings.visionSmartRouting === "boolean" ? legacyVisionSettings.visionSmartRouting : defaults.ocrSmartRouting);
+
+  // PaddleOCR tier: only mobile / server / hybrid are valid. A stale data.json
+  // (e.g. from a future tier we don't yet know about) falls back to the default.
+  normalized.paddleOcrTier = PADDLE_TIER_SPECS[normalized.paddleOcrTier as PaddleOcrModelTier]
+    ? (normalized.paddleOcrTier as PaddleOcrModelTier)
+    : defaults.paddleOcrTier;
+  normalized.paddleDetDbThresh = clampNumber(normalized.paddleDetDbThresh, 0.1, 0.9, defaults.paddleDetDbThresh);
+  normalized.paddleDetBoxThresh = clampNumber(normalized.paddleDetBoxThresh, 0.1, 0.9, defaults.paddleDetBoxThresh);
+  normalized.paddleDetUnclipRatio = clampNumber(normalized.paddleDetUnclipRatio, 1.0, 3.0, defaults.paddleDetUnclipRatio);
+  normalized.paddleDetMinSize = clampNumber(normalized.paddleDetMinSize, 1, 50, defaults.paddleDetMinSize, true);
+  normalized.paddleDetNmsIouThresh = clampNumber(normalized.paddleDetNmsIouThresh, 0.1, 0.9, defaults.paddleDetNmsIouThresh);
+  normalized.paddleDetMaxCandidates = clampNumber(normalized.paddleDetMaxCandidates, 100, 5000, defaults.paddleDetMaxCandidates, true);
+  normalized.paddleDetLimitSideLen = clampNumber(normalized.paddleDetLimitSideLen, 320, 2048, defaults.paddleDetLimitSideLen, true);
+  normalized.paddleDetScoreMode = normalized.paddleDetScoreMode === "slow" ? "slow" : "fast";
+  normalized.paddleDetUseDilation = typeof normalized.paddleDetUseDilation === "boolean" ? normalized.paddleDetUseDilation : defaults.paddleDetUseDilation;
+  normalized.paddleOcrCpuThreads = clampNumber(normalized.paddleOcrCpuThreads, 0, 32, defaults.paddleOcrCpuThreads, true);
+  normalized.paddleOcrPdfConcurrency = clampNumber(normalized.paddleOcrPdfConcurrency, 1, 8, defaults.paddleOcrPdfConcurrency, true);
+  normalized.paddleOcrPdfDpi = clampNumber(normalized.paddleOcrPdfDpi, 96, 300, defaults.paddleOcrPdfDpi, true);
 
   normalized.speechHotwordsFile = typeof normalized.speechHotwordsFile === "string" ? normalized.speechHotwordsFile.trim() : defaults.speechHotwordsFile;
   normalized.speechModelPath = typeof normalized.speechModelPath === "string" ? normalized.speechModelPath.trim() : defaults.speechModelPath;
@@ -455,8 +563,26 @@ export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagI
     ? normalized.aiProvider
     : "openai";
   normalized.aiModel = typeof normalized.aiModel === "string" && normalized.aiModel.trim() ? normalized.aiModel.trim() : defaults.aiModel;
+  normalized.aiMaxTokens = Number.isFinite(normalized.aiMaxTokens) && normalized.aiMaxTokens >= 1
+    ? Math.round(normalized.aiMaxTokens)
+    : defaults.aiMaxTokens || 4096;
   normalized.aiApiKey = typeof normalized.aiApiKey === "string" ? normalized.aiApiKey : "";
   normalized.aiBaseUrl = typeof normalized.aiBaseUrl === "string" && normalized.aiBaseUrl.trim() ? normalized.aiBaseUrl.trim() : defaults.aiBaseUrl;
+  // MiniMax output cap is model-specific: M3 → 524288, older M2.x → 204800.
+  if (/minimax/i.test(normalized.aiModel) || /minimax/i.test(normalized.aiBaseUrl)) {
+    const upper = /m3/i.test(normalized.aiModel) ? 524288 : 204800;
+    normalized.aiMaxTokens = Math.min(normalized.aiMaxTokens, upper);
+  }
+  normalized.aiTemperature = clampNumber(normalized.aiTemperature, 0, 2, defaults.aiTemperature);
+  normalized.aiApiStyle = normalized.aiApiStyle === "anthropic" ? "anthropic" : "openai";
+  normalized.aiRequestRetries =
+    Number.isFinite(normalized.aiRequestRetries) && normalized.aiRequestRetries >= 1
+      ? Math.round(normalized.aiRequestRetries)
+      : 5;
+  normalized.aiRequestRetryBaseMs =
+    Number.isFinite(normalized.aiRequestRetryBaseMs) && normalized.aiRequestRetryBaseMs >= 100
+      ? Math.round(normalized.aiRequestRetryBaseMs)
+      : 2000;
   normalized.aiAsrSource = normalized.aiAsrSource === "cloud" ? "cloud" : "local";
   normalized.aiLastUsedTemplateId = typeof normalized.aiLastUsedTemplateId === "string" ? normalized.aiLastUsedTemplateId : defaults.aiLastUsedTemplateId;
 
@@ -475,11 +601,23 @@ export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagI
   } else {
     normalized.aiTemplates = [...DEFAULT_AI_TEMPLATES];
   }
+  normalized.textbookManifestPath =
+    typeof normalized.textbookManifestPath === "string" ? normalized.textbookManifestPath : "";
 
   return normalized;
 }
 
 type WorkbenchPage = "overview" | "workflow" | "plugins" | "taxonomy" | "speech" | "ai";
+
+// Placeholder hints for the AI Base URL / Model Name input fields. These are
+// shown only when the field is empty — they never overwrite the user's value.
+// Keys mirror the LinkTagIntelligenceSettings["aiProvider"] union.
+const AI_PROVIDER_HINTS: Record<"openai" | "anthropic" | "deepseek" | "minimax", { baseUrl: string; model: string }> = {
+  openai:    { baseUrl: "https://api.openai.com/v1",        model: "gpt-4o-mini" },
+  anthropic: { baseUrl: "https://api.anthropic.com",        model: "claude-3-5-sonnet-20241022" },
+  deepseek:  { baseUrl: "https://api.deepseek.com",         model: "deepseek-v4-flash" },
+  minimax:   { baseUrl: "https://api.minimaxi.com/v1",      model: "MiniMax-M3" }
+};
 
 export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
   plugin: LinkTagIntelligencePlugin;
@@ -1959,6 +2097,255 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
       }
     );
+
+    this.renderOcrSection(containerEl);
+  }
+
+  private renderOcrSection(containerEl: HTMLElement): void {
+    const section = this.createSectionCard(
+      containerEl,
+      "本地离线 OCR",
+      "配置 PaddleOCR 与 Kreuzberg/Tesseract 本地文字提取。"
+    );
+
+    this.createToggleField(
+      section,
+      "开启本地 OCR" as any,
+      "启用后可从侧栏对本地图片或 PDF 执行离线文字提取。" as any,
+      this.plugin.settings.ocrEnabled,
+      async (value) => {
+        this.plugin.settings.ocrEnabled = value;
+        await this.plugin.saveSettings();
+      }
+    );
+
+    this.createToggleField(
+      section,
+      "启用 OCR 智能分流路由" as any,
+      "优先使用 Kreuzberg/Tesseract 处理密集中文扫描；当结果偏短或失败时调用 PaddleOCR 补充对比。" as any,
+      this.plugin.settings.ocrSmartRouting,
+      async (value) => {
+        this.plugin.settings.ocrSmartRouting = value;
+        await this.plugin.saveSettings();
+      }
+    );
+
+    // PaddleOCR model tier (mobile / server / hybrid). Selecting a tier
+    // changes the default model dir layout and which HuggingFace repo is
+    // pulled on the next download. Users with a custom paddleOcrModelPath
+    // are unaffected (their path takes precedence at runtime).
+    this.createSelectField(
+      section,
+      this.plugin.t("paddleOcrTierLabel"),
+      this.plugin.t("paddleOcrTierDesc"),
+      (["mobile", "server", "hybrid"] as PaddleOcrModelTier[]).map((tier) => ({
+        value: tier,
+        label: this.plugin.t(
+          tier === "mobile"
+            ? "paddleOcrTierMobileLabel"
+            : tier === "server"
+            ? "paddleOcrTierServerLabel"
+            : "paddleOcrTierHybridLabel"
+        ) || PADDLE_TIER_SPECS[tier].summary,
+      })),
+      this.plugin.settings.paddleOcrTier,
+      async (value) => {
+        this.plugin.settings.paddleOcrTier = value as PaddleOcrModelTier;
+        await this.saveSettingsAndRecreateOcrService();
+      }
+    );
+
+    // Manual "Download PaddleOCR model now" button. Triggered when the user
+    // wants to pre-warm the model files (e.g. on a metered connection) or
+    // pull a newly selected tier without invoking OCR.
+    const paddleDownloadRow = section.createDiv({ cls: "lti-voice-field-row" });
+    const paddleDownloadField = this.createFieldShell(
+      paddleDownloadRow,
+      this.plugin.t("paddleOcrDownloadButton") as any,
+      "" as any
+    );
+    const paddleDownloadBtn = paddleDownloadField.createEl("button", {
+      text: this.plugin.t("paddleOcrDownloadButton"),
+      cls: "lti-workbench-button",
+    });
+    paddleDownloadBtn.addEventListener("click", () => {
+      void this.plugin.downloadPaddleModelFromSettings();
+    });
+
+    // PaddleOCR model path (primary OCR engine)
+    const paddleRow = section.createDiv({ cls: "lti-voice-field-row" });
+    const paddleField = this.createFieldShell(
+      paddleRow,
+      "PaddleOCR 模型路径 (主 OCR 引擎)" as any,
+      "PP-OCRv5 mobile ONNX 模型目录。包含 det/inference.onnx、rec/inference.onnx、cls/inference.onnx、dict/ppocr_keys_v5.txt 4 个文件（共约 30MB）。留空默认指向插件 models/ocr/pp-ocrv5/mobile/。" as any
+    );
+    const paddleInputRow = paddleField.createDiv({ cls: "lti-voice-input-row" });
+    const paddleInput = paddleInputRow.createEl("input", { cls: "lti-workbench-input lti-voice-path-input", type: "text" });
+    paddleInput.value = this.plugin.settings.paddleOcrModelPath || "";
+    paddleInput.placeholder = "models/ocr/pp-ocrv5/mobile";
+    paddleInput.addEventListener("change", () => {
+      this.plugin.settings.paddleOcrModelPath = paddleInput.value.trim();
+      void this.saveSettingsAndRecreateOcrService();
+    });
+
+    // Tesseract tessdata path (fallback OCR)
+    const tessRow = section.createDiv({ cls: "lti-voice-field-row" });
+    const tessField = this.createFieldShell(
+      tessRow,
+      "Tesseract 语言包路径 (OCR 兜底)" as any,
+      "Tesseract.js 训练数据目录，需包含 chi_sim.traineddata + eng.traineddata。PaddleOCR 失败时自动回退到此引擎。留空默认指向插件 models/tessdata/。" as any
+    );
+    const tessInputRow = tessField.createDiv({ cls: "lti-voice-input-row" });
+    const tessInput = tessInputRow.createEl("input", { cls: "lti-workbench-input lti-voice-path-input", type: "text" });
+    tessInput.value = this.plugin.settings.tesseractDataPath || "";
+    tessInput.placeholder = "models/tessdata";
+    tessInput.addEventListener("change", () => {
+      this.plugin.settings.tesseractDataPath = tessInput.value.trim();
+      void this.saveSettingsAndRecreateOcrService();
+    });
+
+    // ── Advanced PaddleOCR detection parameters (collapsible) ─────────
+    // User-tunable thresholds. Defaults are tuned for dense textbook scans;
+    // the model-level constants still document PaddleOCR's official baseline.
+    // All values are written to settings.paddleDet* and passed to
+    // PaddleOcrService at construction time.
+    this.renderPaddleDetAdvancedSection(section);
+
+    // Helpful instructions link/card
+    const hintCard = section.createDiv({ cls: "lti-workbench-hint-card" });
+    hintCard.createEl("h4", { text: "离线 OCR 权重部署指南" });
+    const ul = hintCard.createEl("ul");
+    ul.createEl("li", { text: "1. PaddleOCR：选择 mobile / server / hybrid 档位后，可点击上方按钮预下载 PP-OCRv5 ONNX 模型。" });
+    ul.createEl("li", { text: "2. Kreuzberg/Tesseract：作为 OCR 分流和兜底引擎使用；如需自定义语言包路径，可在上方填写 tessdata 目录。" });
+    ul.createEl("li", { text: "3. 本区域只管理 OCR 所需模型和参数。" });
+  }
+
+  /**
+   * Renders the "Advanced PaddleOCR Detection Parameters" collapsible
+   * sub-section inside the Vision section. Exposes the 9 hyperparameters
+   * of the DBNet postprocessor so users can tune them for their specific
+   * workload (e.g. dense Chinese text, small receipts, handwriting).
+   *
+   * Each field has a human-language description of the trade-off so
+   * users can self-tune without reading the PaddleOCR paper. A "reset to
+   * defaults" button restores PaddleOCR's official values.
+   */
+  private renderPaddleDetAdvancedSection(parentSection: HTMLElement): void {
+    const detSection = this.createSectionCard(
+      parentSection,
+      this.plugin.t("paddleDetAdvancedHeading"),
+      this.plugin.t("paddleDetAdvancedDesc")
+    );
+
+    // Helper to create a labelled number input that writes back to settings
+    // and immediately re-saves. Caller supplies a guard to keep the value
+    // in a sane range (we don't want users typing 1000 for dbThresh).
+    const addNumber = (
+      key: "paddleDetDbThresh" | "paddleDetBoxThresh" | "paddleDetUnclipRatio" | "paddleDetMinSize" | "paddleDetNmsIouThresh" | "paddleDetMaxCandidates" | "paddleDetLimitSideLen" | "paddleOcrCpuThreads" | "paddleOcrPdfConcurrency" | "paddleOcrPdfDpi",
+      labelKey: string,
+      descKey: string,
+      min: number,
+      max: number,
+      step: number
+    ): void => {
+      const row = detSection.createDiv({ cls: "lti-voice-field-row" });
+      const field = this.createFieldShell(row, this.plugin.t(labelKey) as string, this.plugin.t(descKey) as string);
+      const inputRow = field.createDiv({ cls: "lti-voice-input-row" });
+      const input = inputRow.createEl("input", {
+        cls: "lti-workbench-input lti-voice-path-input",
+        type: "number",
+      });
+      input.value = String((this.plugin.settings as unknown as Record<string, number>)[key]);
+      input.min = String(min);
+      input.max = String(max);
+      input.step = String(step);
+      input.addEventListener("change", () => {
+        const raw = parseFloat(input.value);
+        if (Number.isFinite(raw)) {
+          const clamped = Math.max(min, Math.min(max, raw));
+          (this.plugin.settings as unknown as Record<string, number>)[key] = clamped;
+          if (clamped !== raw) input.value = String(clamped);
+          if (key === "paddleOcrPdfConcurrency" || key === "paddleOcrPdfDpi") {
+            void this.plugin.saveSettings();
+          } else {
+            void this.saveSettingsAndRecreateOcrService();
+          }
+        }
+      });
+    };
+
+    addNumber("paddleDetDbThresh", "paddleDetDbThreshLabel", "paddleDetDbThreshDesc", 0.1, 0.9, 0.05);
+    addNumber("paddleDetBoxThresh", "paddleDetBoxThreshLabel", "paddleDetBoxThreshDesc", 0.1, 0.9, 0.05);
+    addNumber("paddleDetUnclipRatio", "paddleDetUnclipRatioLabel", "paddleDetUnclipRatioDesc", 1.0, 3.0, 0.1);
+    addNumber("paddleDetMinSize", "paddleDetMinSizeLabel", "paddleDetMinSizeDesc", 1, 50, 1);
+    addNumber("paddleDetNmsIouThresh", "paddleDetNmsIouThreshLabel", "paddleDetNmsIouThreshDesc", 0.1, 0.9, 0.05);
+    addNumber("paddleDetMaxCandidates", "paddleDetMaxCandidatesLabel", "paddleDetMaxCandidatesDesc", 100, 5000, 100);
+    addNumber("paddleDetLimitSideLen", "paddleDetLimitSideLenLabel", "paddleDetLimitSideLenDesc", 320, 2048, 32);
+    addNumber("paddleOcrCpuThreads", "paddleOcrCpuThreadsLabel", "paddleOcrCpuThreadsDesc", 0, 32, 1);
+    addNumber("paddleOcrPdfConcurrency", "paddleOcrPdfConcurrencyLabel", "paddleOcrPdfConcurrencyDesc", 1, 8, 1);
+    addNumber("paddleOcrPdfDpi", "paddleOcrPdfDpiLabel", "paddleOcrPdfDpiDesc", 96, 300, 12);
+
+    // Score mode: dropdown (fast / slow)
+    const scoreRow = detSection.createDiv({ cls: "lti-voice-field-row" });
+    const scoreField = this.createFieldShell(
+      scoreRow,
+      this.plugin.t("paddleDetScoreModeLabel") as string,
+      this.plugin.t("paddleDetScoreModeDesc") as string
+    );
+    const scoreSelect = scoreField.createEl("select", { cls: "lti-workbench-input lti-voice-path-input" });
+    for (const mode of ["fast", "slow"] as const) {
+      const opt = scoreSelect.createEl("option", { value: mode, text: mode });
+      if (this.plugin.settings.paddleDetScoreMode === mode) opt.selected = true;
+    }
+    scoreSelect.addEventListener("change", () => {
+      this.plugin.settings.paddleDetScoreMode = scoreSelect.value as "fast" | "slow";
+      void this.saveSettingsAndRecreateOcrService();
+    });
+
+    // useDilation: toggle
+    this.createToggleField(
+      detSection,
+      this.plugin.t("paddleDetUseDilationLabel") as string,
+      this.plugin.t("paddleDetUseDilationDesc") as string,
+      this.plugin.settings.paddleDetUseDilation,
+      async (value) => {
+        this.plugin.settings.paddleDetUseDilation = value;
+        await this.saveSettingsAndRecreateOcrService();
+      }
+    );
+
+    // Reset to PaddleOCR defaults button
+    const resetRow = detSection.createDiv({ cls: "lti-voice-field-row" });
+    const resetBtn = resetRow.createEl("button", {
+      cls: "lti-workbench-button lti-voice-diagnostic-btn",
+      text: this.plugin.t("paddleDetReset") as string,
+      type: "button"
+    });
+    resetBtn.addEventListener("click", () => {
+      const confirmMsg = this.plugin.t("paddleDetResetConfirm") as string;
+      if (typeof window !== "undefined" && !window.confirm(confirmMsg)) return;
+      this.plugin.settings.paddleDetDbThresh = 0.2;
+      this.plugin.settings.paddleDetBoxThresh = 0.3;
+      this.plugin.settings.paddleDetUnclipRatio = 2.0;
+      this.plugin.settings.paddleDetMinSize = 2;
+      this.plugin.settings.paddleDetNmsIouThresh = 0.2;
+      this.plugin.settings.paddleDetMaxCandidates = 4000;
+      this.plugin.settings.paddleDetLimitSideLen = 2048;
+      this.plugin.settings.paddleDetScoreMode = "fast";
+      this.plugin.settings.paddleDetUseDilation = true;
+      this.plugin.settings.paddleOcrCpuThreads = 0;
+      this.plugin.settings.paddleOcrPdfConcurrency = 2;
+      this.plugin.settings.paddleOcrPdfDpi = 240;
+      void this.saveSettingsAndRecreateOcrService().then(() => {
+        // Re-render the entire settings tab to refresh the input values
+        this.display();
+      });
+    });
+  }
+
+  private async saveSettingsAndRecreateOcrService(): Promise<void> {
+    await this.plugin.saveSettings();
+    this.plugin.recreateOcrService();
   }
 
   private renderAiSection(containerEl: HTMLElement): void {
@@ -1982,22 +2369,11 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
       this.plugin.settings.aiProvider,
       async (value) => {
         this.plugin.settings.aiProvider = value as "openai" | "anthropic" | "deepseek" | "minimax";
-        // Auto-configure default Base URL & Model for convenience if switching
-        if (value === "deepseek") {
-          this.plugin.settings.aiBaseUrl = "https://api.deepseek.com";
-          this.plugin.settings.aiModel = "deepseek-chat";
-        } else if (value === "minimax") {
-          this.plugin.settings.aiBaseUrl = "https://api.minimax.chat/v1";
-          this.plugin.settings.aiModel = "abab6.5g-chat";
-        } else if (value === "openai") {
-          this.plugin.settings.aiBaseUrl = "https://api.openai.com/v1";
-          this.plugin.settings.aiModel = "gpt-4o-mini";
-        } else if (value === "anthropic") {
-          this.plugin.settings.aiBaseUrl = "https://api.anthropic.com/v1";
-          this.plugin.settings.aiModel = "claude-3-5-sonnet-20241022";
-        }
+        // Do NOT auto-overwrite the user's baseUrl / model / apiStyle.
+        // The placeholders on the input fields below hint at sensible
+        // defaults for each provider; the user owns their values.
         await this.plugin.saveSettings();
-        this.display(); // re-render to update default text inputs
+        this.display(); // re-render so placeholders update to match the new provider
       }
     );
 
@@ -2005,6 +2381,7 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     const urlField = this.createFieldShell(section, this.plugin.t("aiBaseUrl"), this.plugin.t("aiBaseUrlDescription"));
     const urlInput = urlField.createEl("input", { cls: "lti-workbench-input", type: "text" });
     urlInput.value = this.plugin.settings.aiBaseUrl;
+    urlInput.placeholder = AI_PROVIDER_HINTS[this.plugin.settings.aiProvider].baseUrl;
     urlInput.addEventListener("change", async () => {
       this.plugin.settings.aiBaseUrl = urlInput.value.trim();
       await this.plugin.saveSettings();
@@ -2024,10 +2401,100 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     const modelField = this.createFieldShell(section, this.plugin.t("aiModel"), this.plugin.t("aiModelDescription"));
     const modelInput = modelField.createEl("input", { cls: "lti-workbench-input", type: "text" });
     modelInput.value = this.plugin.settings.aiModel;
+    modelInput.placeholder = AI_PROVIDER_HINTS[this.plugin.settings.aiProvider].model;
     modelInput.addEventListener("change", async () => {
       this.plugin.settings.aiModel = modelInput.value.trim();
       await this.plugin.saveSettings();
     });
+
+    // AI Max Output Tokens Input
+    const tokensField = this.createFieldShell(section, this.plugin.t("aiMaxTokens"), this.plugin.t("aiMaxTokensDescription"));
+    const tokensInput = tokensField.createEl("input", { cls: "lti-workbench-input", type: "number" });
+    tokensInput.value = String(this.plugin.settings.aiMaxTokens || 4096);
+    tokensInput.placeholder = "4096";
+    tokensInput.min = "1";
+    tokensInput.addEventListener("change", async () => {
+      const val = parseInt(tokensInput.value, 10);
+      const isMiniMaxEndpoint = /minimax/i.test(this.plugin.settings.aiModel) || /minimax/i.test(this.plugin.settings.aiBaseUrl);
+      // MiniMax cap is model-specific (M3 → 524288, older M2.x → 204800).
+      const upper = isMiniMaxEndpoint
+        ? (/m3/i.test(this.plugin.settings.aiModel) ? 524288 : 204800)
+        : 1000000;
+      this.plugin.settings.aiMaxTokens = Number.isFinite(val) && val >= 1 ? Math.min(val, upper) : 4096;
+      tokensInput.value = String(this.plugin.settings.aiMaxTokens);
+      await this.plugin.saveSettings();
+    });
+
+    // AI Temperature Input
+    const tempField = this.createFieldShell(section, this.plugin.t("aiTemperature"), this.plugin.t("aiTemperatureDescription"));
+    const tempInput = tempField.createEl("input", { cls: "lti-workbench-input", type: "number" });
+    tempInput.value = String(this.plugin.settings.aiTemperature ?? 1.0);
+    tempInput.placeholder = "1.0";
+    tempInput.min = "0";
+    tempInput.max = "2";
+    tempInput.step = "0.1";
+    tempInput.addEventListener("change", async () => {
+      const val = parseFloat(tempInput.value);
+      this.plugin.settings.aiTemperature = Number.isFinite(val) ? Math.max(0, Math.min(2, val)) : 1.0;
+      tempInput.value = String(this.plugin.settings.aiTemperature);
+      await this.plugin.saveSettings();
+    });
+
+    // Retry count + base delay (M3 stability knobs). 1 second per
+    // 1024 chars of input is the per-attempt effective budget
+    // (Obsidian's requestUrl doesn't accept a timeout, so the
+    // only knob we have is how many times we re-attempt). For M3
+    // with 100K+ token prompts, recommend 7-8 retries with 5s base.
+    const retriesField = this.createFieldShell(
+      section,
+      "AI 请求重试次数（MiniMax-M3 推荐 7-8）" as any,
+      "网络瞬断（EMPTY_RESPONSE / 5xx / 429）时的重试次数。Obsidian 的 requestUrl 不支持自定义 timeout，所以这是 M3 崩溃的主要调节手段。" as any,
+    );
+    const retriesInput = retriesField.createEl("input", { cls: "lti-workbench-input", type: "number" });
+    retriesInput.value = String(this.plugin.settings.aiRequestRetries);
+    retriesInput.placeholder = "5";
+    retriesInput.min = "1";
+    retriesInput.max = "10";
+    retriesInput.addEventListener("change", async () => {
+      const val = parseInt(retriesInput.value, 10);
+      this.plugin.settings.aiRequestRetries = Number.isFinite(val) && val >= 1 ? Math.min(val, 10) : 5;
+      retriesInput.value = String(this.plugin.settings.aiRequestRetries);
+      await this.plugin.saveSettings();
+    });
+
+    const retryBaseField = this.createFieldShell(
+      section,
+      "AI 重试基础延迟 (ms)" as any,
+      "首次重试前的等待时间，按 2× 指数退避。默认 2000ms → 2s/4s/8s/16s/32s。MiniMax-M3 推荐 5000ms → 5s/10s/20s/40s/80s，给 M3 服务端留恢复时间。" as any,
+    );
+    const retryBaseInput = retryBaseField.createEl("input", { cls: "lti-workbench-input", type: "number" });
+    retryBaseInput.value = String(this.plugin.settings.aiRequestRetryBaseMs);
+    retryBaseInput.placeholder = "2000";
+    retryBaseInput.min = "100";
+    retryBaseInput.step = "500";
+    retryBaseInput.addEventListener("change", async () => {
+      const val = parseInt(retryBaseInput.value, 10);
+      this.plugin.settings.aiRequestRetryBaseMs = Number.isFinite(val) && val >= 100 ? val : 2000;
+      retryBaseInput.value = String(this.plugin.settings.aiRequestRetryBaseMs);
+      await this.plugin.saveSettings();
+    });
+
+    // API Wire Format. This is not a provider selector: it only controls the
+    // request/response shape used against the configured Base URL.
+    this.createSelectField(
+      section,
+      this.plugin.t("aiApiStyle"),
+      this.plugin.t("aiApiStyleDescription"),
+      [
+        { value: "openai", label: this.plugin.t("aiApiStyleOpenAI") },
+        { value: "anthropic", label: this.plugin.t("aiApiStyleAnthropic") }
+      ],
+      this.plugin.settings.aiApiStyle,
+      async (value) => {
+        this.plugin.settings.aiApiStyle = value as "openai" | "anthropic";
+        await this.plugin.saveSettings();
+      }
+    );
 
     // ASR Source Select
     this.createSelectField(

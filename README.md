@@ -59,6 +59,31 @@ This plugin bundles the following open-source model:
 
 We are grateful to the k2-fsa team for their outstanding work on open-source speech processing.
 
+## Local OCR
+
+Offline image/PDF text extraction, fully local — image bytes never leave your device.
+
+- **Image OCR** — runs PP-OCRv5 via [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) (ONNX) and Kreuzberg/Tesseract. Recognizes printed Chinese, English, and mixed text.
+- **PDF support** — digital-text PDFs use `pdftotext` (no model load); scanned PDFs rasterize pages via `pdftoppm` and run each page through the OCR pipeline.
+- **Smart routing** — when enabled, Kreuzberg/Tesseract handles dense Chinese scans first; PaddleOCR is used as a challenger/fallback when the first result is weak or fails.
+
+### PaddleOCR Tier
+
+The OCR engine ships in three deployment tiers, selectable from Settings → Local OCR → PaddleOCR tier:
+
+| Tier | Detector | Recognizer | Total | Use case |
+|------|----------|------------|-------|----------|
+| `mobile` | mobile (4.8 MB) | mobile (16.5 MB) | ~22 MB | Low-memory machines, fast preview |
+| `server` (default) | server (88 MB) | server (85 MB) | ~181 MB | Best accuracy on textbook / long-line scans |
+| `hybrid` | mobile (4.8 MB) | server (85 MB) | ~94 MB | Memory-constrained machines that still need server-grade recognition |
+
+Files are pulled from `huggingface.co/PaddlePaddle/PP-OCRv5_*_onnx` (China users benefit from `hf-mirror.com`, auto-detected). On first OCR call the plugin will offer to download the missing files; the Settings panel also has a **Download PaddleOCR model now** button for pre-warming the cache.
+
+### Model Attribution
+
+> **PaddleOCR (PP-OCRv5)** — Apache 2.0, [PaddlePaddle](https://github.com/PaddlePaddle/PaddleOCR)  
+> **Tesseract.js** — Apache 2.0, [naptha/tesseract.js](https://github.com/naptha/tesseract.js)
+
 Recommended research flow:
 
 1. Run the ingestion CLI from the plugin to create a literature note from a DOI, arXiv ID, or PDF.
