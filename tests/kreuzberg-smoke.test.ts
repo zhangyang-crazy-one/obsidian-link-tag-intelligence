@@ -8,6 +8,7 @@
  *      or just `npx vitest run` — the test sets a default path below.
  */
 import { describe, it } from "vitest";
+import * as fs from "fs";
 import { KreuzbergOcrService } from "../src/kreuzberg-ocr-service";
 
 // Pre-existing tessdata downloaded by tesseract.js at first use. If the
@@ -27,9 +28,22 @@ if (!process.env.TESSDATA_PREFIX || process.env.TESSDATA_PREFIX === "") {
 describe("kreuzberg smoke (manual, skipped in CI)", () => {
   it("OCRs a single EN page", async () => {
     const PAGE = "/tmp/ocr-test-gongjing17en/page-008.png";
+    const WORKER = "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/dist/kreuzberg-worker.cjs";
+    if (!fs.existsSync(PAGE)) {
+      console.log(`Skipping: ${PAGE} not found.`);
+      return;
+    }
+    if (!fs.existsSync(TESSDATA_DIR)) {
+      console.log(`Skipping: ${TESSDATA_DIR} not found.`);
+      return;
+    }
+    if (!fs.existsSync(WORKER)) {
+      console.log(`Skipping: ${WORKER} not found.`);
+      return;
+    }
     const svc = new KreuzbergOcrService(
       TESSDATA_DIR,
-      "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/dist/kreuzberg-worker.cjs",
+      WORKER,
     );
     const t0 = Date.now();
     const text = await svc.runOcr(PAGE);
@@ -41,9 +55,22 @@ describe("kreuzberg smoke (manual, skipped in CI)", () => {
 
   it("OCRs a single ZH page", async () => {
     const PAGE = "/tmp/ocr-test-gongjing13/page-010.png";
+    const WORKER = "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/dist/kreuzberg-worker.cjs";
+    if (!fs.existsSync(PAGE)) {
+      console.log(`Skipping: ${PAGE} not found.`);
+      return;
+    }
+    if (!fs.existsSync(TESSDATA_DIR)) {
+      console.log(`Skipping: ${TESSDATA_DIR} not found.`);
+      return;
+    }
+    if (!fs.existsSync(WORKER)) {
+      console.log(`Skipping: ${WORKER} not found.`);
+      return;
+    }
     const svc = new KreuzbergOcrService(
       TESSDATA_DIR,
-      "/home/zhangyangrui/my_programes/obsidian-link-tag-intelligence/dist/kreuzberg-worker.cjs",
+      WORKER,
     );
     const t0 = Date.now();
     const text = await svc.runOcr(PAGE);
