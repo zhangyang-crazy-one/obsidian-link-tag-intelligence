@@ -230,7 +230,39 @@ describe("cleanBook (end-to-end with mocked vault + AI)", () => {
     expect(result.failed).toBe(0);
   });
 
-  it("splits long chapter OCR into multiple AI windows", async () => {
+  it("uses large default windows for modern long-context models", async () => {
+    const longText = "工程经济学 OCR 文本 ".repeat(1_000);
+    const mockApp = makeMockVault({
+      "Books/foo/raw/long.md": longText,
+    });
+    const progress: Array<{ windowIndex?: number; windowTotal?: number; phase: string }> = [];
+
+    const result = await cleanBook(mockApp as any, {
+      aiProvider: "minimax" as const,
+      aiModel: "MiniMax-M2.7",
+      aiApiKey: "fake",
+      aiBaseUrl: "x",
+      aiMaxTokens: 8192,
+    } as any, {
+      book_title: "Long", ocr_source: "hybrid", output_dir: "Books/foo/chapters",
+      chapters: [
+        { id: "long", number: 1, title: "Long", source_note: "Books/foo/raw/long.md" },
+      ],
+    }, {
+      onProgress: (info) => progress.push({
+        phase: info.phase,
+        windowIndex: info.windowIndex,
+        windowTotal: info.windowTotal,
+      }),
+    });
+
+    expect(result.succeeded).toBe(1);
+    expect(result.failed).toBe(0);
+    expect(aiPrompts).toHaveLength(1);
+    expect(progress.some((item) => item.windowTotal === 1)).toBe(true);
+  });
+
+  it("allows manifest window sizing overrides", async () => {
     const longText = Array.from({ length: 80 }, (_, i) =>
       `第 ${i + 1} 段 ` + "工程经济学 OCR 文本 ".repeat(80)
     ).join("\n\n");
@@ -247,6 +279,8 @@ describe("cleanBook (end-to-end with mocked vault + AI)", () => {
       aiMaxTokens: 8192,
     } as any, {
       book_title: "Long", ocr_source: "hybrid", output_dir: "Books/foo/chapters",
+      window_chars: 4_000,
+      window_overlap_chars: 300,
       chapters: [
         { id: "long", number: 1, title: "Long", source_note: "Books/foo/raw/long.md" },
       ],
@@ -280,6 +314,33 @@ describe("cleanBook (end-to-end with mocked vault + AI)", () => {
       book_title: "Retry", ocr_source: "hybrid", output_dir: "Books/foo/chapters",
       chapters: [
         { id: "retry", number: 1, title: "Retry", source_note: "Books/foo/raw/retry.md" },
+      ],
+    });
+
+    expect(result.succeeded).toBe(1);
+    expect(result.failed).toBe(0);
+    expect(aiPrompts.length).toBeGreaterThan(1);
+  });
+
+  it("preserves failed window OCR text and continues the chapter", async () => {
+    aiFailures.push(new Error("permanent provider error"));
+    const sourceText = "第一窗口原始 OCR ".repeat(1_200);
+    const mockApp = makeMockVault({
+      "Books/foo/raw/partial.md": sourceText,
+    });
+
+    const result = await cleanBook(mockApp as any, {
+      aiProvider: "minimax" as const,
+      aiModel: "MiniMax-M2.7",
+      aiApiKey: "fake",
+      aiBaseUrl: "x",
+      aiMaxTokens: 8192,
+    } as any, {
+      book_title: "Partial", ocr_source: "hybrid", output_dir: "Books/foo/chapters",
+      window_chars: 4_000,
+      window_overlap_chars: 300,
+      chapters: [
+        { id: "partial", number: 1, title: "Partial", source_note: "Books/foo/raw/partial.md" },
       ],
     });
 

@@ -7522,15 +7522,19 @@ ${transcription}`;
 };
 
 // src/textbook-cleaner.ts
-var DEFAULT_TEXTBOOK_WINDOW_CHARS = 4e3;
-var DEFAULT_TEXTBOOK_WINDOW_OVERLAP_CHARS = 300;
+var DEFAULT_TEXTBOOK_WINDOW_CHARS = 8e4;
+var DEFAULT_TEXTBOOK_WINDOW_OVERLAP_CHARS = 2e3;
 var MIN_TEXTBOOK_WINDOW_CHARS = 2e3;
+var MAX_TEXTBOOK_WINDOW_CHARS = 12e4;
+var MIN_TEXTBOOK_WINDOW_OVERLAP_CHARS = 300;
+var MAX_TEXTBOOK_WINDOW_OVERLAP_CHARS = 8e3;
 var TEXTBOOK_WINDOW_PROMPT = `\u4F60\u662F\u4E2D\u6587/\u82F1\u6587\u6559\u6750 OCR \u6392\u7248\u4FEE\u590D\u4E13\u5BB6\u3002\u5F53\u524D\u8F93\u5165\u662F\u6559\u6750 OCR \u7684\u4E00\u4E2A\u8FDE\u7EED\u7A97\u53E3\uFF0C\u800C\u4E0D\u662F\u5B8C\u6574\u7AE0\u8282\u3002
 
 \u2500\u2500 \u4EFB\u52A1 \u2500\u2500
 - \u4FEE\u590D OCR \u9519\u5B57\u3001\u9519\u8BEF\u65AD\u884C\u3001\u9875\u7709\u9875\u811A\u3001\u4E71\u7801\u548C\u6392\u7248\u6DF7\u4E71
 - \u4FDD\u7559\u539F\u6587\u4FE1\u606F\uFF0C\u4E0D\u6269\u5199\uFF0C\u4E0D\u5220\u51CF\uFF0C\u4E0D\u603B\u7ED3\uFF0C\u4E0D\u628A\u6559\u6750\u6574\u7406\u6210\u6458\u8981
 - \u5B9A\u4E49\u3001\u5B9A\u7406\u3001\u516C\u5F0F\u3001\u4F8B\u9898\u3001\u4E60\u9898\u3001\u8868\u683C\u3001\u56FE\u6CE8\u3001\u7F16\u53F7\u3001\u811A\u6CE8\u5FC5\u987B\u4FDD\u7559
+- \u5F53\u524D\u7A97\u53E3\u53EF\u80FD\u4E0E\u4E0A\u4E00\u7A97\u53E3\u6709\u5C11\u91CF\u91CD\u53E0\uFF1B\u91CD\u53E0\u5185\u5BB9\u53EA\u7528\u4E8E\u8854\u63A5\uFF0C\u4E0D\u8981\u91CD\u590D\u8F93\u51FA\u5DF2\u5728\u4E0A\u4E00\u7A97\u53E3\u6574\u7406\u8FC7\u7684\u5185\u5BB9
 - \u516C\u5F0F\u7528 LaTeX\uFF0C\u8868\u683C\u5C3D\u91CF\u8FD8\u539F\u4E3A Markdown \u8868\u683C\uFF0C\u590D\u6742\u8868\u683C\u53EF\u7528 HTML <table>
 - \u56FE\u8868\u53EA\u4FDD\u7559\u6807\u9898/\u8BF4\u660E\uFF0C\u5360\u4F4D\u4E3A [\u56FE X.Y \u63CF\u8FF0\uFF1A...]
 - OCR \u731C\u6D4B\u8865\u5168\uFF1A\u5982\u679C\u80FD\u4ECE\u672C\u7A97\u53E3\u3001\u4E0A\u4E00\u7A97\u53E3\u5C3E\u90E8\u3001\u7AE0\u8282\u6807\u9898\u3001\u5B66\u79D1\u672F\u8BED\u6216\u76F8\u90BB\u53E5\u552F\u4E00\u63A8\u65AD\u51FA\u7F3A\u5B57/\u9519\u5B57\uFF0C\u76F4\u63A5\u4FEE\u6B63\u4E3A\u6700\u53EF\u80FD\u539F\u6587
@@ -7654,15 +7658,39 @@ function splitTextbookWindows(text, maxChars = DEFAULT_TEXTBOOK_WINDOW_CHARS, ov
 }
 function isTransientAiWindowError(error) {
   const message = error instanceof Error ? error.message : String(error);
-  return /EMPTY_RESPONSE|CONNECTION_CLOSED|CONNECTION_RESET|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ERR_|timeout|aborted|network/i.test(message);
+  return /EMPTY_RESPONSE|CONNECTION_CLOSED|CONNECTION_RESET|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ERR_|timeout|aborted|network|empty chat response|接口响应内容为空|AI 返回内容为空/i.test(message);
 }
 function getTextbookCleanerSettings(settings) {
   const configured = Number(settings.aiMaxTokens);
-  const safeOutputBudget = Number.isFinite(configured) ? Math.min(Math.max(configured, 8192), 32768) : 16384;
+  const isMiniMax = settings.aiProvider === "minimax" || /minimax/i.test(settings.aiModel);
+  const isMiniMaxM3 = /m3/i.test(settings.aiModel);
+  const upper = isMiniMax ? isMiniMaxM3 ? 524288 : 204800 : 65536;
+  const recommended = isMiniMax ? 131072 : 32768;
+  const safeOutputBudget = Number.isFinite(configured) ? Math.min(Math.max(configured, recommended), upper) : recommended;
   return {
     ...settings,
     aiMaxTokens: safeOutputBudget
   };
+}
+function clampInt(value, fallback, min, max) {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(Math.round(parsed), min), max);
+}
+function getTextbookWindowOptions(manifest) {
+  const maxChars = clampInt(
+    manifest.window_chars,
+    DEFAULT_TEXTBOOK_WINDOW_CHARS,
+    MIN_TEXTBOOK_WINDOW_CHARS,
+    MAX_TEXTBOOK_WINDOW_CHARS
+  );
+  const overlapChars = clampInt(
+    manifest.window_overlap_chars,
+    DEFAULT_TEXTBOOK_WINDOW_OVERLAP_CHARS,
+    MIN_TEXTBOOK_WINDOW_OVERLAP_CHARS,
+    Math.min(MAX_TEXTBOOK_WINDOW_OVERLAP_CHARS, Math.max(MIN_TEXTBOOK_WINDOW_OVERLAP_CHARS, Math.floor(maxChars / 4)))
+  );
+  return { maxChars, overlapChars };
 }
 function isVaultTextFile(file) {
   return !!file && typeof file.path === "string";
@@ -7681,6 +7709,15 @@ function renderProgressOutput(cleanedParts, status) {
   return body ? `${body}
 
 ${marker}` : marker;
+}
+function renderFailedWindowFallback(windowText, error) {
+  return [
+    `> [!warning] \u672C\u7A97\u53E3 AI \u6574\u7406\u5931\u8D25\uFF0C\u5DF2\u4FDD\u7559\u539F\u59CB OCR \u6587\u672C\u4EE5\u907F\u514D\u5185\u5BB9\u4E22\u5931\u3002\u9519\u8BEF\uFF1A${error}`,
+    "",
+    "```text",
+    windowText.trim(),
+    "```"
+  ].join("\n");
 }
 async function cleanWindowWithFallback(ai, promptTemplate, context, windowText, prevWindowTailOverride) {
   const effectivePrevWindowTail = prevWindowTailOverride ?? context.prevWindowTail;
@@ -7767,11 +7804,13 @@ async function cleanBook(app, settings, manifest, options) {
       await app.vault.createFolder(partDir).catch((e) => {
         if (!String(e?.message ?? "").includes("already exists")) throw e;
       });
-      const windows = splitTextbookWindows(ocrText);
+      const windowOptions = getTextbookWindowOptions(manifest);
+      const windows = splitTextbookWindows(ocrText, windowOptions.maxChars, windowOptions.overlapChars);
       if (windows.length === 0) {
         throw new Error("\u6E90\u7B14\u8BB0\u5185\u5BB9\u4E3A\u7A7A\uFF0C\u65E0\u6CD5\u6574\u7406");
       }
       const cleanedParts = [];
+      const failedWindows = [];
       for (const windowInfo of windows) {
         await writeVaultText(app, outputPath, renderProgressOutput(
           cleanedParts,
@@ -7786,17 +7825,34 @@ async function cleanBook(app, settings, manifest, options) {
           windowTotal: windowInfo.total
         });
         const promptTemplate = manifest.prompt_override?.trim() || TEXTBOOK_WINDOW_PROMPT;
-        const windowParts = await cleanWindowWithFallback(ai, promptTemplate, {
-          bookTitle: manifest.book_title,
-          chapterNumber: chapter.number,
-          chapterTitle: chapter.title,
-          pageRange: chapter.page_range ? `${chapter.page_range[0]}\u2013${chapter.page_range[1]}` : "\uFF08\u672A\u6307\u5B9A\uFF09",
-          prevTail,
-          nextHead,
-          windowIndex: windowInfo.index,
-          windowTotal: windowInfo.total,
-          prevWindowTail: windowInfo.prevTail
-        }, windowInfo.text);
+        let windowParts;
+        try {
+          windowParts = await cleanWindowWithFallback(ai, promptTemplate, {
+            bookTitle: manifest.book_title,
+            chapterNumber: chapter.number,
+            chapterTitle: chapter.title,
+            pageRange: chapter.page_range ? `${chapter.page_range[0]}\u2013${chapter.page_range[1]}` : "\uFF08\u672A\u6307\u5B9A\uFF09",
+            prevTail,
+            nextHead,
+            windowIndex: windowInfo.index,
+            windowTotal: windowInfo.total,
+            prevWindowTail: windowInfo.prevTail
+          }, windowInfo.text);
+        } catch (windowErr) {
+          const error = windowErr?.message ?? String(windowErr);
+          failedWindows.push({ window: windowInfo.index + 1, error });
+          console.error(`[textbook-cleaner] chapter ${chapter.id} window ${windowInfo.index + 1}/${windowInfo.total} failed:`, windowErr);
+          windowParts = [renderFailedWindowFallback(windowInfo.text, error)];
+          options?.onProgress?.({
+            phase: "failed",
+            index: i,
+            total: manifest.chapters.length,
+            chapter,
+            windowIndex: windowInfo.index,
+            windowTotal: windowInfo.total,
+            result: { ok: false, error }
+          });
+        }
         for (const cleanedPart of windowParts) {
           cleanedParts.push(cleanedPart.trim());
           const partName = `part-${String(cleanedParts.length).padStart(3, "0")}.md`;
@@ -7818,16 +7874,23 @@ async function cleanBook(app, settings, manifest, options) {
         }
       }
       const cleaned = cleanedParts.join("\n\n");
-      await writeVaultText(app, outputPath, cleaned);
+      const finalOutput = failedWindows.length > 0 ? [
+        cleaned,
+        "",
+        "## AI \u6574\u7406\u5931\u8D25\u7A97\u53E3",
+        "",
+        ...failedWindows.map((failure) => `- \u7A97\u53E3 ${failure.window}/${windows.length}: ${failure.error}`)
+      ].join("\n") : cleaned;
+      await writeVaultText(app, outputPath, finalOutput);
       outputById.set(chapter.id, outputPath);
-      tailById.set(chapter.id, extractTailParagraphs(cleaned));
+      tailById.set(chapter.id, extractTailParagraphs(finalOutput));
       succeeded++;
       options?.onProgress?.({
         phase: "succeeded",
         index: i,
         total: manifest.chapters.length,
         chapter,
-        result: { ok: true, outputPath: resolveVaultPath(app, outputPath), chars: cleaned.length }
+        result: { ok: true, outputPath: resolveVaultPath(app, outputPath), chars: finalOutput.length }
       });
     } catch (e) {
       const msg = e?.message ?? String(e);

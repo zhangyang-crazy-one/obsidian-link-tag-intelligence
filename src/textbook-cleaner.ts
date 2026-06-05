@@ -85,12 +85,20 @@ export type TextbookManifest = {
   /** Optional override for the cleanup prompt. If unset, the
    *  built-in textbook prompt is used. */
   prompt_override?: string;
+  /** Optional per-AI-call input window size. Defaults are tuned for
+   *  modern 200k-context models rather than tiny legacy chunks. */
+  window_chars?: number;
+  /** Optional overlap between adjacent windows, in characters. */
+  window_overlap_chars?: number;
   chapters: TextbookChapter[];
 };
 
-const DEFAULT_TEXTBOOK_WINDOW_CHARS = 4_000;
-const DEFAULT_TEXTBOOK_WINDOW_OVERLAP_CHARS = 300;
+const DEFAULT_TEXTBOOK_WINDOW_CHARS = 80_000;
+const DEFAULT_TEXTBOOK_WINDOW_OVERLAP_CHARS = 2_000;
 const MIN_TEXTBOOK_WINDOW_CHARS = 2_000;
+const MAX_TEXTBOOK_WINDOW_CHARS = 120_000;
+const MIN_TEXTBOOK_WINDOW_OVERLAP_CHARS = 300;
+const MAX_TEXTBOOK_WINDOW_OVERLAP_CHARS = 8_000;
 
 const TEXTBOOK_PROMPT = `你是中文/英文教材排版修复专家。当前输入是 1 个章节（20-50 页）的 OCR 识别文本，输出应该是该章节清理后的完整 Markdown。
 
@@ -133,6 +141,7 @@ const TEXTBOOK_WINDOW_PROMPT = `你是中文/英文教材 OCR 排版修复专家
 - 修复 OCR 错字、错误断行、页眉页脚、乱码和排版混乱
 - 保留原文信息，不扩写，不删减，不总结，不把教材整理成摘要
 - 定义、定理、公式、例题、习题、表格、图注、编号、脚注必须保留
+- 当前窗口可能与上一窗口有少量重叠；重叠内容只用于衔接，不要重复输出已在上一窗口整理过的内容
 - 公式用 LaTeX，表格尽量还原为 Markdown 表格，复杂表格可用 HTML <table>
 - 图表只保留标题/说明，占位为 [图 X.Y 描述：...]
 - OCR 猜测补全：如果能从本窗口、上一窗口尾部、章节标题、学科术语或相邻句唯一推断出缺字/错字，直接修正为最可能原文
@@ -332,18 +341,46 @@ function splitTextbookWindows(
 
 function isTransientAiWindowError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /EMPTY_RESPONSE|CONNECTION_CLOSED|CONNECTION_RESET|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ERR_|timeout|aborted|network/i.test(message);
+  return /EMPTY_RESPONSE|CONNECTION_CLOSED|CONNECTION_RESET|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ERR_|timeout|aborted|network|empty chat response|接口响应内容为空|AI 返回内容为空/i.test(message);
 }
 
 function getTextbookCleanerSettings(settings: LinkTagIntelligenceSettings): LinkTagIntelligenceSettings {
   const configured = Number(settings.aiMaxTokens);
+  const isMiniMax = settings.aiProvider === "minimax" || /minimax/i.test(settings.aiModel);
+  const isMiniMaxM3 = /m3/i.test(settings.aiModel);
+  const upper = isMiniMax
+    ? (isMiniMaxM3 ? 524_288 : 204_800)
+    : 65_536;
+  const recommended = isMiniMax ? 131_072 : 32_768;
   const safeOutputBudget = Number.isFinite(configured)
-    ? Math.min(Math.max(configured, 8_192), 32_768)
-    : 16_384;
+    ? Math.min(Math.max(configured, recommended), upper)
+    : recommended;
   return {
     ...settings,
     aiMaxTokens: safeOutputBudget,
   };
+}
+
+function clampInt(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(Math.round(parsed), min), max);
+}
+
+function getTextbookWindowOptions(manifest: TextbookManifest): { maxChars: number; overlapChars: number } {
+  const maxChars = clampInt(
+    manifest.window_chars,
+    DEFAULT_TEXTBOOK_WINDOW_CHARS,
+    MIN_TEXTBOOK_WINDOW_CHARS,
+    MAX_TEXTBOOK_WINDOW_CHARS,
+  );
+  const overlapChars = clampInt(
+    manifest.window_overlap_chars,
+    DEFAULT_TEXTBOOK_WINDOW_OVERLAP_CHARS,
+    MIN_TEXTBOOK_WINDOW_OVERLAP_CHARS,
+    Math.min(MAX_TEXTBOOK_WINDOW_OVERLAP_CHARS, Math.max(MIN_TEXTBOOK_WINDOW_OVERLAP_CHARS, Math.floor(maxChars / 4))),
+  );
+  return { maxChars, overlapChars };
 }
 
 function isVaultTextFile(file: unknown): file is TFile {
@@ -363,6 +400,16 @@ function renderProgressOutput(cleanedParts: string[], status: string): string {
   const body = cleanedParts.map((part) => part.trim()).filter(Boolean).join("\n\n");
   const marker = `> [!info] ${status}`;
   return body ? `${body}\n\n${marker}` : marker;
+}
+
+function renderFailedWindowFallback(windowText: string, error: string): string {
+  return [
+    `> [!warning] 本窗口 AI 整理失败，已保留原始 OCR 文本以避免内容丢失。错误：${error}`,
+    "",
+    "```text",
+    windowText.trim(),
+    "```",
+  ].join("\n");
 }
 
 async function cleanWindowWithFallback(
@@ -560,12 +607,14 @@ export async function cleanBook(
         if (!String(e?.message ?? "").includes("already exists")) throw e;
       });
 
-      const windows = splitTextbookWindows(ocrText);
+      const windowOptions = getTextbookWindowOptions(manifest);
+      const windows = splitTextbookWindows(ocrText, windowOptions.maxChars, windowOptions.overlapChars);
       if (windows.length === 0) {
         throw new Error("源笔记内容为空，无法整理");
       }
 
       const cleanedParts: string[] = [];
+      const failedWindows: Array<{ window: number; error: string }> = [];
       for (const windowInfo of windows) {
         await writeVaultText(app, outputPath, renderProgressOutput(
           cleanedParts,
@@ -581,17 +630,34 @@ export async function cleanBook(
         });
 
         const promptTemplate = manifest.prompt_override?.trim() || TEXTBOOK_WINDOW_PROMPT;
-        const windowParts = await cleanWindowWithFallback(ai, promptTemplate, {
-          bookTitle: manifest.book_title,
-          chapterNumber: chapter.number,
-          chapterTitle: chapter.title,
-          pageRange: chapter.page_range ? `${chapter.page_range[0]}–${chapter.page_range[1]}` : "（未指定）",
-          prevTail,
-          nextHead,
-          windowIndex: windowInfo.index,
-          windowTotal: windowInfo.total,
-          prevWindowTail: windowInfo.prevTail,
-        }, windowInfo.text);
+        let windowParts: string[];
+        try {
+          windowParts = await cleanWindowWithFallback(ai, promptTemplate, {
+            bookTitle: manifest.book_title,
+            chapterNumber: chapter.number,
+            chapterTitle: chapter.title,
+            pageRange: chapter.page_range ? `${chapter.page_range[0]}–${chapter.page_range[1]}` : "（未指定）",
+            prevTail,
+            nextHead,
+            windowIndex: windowInfo.index,
+            windowTotal: windowInfo.total,
+            prevWindowTail: windowInfo.prevTail,
+          }, windowInfo.text);
+        } catch (windowErr: any) {
+          const error = windowErr?.message ?? String(windowErr);
+          failedWindows.push({ window: windowInfo.index + 1, error });
+          console.error(`[textbook-cleaner] chapter ${chapter.id} window ${windowInfo.index + 1}/${windowInfo.total} failed:`, windowErr);
+          windowParts = [renderFailedWindowFallback(windowInfo.text, error)];
+          options?.onProgress?.({
+            phase: "failed",
+            index: i,
+            total: manifest.chapters.length,
+            chapter,
+            windowIndex: windowInfo.index,
+            windowTotal: windowInfo.total,
+            result: { ok: false, error },
+          });
+        }
 
         for (const cleanedPart of windowParts) {
           cleanedParts.push(cleanedPart.trim());
@@ -616,13 +682,22 @@ export async function cleanBook(
       }
 
       const cleaned = cleanedParts.join("\n\n");
+      const finalOutput = failedWindows.length > 0
+        ? [
+            cleaned,
+            "",
+            "## AI 整理失败窗口",
+            "",
+            ...failedWindows.map((failure) => `- 窗口 ${failure.window}/${windows.length}: ${failure.error}`),
+          ].join("\n")
+        : cleaned;
 
       // Write the final cleaned output without the live progress marker.
-      await writeVaultText(app, outputPath, cleaned);
+      await writeVaultText(app, outputPath, finalOutput);
 
       // Cache for cross-chapter lookups.
       outputById.set(chapter.id, outputPath);
-      tailById.set(chapter.id, extractTailParagraphs(cleaned));
+      tailById.set(chapter.id, extractTailParagraphs(finalOutput));
 
       succeeded++;
       options?.onProgress?.({
@@ -630,7 +705,7 @@ export async function cleanBook(
         index: i,
         total: manifest.chapters.length,
         chapter,
-        result: { ok: true, outputPath: resolveVaultPath(app, outputPath), chars: cleaned.length },
+        result: { ok: true, outputPath: resolveVaultPath(app, outputPath), chars: finalOutput.length },
       });
     } catch (e: any) {
       const msg = e?.message ?? String(e);
