@@ -1348,6 +1348,7 @@ export class PaddleOcrService {
   }>();
   private readyPromise: Promise<void> | null = null;
   private readyResolve: (() => void) | null = null;
+  private readyReject: ((err: Error) => void) | null = null;
   private destroyed = false;
   private initialized = false;
 
@@ -1373,8 +1374,9 @@ export class PaddleOcrService {
    */
   private ensureWorker(): Promise<void> {
     if (this.readyPromise) return this.readyPromise;
-    this.readyPromise = new Promise<void>((resolve) => {
+    this.readyPromise = new Promise<void>((resolve, reject) => {
       this.readyResolve = resolve;
+      this.readyReject = reject;
     });
     const isWindows = process.platform === "win32";
     // Belt-and-suspenders: include the project root's node_modules in
@@ -1394,23 +1396,27 @@ export class PaddleOcrService {
     });
     this.child.on("error", (e) => {
       const err = new Error(`paddle-ocr-worker spawn failed: ${e.message}`);
+      this.readyReject?.(err);
       for (const job of this.pending.values()) job.reject(err);
       this.pending.clear();
       this.child = null;
       this.readyPromise = null;
       this.readyResolve = null;
+      this.readyReject = null;
     });
     this.child.on("exit", (code, signal) => {
+      const err = new Error(
+        `paddle-ocr-worker exited unexpectedly (code=${code}, signal=${signal})`,
+      );
+      this.readyReject?.(err);
       if (this.pending.size > 0) {
-        const err = new Error(
-          `paddle-ocr-worker exited unexpectedly (code=${code}, signal=${signal})`,
-        );
         for (const job of this.pending.values()) job.reject(err);
         this.pending.clear();
       }
       this.child = null;
       this.readyPromise = null;
       this.readyResolve = null;
+      this.readyReject = null;
     });
     const rl = _createInterface({ input: this.child!.stdout! });
     rl.on("line", (raw: string) => {
@@ -1419,6 +1425,7 @@ export class PaddleOcrService {
       if (msg.type === "ready") {
         this.readyResolve?.();
         this.readyResolve = null;
+        this.readyReject = null;
         return;
       }
       if (msg.type === "progress") {
@@ -1501,5 +1508,9 @@ export class PaddleOcrService {
       job.reject(new Error("PaddleOcrService 已被销毁"));
     }
     this.pending.clear();
+    this.readyReject?.(new Error("PaddleOcrService 已被销毁"));
+    this.readyPromise = null;
+    this.readyResolve = null;
+    this.readyReject = null;
   }
 }
