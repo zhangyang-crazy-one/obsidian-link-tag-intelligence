@@ -132,11 +132,44 @@ describe("AIService endpoint routing", () => {
     expect(JSON.parse(calls[0].body).thinking).toBeUndefined();
   });
 
+  it("uses the official Anthropic Messages base path for api.anthropic.com", async () => {
+    const calls: any[] = [];
+    installStreamMock(calls);
+
+    const service = new AIService(makeApp() as any, makeSettings({
+      aiProvider: "anthropic",
+      aiApiStyle: "anthropic",
+      aiBaseUrl: "https://api.anthropic.com",
+      aiModel: "claude-3-5-sonnet-20241022",
+    }) as any);
+    await expect(service.runRefinement("hello")).resolves.toBe("ok");
+
+    expect(calls[0].url).toBe("https://api.anthropic.com/v1/messages");
+    expect(calls[0].url).not.toContain("/anthropic/v1/messages");
+  });
+
   it("retries transient Electron connection closed errors", async () => {
     const calls: any[] = [];
     installStreamMock(calls, async () => {
       if (calls.length === 1) {
         throw new Error("net::ERR_CONNECTION_CLOSED");
+      }
+      return { status: 200, text: "retry ok", json: { content: [{ type: "text", text: "retry ok" }] } };
+    });
+
+    const service = new AIService(makeApp() as any, makeSettings({
+      aiRequestRetries: 2,
+      aiRequestRetryBaseMs: 1,
+    }) as any);
+    await expect(service.runRefinement("hello")).resolves.toBe("retry ok");
+    expect(calls).toHaveLength(2);
+  });
+
+  it("retries HTTP 429 responses inside the retry loop", async () => {
+    const calls: any[] = [];
+    installStreamMock(calls, async () => {
+      if (calls.length === 1) {
+        return { status: 429, text: "rate limited", json: {} };
       }
       return { status: 200, text: "retry ok", json: { content: [{ type: "text", text: "retry ok" }] } };
     });

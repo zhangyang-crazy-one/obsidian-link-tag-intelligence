@@ -326,6 +326,9 @@ export class AIService {
     }
 
     if (family === "anthropic") {
+      if (/^https:\/\/api\.anthropic\.com(?:\/v1)?$/i.test(baseUrl)) {
+        return baseUrl.toLowerCase().endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
+      }
       if (baseUrl.toLowerCase().endsWith("/anthropic/v1")) {
         return baseUrl;
       }
@@ -384,7 +387,7 @@ export class AIService {
 
         // Return immediately if it's a successful response (200),
         // or a standard client error (4xx) which we should not retry.
-        if (response.status === 200 || (response.status >= 400 && response.status < 500)) {
+        if (response.status === 200 || (response.status >= 400 && response.status < 500 && response.status !== 429)) {
           if (response.status === 200) validate?.(response);
           return response;
         }
