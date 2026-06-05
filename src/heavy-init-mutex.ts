@@ -1,7 +1,6 @@
 // Heavy-init mutex — serializes model downloads and child-process spawns
-// so audio (sherpa-onnx), OCR (PaddleOCR / Kreuzberg), and VLM
-// (LFM2.5-VL-450M via child process) never compete for CPU/disk/RAM
-// at the same time.
+// so audio (sherpa-onnx) and OCR (PaddleOCR / Kreuzberg) never compete
+// for CPU/disk/RAM at the same time.
 //
 // Each heavy operation wraps itself in withHeavyInit("name", fn).
 // The mutex queue runs operations one at a time, FIFO. A second
@@ -9,10 +8,9 @@
 // completes (or its own AbortSignal aborts).
 //
 // Verified 2026-06-03 against the failure mode where a user recording
-// audio, OCRing an image, and asking for an image caption in quick
-// succession caused all three models to download + load concurrently,
-// peaking at 1.5+GB RSS spikes. Serializing them caps the peak at
-// whichever single model is the largest (~1GB for LFM2.5-VL-450M).
+// audio and OCR in quick succession caused model downloads + loads to
+// overlap. Serializing them caps the peak at whichever single operation
+// is currently running.
 
 type HeavyInitTask = () => Promise<unknown>;
 

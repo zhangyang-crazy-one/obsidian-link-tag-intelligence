@@ -14,14 +14,8 @@ type TranslationKey =
   | "suggestTags"
   | "ingestionCapture"
   | "semanticSearch"
-  | "visionOcr"
-  | "visionTagging"
-  | "visionModelDiagnosticButton"
-  | "visionModelFirstRunTitle"
-  | "visionModelFirstRunGuide"
-  | "visionDiagnosticOk"
-  | "visionDiagnosticFail"
-  | "visionPaddleOcrMissing"
+  | "ocr"
+  | "textbookCleanup"
   | "paddleOcrTierLabel"
   | "paddleOcrTierDesc"
   | "paddleOcrTierMobileLabel"
@@ -49,12 +43,16 @@ type TranslationKey =
   | "paddleDetMaxCandidatesDesc"
   | "paddleDetLimitSideLenLabel"
   | "paddleDetLimitSideLenDesc"
+  | "paddleOcrCpuThreadsLabel"
+  | "paddleOcrCpuThreadsDesc"
+  | "paddleOcrPdfConcurrencyLabel"
+  | "paddleOcrPdfConcurrencyDesc"
+  | "paddleOcrPdfDpiLabel"
+  | "paddleOcrPdfDpiDesc"
   | "paddleDetScoreModeLabel"
   | "paddleDetScoreModeDesc"
   | "paddleDetUseDilationLabel"
   | "paddleDetUseDilationDesc"
-  | "visionTesseractMissing"
-  | "visionQwenVlMissing"
   | "currentNote"
   | "outgoingLinks"
   | "backlinks"
@@ -341,6 +339,8 @@ type TranslationKey =
   | "aiModelDescription"
   | "aiMaxTokens"
   | "aiMaxTokensDescription"
+  | "aiTemperature"
+  | "aiTemperatureDescription"
   | "aiApiKey"
   | "aiApiKeyDescription"
   | "aiBaseUrl"
@@ -479,14 +479,8 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     suggestTags: "Suggest tags for current note",
     ingestionCapture: "Ingest research source",
     semanticSearch: "Semantic search via external command",
-    visionOcr: "Local offline image OCR",
-    visionTagging: "Local image vision tagging",
-    visionModelDiagnosticButton: "Run model diagnostics",
-    visionModelFirstRunTitle: "Vision model files missing",
-    visionModelFirstRunGuide: "The 3-tier OCR/Vision pipeline needs local model files. Click \"Run model diagnostics\" in Settings → Vision to see exactly what's missing, then download from a HuggingFace mirror (https://hf-mirror.com). PaddleOCR is the primary OCR engine (~30MB); Tesseract is the fallback; Qwen2-VL handles image semantics.",
-    visionDiagnosticOk: "All vision model files are present.",
-    visionDiagnosticFail: "Some vision model files are missing — see report above.",
-    visionPaddleOcrMissing: "PaddleOCR model missing at {path}. Run the model diagnostics button to see which file is needed.",
+    ocr: "Local offline OCR",
+    textbookCleanup: "Clean textbook OCR",
     paddleOcrTierLabel: "PaddleOCR model tier",
     paddleOcrTierDesc: "PP-OCRv5 model size. Mobile = fast / low memory. Server = best accuracy, default. Hybrid = mobile detector + server recognizer. Switching tiers triggers a model download on next OCR call.",
     paddleOcrTierMobileLabel: "Mobile — fast, ~22 MB",
@@ -514,12 +508,16 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     paddleDetMaxCandidatesDesc: "Hard cap for performance. Range 100–5000. PaddleOCR default: 1000.",
     paddleDetLimitSideLenLabel: "Long-side resize for inference",
     paddleDetLimitSideLenDesc: "Image is downscaled so its longest side is this value before detection. Higher = slower but more accurate for small text. Range 320–2048. PaddleOCR default: 960.",
+    paddleOcrCpuThreadsLabel: "ONNX CPU threads",
+    paddleOcrCpuThreadsDesc: "Threads per PaddleOCR worker. 0 = auto (about half of CPU cores, capped at 8). Higher can speed up inference but each parallel PDF page worker also uses this many threads.",
+    paddleOcrPdfConcurrencyLabel: "PDF page OCR concurrency",
+    paddleOcrPdfConcurrencyDesc: "How many scanned PDF pages to OCR in parallel. 2 is safe; 3-4 can use more CPU if memory is available. Range 1-8.",
+    paddleOcrPdfDpiLabel: "PDF rasterization DPI",
+    paddleOcrPdfDpiDesc: "DPI used when rendering scanned PDF pages before OCR. Lower is faster; higher preserves small text. Range 96-300. Default: 150.",
     paddleDetScoreModeLabel: "Score mode",
     paddleDetScoreModeDesc: "fast = mean of pixels in axis-aligned bbox. slow = mean inside polygon (more accurate, slower).",
     paddleDetUseDilationLabel: "Dilate segmentation map",
     paddleDetUseDilationDesc: "Apply 3×3 dilation to the binarized map before contour finding. Useful for dense small text. PaddleOCR mobile default: true.",
-    visionTesseractMissing: "Tesseract language data missing at {path}. Run the model diagnostics button to see which file is needed.",
-    visionQwenVlMissing: "Qwen2-VL (or alternative VLM) model missing at {path}.",
     currentNote: "Current note",
     outgoingLinks: "Outgoing links",
     backlinks: "Backlinks",
@@ -653,7 +651,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsWorkbenchPagePlugins: "Plugins",
     settingsWorkbenchPageWorkflow: "Workflow",
     settingsWorkbenchPageTaxonomy: "Taxonomy",
-    settingsWorkbenchPageSpeech: "Voice",
+    settingsWorkbenchPageSpeech: "Local AI",
     settingsWorkbenchOn: "On",
     settingsWorkbenchOff: "Off",
     settingsWorkbenchDetails: "Details",
@@ -792,26 +790,28 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     speechRecordTooltipProcessing: "Processing...",
     speechRecordTooltipRecording: "Recording... Click to stop",
     speechSettingsDescription: "Configure speech recognition model, language, and recording behavior. All processing is local.",
-    speechSettingsHeading: "Voice",
+    speechSettingsHeading: "Speech Recognition",
     speechShortcutConflict: "Shortcut Ctrl+Shift+V is already in use. Please configure manually in Obsidian hotkey settings.",
     speechToggleCommand: "Toggle voice input",
     speechVadSensitivity: "VAD sensitivity",
     speechVadSensitivityDescription: "0=Lecture (2.4s pause)  1=Slow (1.8s)  2=Normal (1.5s)  3=Fast (0.8s). Higher = shorter sentence breaks.",
     settingsWorkbenchPageAI: "AI Helper",
     aiSettingsHeading: "AI Transcription & Refinement",
-    aiSettingsDescription: "Configure API access for OpenAI-compatible, Anthropic, DeepSeek, or MiniMax providers. Setup prompt templates to automatically transcribe and polish audio files.",
+    aiSettingsDescription: "Configure the shared AI endpoint used by transcription polishing, textbook cleanup, and other AI text tasks.",
     aiProvider: "AI Provider",
-    aiProviderDescription: "Choose the API provider for Chat and LLM-based post-processing.",
+    aiProviderDescription: "Choose the endpoint preset / billing account. Wire format is selected separately below.",
     aiModel: "Model Name",
     aiModelDescription: "Model name for chat completions (e.g., gpt-4o-mini, deepseek-chat, claude-3-5-sonnet-20241022).",
     aiMaxTokens: "Max Output Tokens",
-    aiMaxTokensDescription: "Maximum tokens allowed in the generated response (e.g., 4096, 8192, 16384). Important for reasoning models.",
+    aiMaxTokensDescription: "Maximum output tokens, not context-window size. For textbook cleanup, 8192-32768 is usually safer; MiniMax-M3 is clamped to 524288, older M2.x to 204800.",
+    aiTemperature: "Temperature",
+    aiTemperatureDescription: "Sampling randomness, range 0-2. Lower is more deterministic. 1.0 is recommended for text cleanup / general tasks. Reasoning models ignore this value.",
     aiApiKey: "API Key",
     aiApiKeyDescription: "API secret key for authorization. Handled securely.",
     aiBaseUrl: "API Base URL",
-    aiBaseUrlDescription: "Base URL for the provider API endpoint (e.g., https://api.openai.com/v1, https://api.deepseek.com).",
+    aiBaseUrlDescription: "Base URL for the endpoint (e.g., https://api.openai.com/v1, https://api.deepseek.com, https://api.minimaxi.com).",
     aiApiStyle: "API Wire Format",
-    aiApiStyleDescription: "Only applies to the MiniMax provider: pick Anthropic-style requests to enable image/multimodal inputs (uses /anthropic/v1/messages).",
+    aiApiStyleDescription: "Controls request/response shape only. Anthropic-compatible style can be used with MiniMax or other compatible gateways on their own Base URL.",
     aiApiStyleOpenAI: "OpenAI-compatible (/v1/chat/completions)",
     aiApiStyleAnthropic: "Anthropic-compatible (/anthropic/v1/messages, supports images)",
     aiAsrSource: "ASR Transcription Source",
@@ -943,14 +943,8 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     suggestTags: "为当前笔记推荐标签",
     ingestionCapture: "导入研究来源",
     semanticSearch: "通过外部命令进行语义检索",
-    visionOcr: "本地图片离线 OCR 提取",
-    visionTagging: "本地多模态图片打标描述",
-    visionModelDiagnosticButton: "运行模型诊断",
-    visionModelFirstRunTitle: "视觉模型文件缺失",
-    visionModelFirstRunGuide: "三级 OCR/视觉流水线依赖本地模型文件。打开 设置 → 视觉 区域点击「运行模型诊断」可查看具体缺失项，然后从 HuggingFace 镜像 (https://hf-mirror.com) 下载。PaddleOCR 为主 OCR 引擎 (~30MB)，Tesseract 为兜底，Qwen2-VL 处理图像语义。",
-    visionDiagnosticOk: "所有视觉模型文件已就绪。",
-    visionDiagnosticFail: "部分视觉模型文件缺失 — 详见上方报告。",
-    visionPaddleOcrMissing: "PaddleOCR 模型缺失：{path}。点击「运行模型诊断」查看具体缺失文件。",
+    ocr: "本地离线 OCR",
+    textbookCleanup: "教材整理",
     paddleOcrTierLabel: "PaddleOCR 模型档位",
     paddleOcrTierDesc: "PP-OCRv5 模型大小。Mobile = 速度快 / 内存低；Server = 精度最高（默认）；Hybrid = 移动端检测器 + 服务端识别器。切换档位后，下次 OCR 调用时会自动下载所选档位的模型。",
     paddleOcrTierMobileLabel: "Mobile — 速度快，约 22 MB",
@@ -978,12 +972,16 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     paddleDetMaxCandidatesDesc: "性能保护上限。范围 100–5000。官方默认：1000。",
     paddleDetLimitSideLenLabel: "推理时最长边长度",
     paddleDetLimitSideLenDesc: "检测前图片被缩放到此最长边。越大越慢但对小字越准。范围 320–2048。官方默认：960。",
+    paddleOcrCpuThreadsLabel: "ONNX CPU 线程数",
+    paddleOcrCpuThreadsDesc: "每个 PaddleOCR worker 使用的线程数。0 = 自动（约半数 CPU 核心，最高 8）。调高可加速推理，但 PDF 并发页 worker 也会各自占用这些线程。",
+    paddleOcrPdfConcurrencyLabel: "PDF 页面 OCR 并发数",
+    paddleOcrPdfConcurrencyDesc: "扫描版 PDF 同时识别的页数。2 较稳；内存充足时可试 3-4。范围 1-8。",
+    paddleOcrPdfDpiLabel: "PDF 渲染 DPI",
+    paddleOcrPdfDpiDesc: "扫描版 PDF 转图片时使用的 DPI。越低越快，越高越保留小字。范围 96-300。默认：150。",
     paddleDetScoreModeLabel: "得分模式",
     paddleDetScoreModeDesc: "fast = bbox 内均值（快）。slow = polygon 内均值（准但慢）。",
     paddleDetUseDilationLabel: "膨胀分割图",
     paddleDetUseDilationDesc: "在 contour 提取前对二值化图做 3×3 膨胀。密集小字场景有用。PaddleOCR 移动端默认：开。",
-    visionTesseractMissing: "Tesseract 语言包缺失：{path}。点击「运行模型诊断」查看具体缺失文件。",
-    visionQwenVlMissing: "Qwen2-VL (或其他视觉大模型) 模型缺失：{path}。",
     currentNote: "当前笔记",
     outgoingLinks: "出链",
     backlinks: "反链",
@@ -1117,7 +1115,7 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     settingsWorkbenchPagePlugins: "插件",
     settingsWorkbenchPageWorkflow: "工作流",
     settingsWorkbenchPageTaxonomy: "词表",
-    settingsWorkbenchPageSpeech: "语音",
+    settingsWorkbenchPageSpeech: "本地 AI",
     settingsWorkbenchOn: "开启",
     settingsWorkbenchOff: "关闭",
     settingsWorkbenchDetails: "详情",
@@ -1256,26 +1254,28 @@ const TRANSLATIONS: Record<UILanguage, Record<TranslationKey, string>> = {
     speechRecordTooltipProcessing: "正在处理...",
     speechRecordTooltipRecording: "正在录音... 点击停止",
     speechSettingsDescription: "配置语音识别模型、语言和录音行为。所有处理均在本地完成。",
-    speechSettingsHeading: "语音",
+    speechSettingsHeading: "语音识别",
     speechShortcutConflict: "快捷键 Ctrl+Shift+V 已被占用，请在 Obsidian 快捷键设置中手动配置。",
     speechToggleCommand: "切换语音输入",
     speechVadSensitivity: "VAD 灵敏度",
     speechVadSensitivityDescription: "0=课程讲座(2.4s停顿)  1=慢速(1.8s)  2=正常(1.5s)  3=快速(0.8s)。越高断句越频繁。",
     settingsWorkbenchPageAI: "AI 助手",
     aiSettingsHeading: "AI 智能转录与润色",
-    aiSettingsDescription: "配置 OpenAI 兼容、Anthropic、DeepSeek 或 MiniMax API。设置提示词模板，自动进行语音转录与大模型整理。",
+    aiSettingsDescription: "配置共享 AI 接口。语音转录整理、教材整理以及其他 AI 文本任务都会读取这里的服务商、模型、Base URL、协议风格和 API Key。",
     aiProvider: "AI 服务商",
-    aiProviderDescription: "选择用于文本润色和 Chat Completions 的 API 服务商。",
+    aiProviderDescription: "选择接口预设/计费账户。具体请求协议格式在下方单独选择。",
     aiModel: "模型名称",
     aiModelDescription: "大模型名称（例如 gpt-4o-mini, deepseek-chat, claude-3-5-sonnet-20241022）。",
     aiMaxTokens: "最大输出 Token 数",
-    aiMaxTokensDescription: "单次生成允许的最大 Token 数量（例如 4096, 8192, 16384）。对于带有深度思考推理过程的模型（如 MiniMax-M3、DeepSeek-R1）建议设为 8192 或更高，以防思考过程截断。",
+    aiMaxTokensDescription: "这是最大输出 Token 数，不是上下文窗口大小。教材整理通常建议 8192-32768；MiniMax-M3 会被限制到 524288，旧版 M2.x 限制到 204800，避免接口拒绝或空响应。",
+    aiTemperature: "采样温度 (Temperature)",
+    aiTemperatureDescription: "采样随机性，范围 0-2。越低越确定。教材整理/通用任务推荐 1.0。推理模型会忽略此值。",
     aiApiKey: "API 密钥 (API Key)",
     aiApiKeyDescription: "用于访问接口 of API Key，输入后将安全掩码显示。",
     aiBaseUrl: "API 接口地址 (Base URL)",
-    aiBaseUrlDescription: "接口基础地址（例如 https://api.openai.com/v1, https://api.deepseek.com）。",
+    aiBaseUrlDescription: "接口基础地址（例如 https://api.openai.com/v1, https://api.deepseek.com, https://api.minimaxi.com）。",
     aiApiStyle: "接口协议风格",
-    aiApiStyleDescription: "仅对 MiniMax 服务商生效：选择 Anthropic 风格可启用图片/多模态输入（使用 /anthropic/v1/messages 端点）。",
+    aiApiStyleDescription: "只控制请求/响应格式。Anthropic 兼容格式可用于 MiniMax 或其他兼容网关，不代表切换到 Anthropic 官方服务。",
     aiApiStyleOpenAI: "OpenAI 兼容 (/v1/chat/completions)",
     aiApiStyleAnthropic: "Anthropic 兼容 (/anthropic/v1/messages，支持图片)",
     aiAsrSource: "语音转文字 (ASR) 来源",

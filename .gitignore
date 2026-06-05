@@ -40,6 +40,8 @@ models/sensevoice/
 main.js
 asr-worker.js
 vision-worker.js
+kreuzberg-worker.js
+paddle-ocr-worker.js
 
 # Defensive: archives, coverage, build cache that occasionally appear
 *.zip
@@ -51,4 +53,3 @@ tmp/
 temp/
 *.bak
 *.orig
-

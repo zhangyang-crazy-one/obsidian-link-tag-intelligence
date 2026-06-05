@@ -13,6 +13,7 @@ import {
   PADDLE_MODEL_FILES,
   PADDLE_MODEL_SUBDIRS,
   PADDLE_TIER_SPECS,
+  DEFAULT_PADDLE_TIER,
   type PaddleDetConfig,
   type PaddleOcrModelTier,
 } from "./paddle-ocr-types";
@@ -25,9 +26,17 @@ type OrtSession = {
   release: () => Promise<void>;
 };
 
+type OrtSessionOptions = {
+  executionProviders?: string[];
+  intraOpNumThreads?: number;
+  interOpNumThreads?: number;
+  executionMode?: "sequential" | "parallel";
+  graphOptimizationLevel?: "disabled" | "basic" | "extended" | "all";
+};
+
 type OrtLike = {
   InferenceSession: {
-    create: (uri: string, options?: { executionProviders?: string[] }) => Promise<OrtSession>;
+    create: (uri: string, options?: OrtSessionOptions) => Promise<OrtSession>;
   };
   Tensor: new (type: "float32" | "uint8" | "int32" | "int64" | "bool" | "string" | "float16" | "float64" | "uint16" | "uint32" | "uint64" | "int8" | "int16" | "int4" | "uint4", data: Float32Array | Uint8Array | Int32Array | BigInt64Array | Uint8Array | string[] | Uint16Array | Float64Array | Uint32Array | BigUint64Array | Int8Array | Int16Array | Uint8Array | Int8Array, dims?: readonly number[]) => unknown;
 };
@@ -63,8 +72,9 @@ export class PaddleOcrEngine {
   // Detection hyperparameters (overridable via constructor options).
   // Defaults are PaddleOCR official values from `tools/infer/utility.py`.
   private readonly detConfig: PaddleDetConfig;
+  private readonly sessionOptions: OrtSessionOptions;
 
-  private static readonly IDLE_TIMEOUT_MS = 180_000; // 3 minutes, matches vision-service convention
+  private static readonly IDLE_TIMEOUT_MS = 180_000; // 3 minutes, matches OCR service convention
   private static readonly REC_IMG_HEIGHT = 48;
   private static readonly REC_MAX_WIDTH = 320;
   private static readonly CLS_IMG_HEIGHT = 48;
@@ -85,6 +95,7 @@ export class PaddleOcrEngine {
       sharp?: SharpLike;
       /** Override detection hyperparameters. Falls back to PaddleOCR defaults. */
       detConfig?: Partial<PaddleDetConfig>;
+      cpuThreads?: number;
       /**
        * Which PP-OCRv5 tier the files in `modelDir` belong to. Affects
        * which file paths checkModelFiles() probes, which yml file holds
@@ -102,7 +113,8 @@ export class PaddleOcrEngine {
     this.ort = deps?.ort ?? null;
     this.sharp = deps?.sharp ?? null;
     this.detConfig = { ...PADDLE_DET_DEFAULTS, ...(deps?.detConfig ?? {}) };
-    this.tier = deps?.tier ?? "mobile";
+    this.sessionOptions = this.buildSessionOptions(deps?.cpuThreads);
+    this.tier = deps?.tier ?? DEFAULT_PADDLE_TIER;
   }
 
   /**
@@ -158,7 +170,7 @@ export class PaddleOcrEngine {
       if (onStatus) onStatus("正在加载 PaddleOCR 文本检测模型...");
       this.detSession = await ort.InferenceSession.create(
         this.pathLib.join(this.modelDir, PADDLE_MODEL_SUBDIRS.det, PADDLE_MODEL_FILES.det),
-        { executionProviders: ["cpu"] }
+        this.sessionOptions
       );
 
       // cls is optional — PaddlePaddle has not released a PP-OCRv5 mobile cls ONNX
@@ -168,7 +180,7 @@ export class PaddleOcrEngine {
         try {
           this.clsSession = await ort.InferenceSession.create(
             this.pathLib.join(this.modelDir, PADDLE_MODEL_SUBDIRS.cls, PADDLE_MODEL_FILES.cls),
-            { executionProviders: ["cpu"] }
+            this.sessionOptions
           );
         } catch (e) {
           console.warn("[lti-paddle-ocr] cls 模型加载失败，跳过方向分类:", e);
@@ -181,7 +193,7 @@ export class PaddleOcrEngine {
       if (onStatus) onStatus("正在加载 PaddleOCR 文本识别模型...");
       this.recSession = await ort.InferenceSession.create(
         this.pathLib.join(this.modelDir, PADDLE_MODEL_SUBDIRS.rec, PADDLE_MODEL_FILES.rec),
-        { executionProviders: ["cpu"] }
+        this.sessionOptions
       );
 
       if (onStatus) onStatus("正在加载字符字典...");
@@ -256,6 +268,19 @@ export class PaddleOcrEngine {
   // ---------------------------------------------------------------------------
   // Internals
   // ---------------------------------------------------------------------------
+
+  private buildSessionOptions(cpuThreads?: number): OrtSessionOptions {
+    const threads = Number.isFinite(cpuThreads) && cpuThreads && cpuThreads > 0
+      ? Math.max(1, Math.min(32, Math.round(cpuThreads)))
+      : Math.max(1, Math.min(8, Math.floor((require("os").cpus()?.length ?? 2) / 2)));
+    return {
+      executionProviders: ["cpu"],
+      intraOpNumThreads: threads,
+      interOpNumThreads: Math.max(1, Math.min(2, Math.floor(threads / 2))),
+      executionMode: "parallel",
+      graphOptimizationLevel: "all",
+    };
+  }
 
   /**
    * Run the full det → cls → rec pipeline on a decoded image.
@@ -1113,11 +1138,10 @@ export class PaddleOcrEngine {
     } catch (e: any) {
       // The lazy require fails in Obsidian's Electron renderer for the
       // same sandbox reason @kreuzberg/node does — see
-      // vision-kill-respawn-architecture / kreuzberg-ocr-fallback
-      // memory. The actual install is fine (vault has onnxruntime-node
+      // kreuzberg-ocr-fallback memory. The actual install is fine (vault has onnxruntime-node
       // in node_modules/), but the renderer's module resolver blocks
       // the require. Tell the user the truth rather than suggesting a
-      // misleading `npm install`. The vision-service's runOcrWithFallback
+      // misleading `npm install`. The OCR service's runOcrWithFallback
       // catches this and falls through to Kreuzberg, so OCR still works
       // for the user — they just don't get PaddleOCR's faster mobile-
       // tier path until we port the service to a child process (same
@@ -1272,7 +1296,7 @@ export const _internal = { unquoteYamlString, parsePaddleOcrDictFromYml };
 //
 // Mirrors the spawn-based design of KreuzbergOcrService (see
 // src/kreuzberg-ocr-service.ts). This class is the public API used by
-// vision-service.ts; the PaddleOcrEngine above runs INSIDE the child
+// ocr-service.ts; the PaddleOcrEngine above runs INSIDE the child
 // process started by this class.
 //
 // Obsidian's Electron renderer can't resolve a bare-specifier require
@@ -1314,6 +1338,7 @@ export class PaddleOcrService {
   private readonly workerPath: string;
   private readonly detConfig: Record<string, unknown>;
   private readonly tier: "mobile" | "server" | "hybrid";
+  private readonly cpuThreads: number;
 
   private child: cp.ChildProcess | null = null;
   private readonly pending = new Map<string, {
@@ -1332,12 +1357,14 @@ export class PaddleOcrService {
     opts?: {
       detConfig?: Record<string, unknown>;
       tier?: "mobile" | "server" | "hybrid";
+      cpuThreads?: number;
     },
   ) {
     this.modelDir = modelDir;
     this.workerPath = workerPath;
     this.detConfig = opts?.detConfig ?? {};
     this.tier = opts?.tier ?? "mobile";
+    this.cpuThreads = Number.isFinite(opts?.cpuThreads) ? Math.max(0, Math.min(32, Math.round(opts?.cpuThreads ?? 0))) : 0;
   }
 
   /**
@@ -1428,6 +1455,7 @@ export class PaddleOcrService {
           modelDir: this.modelDir,
           detConfig: this.detConfig,
           tier: this.tier,
+          cpuThreads: this.cpuThreads,
           jobId,
         }) + "\n",
       );
@@ -1438,7 +1466,7 @@ export class PaddleOcrService {
   /** Run OCR on a local image path. Returns concatenated text. */
   public async runOcr(imagePath: string, onStatus?: (msg: string) => void): Promise<string> {
     if (this.destroyed) throw new Error("PaddleOcrService 已被销毁");
-    await this.init();
+    await this.init(onStatus);
     if (!this.child) throw new Error("paddle-ocr-worker not running");
     const jobId = randomUUID();
     return new Promise<string>((resolve, reject) => {

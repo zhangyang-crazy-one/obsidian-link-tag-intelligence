@@ -36,6 +36,8 @@ type ToolbarActionId =
   | "manageTags"
   | "suggestTags"
   | "semanticSearch"
+  | "ocr"
+  | "textbookCleanup"
   | "speechRecord";
 
 type SidebarSectionId =
@@ -411,7 +413,9 @@ export class LinkTagIntelligenceView extends ItemView {
       ["addRelation", () => this.plugin.openRelationFlow()],
       ["manageTags", () => this.plugin.openTagManager()],
       ["suggestTags", () => this.plugin.openTagSuggestion()],
-      ["semanticSearch", () => this.plugin.openSemanticSearch()]
+      ["semanticSearch", () => this.plugin.openSemanticSearch()],
+      ["ocr", () => { void this.plugin.runLocalOcrTask(); }],
+      ["textbookCleanup", () => { void this.plugin.runTextbookCleaner("current-note"); }]
     ];
   }
 

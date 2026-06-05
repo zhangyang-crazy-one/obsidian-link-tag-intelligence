@@ -1,8 +1,96 @@
 import { App, FileSystemAdapter, TFile, requestUrl, Notice } from "obsidian";
 import type { LinkTagIntelligenceSettings, AITemplate } from "./settings";
 import { getSpeechModelDir } from "./settings";
+import { debugLog } from "./debug-log";
 
 export type AIProgressCallback = (statusKey: string, detail?: string) => void;
+
+/**
+ * Accumulates Server-Sent Events from a streaming chat completion and
+ * reassembles them into the SAME JSON shape the non-streaming endpoint
+ * returns, so downstream parsing is identical.
+ *
+ *  - openai:   `data: {choices:[{delta:{content}}]}` lines, terminated
+ *              by `data: [DONE]`. Final shape:
+ *              `{choices:[{message:{content},finish_reason}], usage}`.
+ *  - anthropic: typed events (message_start / content_block_delta /
+ *              message_delta) carrying text deltas + usage. Final shape:
+ *              `{content:[{type:"text",text}], stop_reason, usage}`.
+ *
+ * Exported for unit testing of the SSE grammar.
+ */
+export class StreamAccumulator {
+  private content = "";
+  private finishReason: string | null = null;
+  private usage: any = null;
+  private raw = "";
+
+  constructor(private readonly flavor: "openai" | "anthropic") {}
+
+  /** Feed a single line (without trailing newline) from the SSE stream. */
+  pushLine(line: string): void {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith(":")) return; // blank or comment
+    if (!trimmed.startsWith("data:")) return;        // ignore `event:` lines
+    const payload = trimmed.slice(5).trim();
+    if (!payload || payload === "[DONE]") return;
+
+    let evt: any;
+    try {
+      evt = JSON.parse(payload);
+    } catch {
+      return; // tolerate partial/garbage lines
+    }
+    this.raw += payload + "\n";
+
+    if (this.flavor === "openai") {
+      const choice = evt.choices?.[0];
+      const delta = choice?.delta?.content;
+      if (typeof delta === "string") this.content += delta;
+      if (choice?.finish_reason) this.finishReason = choice.finish_reason;
+      if (evt.usage) this.usage = evt.usage;
+      return;
+    }
+
+    // anthropic
+    switch (evt.type) {
+      case "message_start":
+        if (evt.message?.usage) this.usage = { ...evt.message.usage };
+        break;
+      case "content_block_delta": {
+        const t = evt.delta?.text;
+        if (typeof t === "string") this.content += t;
+        break;
+      }
+      case "message_delta":
+        if (evt.delta?.stop_reason) this.finishReason = evt.delta.stop_reason;
+        if (evt.usage) this.usage = { ...(this.usage ?? {}), ...evt.usage };
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** The concatenated raw `data:` payloads (for debugging / text field). */
+  rawText(): string {
+    return this.raw;
+  }
+
+  /** Reassemble into a non-streaming-shaped response body. */
+  toResponseJson(): any {
+    if (this.flavor === "openai") {
+      return {
+        choices: [{ message: { content: this.content }, finish_reason: this.finishReason }],
+        usage: this.usage ?? undefined,
+      };
+    }
+    return {
+      content: [{ type: "text", text: this.content }],
+      stop_reason: this.finishReason,
+      usage: this.usage ?? undefined,
+    };
+  }
+}
 
 export class AIService {
   private app: App;
@@ -184,86 +272,68 @@ export class AIService {
       }
     }
 
-    if (this.settings.aiProvider === "minimax") {
+    if (this.isMiniMaxEndpoint()) {
       baseUrl = baseUrl.replace(/\/(?:anthropic(?:\/v1)?|v1)$/, "");
       return family === "anthropic"
         ? `${baseUrl}/anthropic/v1`
         : `${baseUrl}/v1`;
     }
 
-    return baseUrl;
+    if (family === "anthropic") {
+      if (baseUrl.toLowerCase().endsWith("/anthropic/v1")) {
+        return baseUrl;
+      }
+      if (baseUrl.toLowerCase().endsWith("/anthropic")) {
+        return `${baseUrl}/v1`;
+      }
+      return `${baseUrl}/anthropic/v1`;
+    }
+
+    if (baseUrl.toLowerCase().endsWith("/v1")) {
+      return baseUrl;
+    }
+    return `${baseUrl}/v1`;
   }
 
-  /**
-   * Compute the request timeout for a given prompt body. The
-   * default Obsidian requestUrl timeout (~30s) is too short for
-   * long-context models like MiniMax-M3 with 100K+ token inputs —
-   * the server can take 5+ minutes to process + stream back, and
-   * the client gives up before then, surfacing as
-   * `net::ERR_EMPTY_RESPONSE`.
-   *
-   * Heuristic: 1s per 1K input characters (covers CPU + first-byte
-   * latency for typical 100-200 tok/s generation rates), with a
-   * 5-minute minimum. For MiniMax-M3 specifically, double the
-   * heuristic because the model is larger and the request may
-   * include thinking-mode prefill.
-   */
-  /**
-   * Compute a SUGGESTED timeout for a given prompt body. Note: as of
-   * 2026-06-03, Obsidian's requestUrl API does NOT accept a
-   * `timeout` option in its RequestUrlParam interface — passing one
-   * is silently ignored. This function is therefore a hint for
-   * future expansion and for the per-chapter textbook-cleaner
-   * budget (see cleanBook in src/textbook-cleaner.ts). The actual
-   * network timeout is controlled by Electron's net module
-   * (~2-5 minutes default).
-   *
-   * Heuristic: 1s per 1K input characters with a 5-minute minimum.
-   * For MiniMax-M3 specifically, multiply by 2 to account for
-   * thinking-mode prefill latency.
-   */
-  private computeRequestTimeout(promptBody: string): number {
-    const base = 300_000; // 5 minutes
-    const perK = 1_000; // 1s per 1K chars
-    const fromSize = perK * Math.ceil((promptBody ?? "").length / 1024);
-    const provider = this.settings.aiProvider;
-    const multiplier = provider === "minimax" ? 2 : 1;
-    return Math.max(base, fromSize) * multiplier;
+  private isMiniMaxEndpoint(): boolean {
+    return this.settings.aiProvider === "minimax"
+      || /minimax/i.test(this.settings.aiModel)
+      || /minimax/i.test(this.settings.aiBaseUrl);
   }
 
   /**
    * Safe wrapper around requestUrl with automatic retry logic and
-   * user notices. Long-context calls (M3 with 500K input) get a
-   * timeout scaled to the prompt length; default short-context
-   * calls keep the previous 5-minute floor.
+   * user notices.
+   *
+   * Note: Obsidian's requestUrl API does NOT accept a `timeout`
+   * option (its RequestUrlParam interface has no such field), so the
+   * only knob we have for unstable long-context calls is the retry
+   * count / backoff (user-tunable via aiRequestRetries /
+   * aiRequestRetryBaseMs). For long prefills, the chat paths use a
+   * streaming backend instead (see streamChatRequest) which keeps
+   * the connection alive and avoids net::ERR_EMPTY_RESPONSE.
+   *
+   * `execute` lets the caller swap in a different request backend
+   * (e.g. the streaming one) while reusing this retry/backoff loop.
    */
   private async requestUrlWithRetry(
     options: any,
     maxRetries?: number,
     initialDelayMs?: number,
-    timeoutMs?: number,
+    execute?: (options: any) => Promise<{ status: number; text: string; json: any }>,
   ): Promise<any> {
     // Resolve retry config from settings (user-tunable) so they can
     // bump retries / base delay for unstable providers like M3
     // without code changes. Defaults preserve prior behavior.
     maxRetries = maxRetries ?? this.settings.aiRequestRetries ?? 5;
     initialDelayMs = initialDelayMs ?? this.settings.aiRequestRetryBaseMs ?? 2000;
-    // Inject the timeout into the requestUrl options if not already
-    // set. Obsidian's requestUrl accepts a `timeout` (ms) field; if
-    // the caller's options omit it, we apply our computed default
-    // based on the prompt size and provider.
-    const finalOptions = {
-      ...options,
-      timeout: timeoutMs ?? options.timeout ?? this.computeRequestTimeout(
-        typeof options.body === "string" ? options.body : "",
-      ),
-    };
+    const runRequest = execute ?? ((opts: any) => requestUrl(opts));
 
     let lastError: any = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const response = await requestUrl(finalOptions);
+        const response = await runRequest(options);
 
         // Return immediately if it's a successful response (200),
         // or a standard client error (4xx) which we should not retry.
@@ -278,7 +348,7 @@ export class AIService {
         // Classify the error. EMPTY_RESPONSE / aborted / network
         // errors are transient → retry. Hard 4xx (other than the
         // ones requestUrl re-throws) are persistent → don't retry.
-        const isTransient = /EMPTY_RESPONSE|aborted|network|fetch|timeout/i.test(errMsg)
+        const isTransient = /EMPTY_RESPONSE|CONNECTION_CLOSED|CONNECTION_RESET|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ERR_|aborted|network|fetch|timeout/i.test(errMsg)
           || errMsg.includes("status 5")
           || errMsg.includes("status 429");
         if (!isTransient && attempt < maxRetries) {
@@ -300,12 +370,111 @@ export class AIService {
   }
 
   /**
+   * Streaming request backend for chat completions. Uses Node's
+   * `https`/`http` directly (desktop-only — same `require` context as
+   * runLocalASR's child_process) instead of Obsidian's `requestUrl`,
+   * because requestUrl buffers the whole response and a long M3
+   * prefill stays silent long enough for Electron's net layer to drop
+   * the socket (net::ERR_EMPTY_RESPONSE / ERR_CONNECTION_CLOSED).
+   * A streamed (SSE) response keeps bytes flowing so the connection
+   * never goes idle.
+   *
+   * Returns the SAME shape as requestUrl ({status, text, json}) so the
+   * downstream parsing in runOpenAIChat / runAnthropicChat is reused
+   * unchanged. `flavor` selects the SSE event grammar.
+   */
+  private streamChatRequest(
+    options: { url: string; method?: string; headers?: Record<string, string>; body?: string },
+    flavor: "openai" | "anthropic",
+  ): Promise<{ status: number; text: string; json: any }> {
+    // Test injection point (mirrors __mockRequestUrl). Lets unit tests
+    // exercise the chat paths without a real socket. The mock receives
+    // the request options and the flavor and returns {status,text,json}.
+    const mock = (globalThis as unknown as {
+      __mockStreamChatRequest?: (options: unknown, flavor: string) => Promise<{ status: number; text: string; json: any }>;
+    }).__mockStreamChatRequest;
+    if (mock) {
+      return mock(options, flavor);
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+    const https = require("https");
+    // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+    const http = require("http");
+    // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+    const { URL } = require("url");
+
+    return new Promise((resolve, reject) => {
+      let parsed: any;
+      try {
+        parsed = new URL(options.url);
+      } catch (e: any) {
+        reject(new Error(`Invalid stream URL: ${e?.message ?? e}`));
+        return;
+      }
+      const transport = parsed.protocol === "http:" ? http : https;
+      const req = transport.request(
+        {
+          hostname: parsed.hostname,
+          port: parsed.port || (parsed.protocol === "http:" ? 80 : 443),
+          path: parsed.pathname + parsed.search,
+          method: options.method ?? "POST",
+          headers: {
+            ...(options.headers ?? {}),
+            // Streaming endpoints expect to send back text/event-stream.
+            "Accept": "text/event-stream",
+          },
+        },
+        (res: any) => {
+          const status: number = res.statusCode ?? 0;
+          // Non-200: collect the (non-SSE) error body and hand it back
+          // in the same shape so the caller's status check reports it.
+          if (status !== 200) {
+            let errBody = "";
+            res.setEncoding("utf8");
+            res.on("data", (c: string) => { errBody += c; });
+            res.on("end", () => {
+              let json: any = null;
+              try { json = JSON.parse(errBody); } catch { /* leave null */ }
+              resolve({ status, text: errBody, json });
+            });
+            return;
+          }
+
+          const acc = new StreamAccumulator(flavor);
+          let buffer = "";
+          res.setEncoding("utf8");
+          res.on("data", (chunk: string) => {
+            buffer += chunk;
+            // SSE events are separated by blank lines; process complete
+            // lines and keep the trailing partial line in the buffer.
+            let nlIndex: number;
+            while ((nlIndex = buffer.indexOf("\n")) >= 0) {
+              const line = buffer.slice(0, nlIndex).replace(/\r$/, "");
+              buffer = buffer.slice(nlIndex + 1);
+              acc.pushLine(line);
+            }
+          });
+          res.on("end", () => {
+            if (buffer.trim()) acc.pushLine(buffer.replace(/\r$/, ""));
+            resolve({ status: 200, text: acc.rawText(), json: acc.toResponseJson() });
+          });
+          res.on("error", (e: any) => reject(e));
+        },
+      );
+      req.on("error", (e: any) => reject(new Error(e?.message ?? String(e))));
+      if (options.body) req.write(options.body);
+      req.end();
+    });
+  }
+
+  /**
    * Send the audio binary to cloud speech-to-text API (OpenAI Whisper or MiniMax ASR).
    */
   async runCloudASR(file: TFile, onProgress: AIProgressCallback): Promise<string> {
     onProgress("aiStatusAsr", "Uploading to Cloud...");
     const buffer = await this.app.vault.readBinary(file);
-    
+
     let mimeType = "audio/wav";
     if (file.extension === "mp3") mimeType = "audio/mp3";
     else if (file.extension === "m4a") mimeType = "audio/m4a";
@@ -381,29 +550,30 @@ export class AIService {
    * too via processTranscription.
    */
   async runRefinement(prompt: string): Promise<string> {
-    const provider = this.settings.aiProvider;
-
-    // Anthropic path: native Anthropic provider, OR MiniMax provider when the
-    // user picked the Anthropic wire format. The Anthropic format is required
-    // for MiniMax M3 multimodal / image inputs (it uses structured content
-    // blocks: { type: "text" | "image", ... }).
-    if (provider === "anthropic" || (provider === "minimax" && this.settings.aiApiStyle === "anthropic")) {
+    // aiProvider selects the endpoint preset / billing account. aiApiStyle
+    // selects the wire format. Keep those separate so DeepSeek, MiniMax, and
+    // custom gateways can use Anthropic-compatible Messages without being
+    // remapped to Anthropic's official endpoint.
+    if (this.settings.aiApiStyle === "anthropic" || this.settings.aiProvider === "anthropic") {
       return this.runAnthropicChat(prompt);
     }
-    // OpenAI-compatible path: OpenAI, DeepSeek, and MiniMax when the user
-    // picked the OpenAI wire format (text-only requests).
     return this.runOpenAIChat(prompt);
   }
 
   private getMaxTokens(): number {
     const val = this.settings.aiMaxTokens || 4096;
-    if (this.settings.aiProvider === "minimax") {
-      // MiniMax-M3 supports up to 512000 output tokens.
-      return Math.min(val, 512000);
+    if (this.isMiniMaxEndpoint()) {
+      // Per MiniMax docs the output cap is model-specific:
+      //   MiniMax-M3  → 524288 (512K)
+      //   M2/M2.1/M2.5/M2.7 and others → 204800 (200K)
+      // A blanket 512000 cap would over-shoot the non-M3 models and
+      // get the request rejected / silently truncated.
+      const upper = this.isMiniMaxM3() ? 524288 : 204800;
+      return Math.min(val, upper);
     }
     if (this.settings.aiProvider === "deepseek") {
-      // DeepSeek supports massive context/outputs, cap at 1M to prevent clipping.
-      return Math.min(val, 1000000);
+      // DeepSeek V4 output cap is 384K; the old 1M cap could trip 422.
+      return Math.min(val, 384000);
     }
     if (this.settings.aiProvider === "anthropic") {
       // Claude supports up to 16384 output tokens (e.g., Claude 3.5 Sonnet new limit).
@@ -411,6 +581,11 @@ export class AIService {
     }
     // OpenAI and others: cap at 1M to be extremely generous for customizable APIs/proxies.
     return Math.min(val, 1000000);
+  }
+
+  /** True when the configured model is MiniMax-M3 (vs older M2.x). */
+  private isMiniMaxM3(): boolean {
+    return /m3/i.test(this.settings.aiModel);
   }
 
   private async runOpenAIChat(prompt: string): Promise<string> {
@@ -438,15 +613,31 @@ export class AIService {
           messages: [
             { role: "user", content: prompt }
           ],
-          temperature: 0.3
+          temperature: this.settings.aiTemperature ?? 1.0,
+          stream: true
         }),
         throw: false
-      });
+      }, undefined, undefined, (opts) => this.streamChatRequest(opts, "openai"));
     } catch (err: any) {
+      debugLog(this.app, "ai.openai.request-failed", {
+        provider: this.settings.aiProvider,
+        apiStyle: this.settings.aiApiStyle,
+        url,
+        model: modelName,
+        error: err?.message ?? String(err),
+      });
       throw new Error(`Failed to request AI API: ${err.message || err}`);
     }
 
     if (response.status !== 200) {
+      debugLog(this.app, "ai.openai.non-200", {
+        provider: this.settings.aiProvider,
+        apiStyle: this.settings.aiApiStyle,
+        url,
+        model: modelName,
+        status: response.status,
+        body: String(response.text ?? "").slice(0, 2000),
+      });
       throw new Error(`Chat API error (${response.status}): ${response.text}`);
     }
 
@@ -456,7 +647,22 @@ export class AIService {
     }
     const content = json.choices?.[0]?.message?.content || "";
     if (!content.trim()) {
+      debugLog(this.app, "ai.openai.empty-content", {
+        provider: this.settings.aiProvider,
+        apiStyle: this.settings.aiApiStyle,
+        url,
+        model: modelName,
+        finishReason: json.choices?.[0]?.finish_reason,
+        usage: json.usage,
+        responsePreview: JSON.stringify(json).slice(0, 4000),
+      });
       throw new Error(`接口响应内容为空。完整响应体: ${JSON.stringify(json)}`);
+    }
+    if (json.usage) {
+      // Cache observability: DeepSeek reports prompt_cache_hit_tokens /
+      // prompt_cache_miss_tokens; MiniMax/Anthropic report
+      // cache_read_input_tokens / cache_creation_input_tokens.
+      debugLog(this.app, "ai.openai.usage", { model: modelName, usage: json.usage });
     }
     return content;
   }
@@ -474,14 +680,12 @@ export class AIService {
     const headers: Record<string, string> = {
       "Content-Type": "application/json"
     };
-    if (this.settings.aiProvider === "minimax") {
-      headers["Authorization"] = `Bearer ${this.settings.aiApiKey}`;
-      headers["x-api-key"] = this.settings.aiApiKey;
-      headers["anthropic-version"] = "2023-06-01";
-    } else {
-      headers["x-api-key"] = this.settings.aiApiKey;
-      headers["anthropic-version"] = "2023-06-01";
-    }
+    // Both Authorization (Bearer) and x-api-key are sent so the same
+    // code path works for Anthropic-official (x-api-key) and
+    // compatible gateways like MiniMax / DeepSeek (Bearer).
+    headers["Authorization"] = `Bearer ${this.settings.aiApiKey}`;
+    headers["x-api-key"] = this.settings.aiApiKey;
+    headers["anthropic-version"] = "2023-06-01";
 
     let response;
     try {
@@ -495,16 +699,40 @@ export class AIService {
           messages: [
             { role: "user", content: prompt }
           ],
-          temperature: 0.3
+          temperature: this.settings.aiTemperature ?? 1.0,
+          // `thinking` is a MiniMax-M3-specific knob ("adaptive" lets
+          // the model decide whether to think — the official default).
+          // Only send it for M3; older M2.x have built-in thinking.
+          ...(this.isMiniMaxM3() ? { thinking: { type: "adaptive" } } : {}),
+          stream: true
         }),
         throw: false
-      });
+      }, undefined, undefined, (opts) => this.streamChatRequest(opts, "anthropic"));
     } catch (err: any) {
+      debugLog(this.app, "ai.anthropic.request-failed", {
+        provider: this.settings.aiProvider,
+        apiStyle: this.settings.aiApiStyle,
+        url,
+        model: modelName,
+        error: err?.message ?? String(err),
+      });
       throw new Error(`Failed to request Anthropic API: ${err.message || err}`);
     }
 
     if (response.status !== 200) {
-      throw new Error(`Anthropic Messages API error (${response.status}): ${response.text}`);
+      const body = (() => {
+        try { return JSON.parse(response.text); } catch { return null; }
+      })();
+      const apiErrMsg = body?.error?.message ?? response.text;
+      debugLog(this.app, "ai.anthropic.non-200", {
+        provider: this.settings.aiProvider,
+        apiStyle: this.settings.aiApiStyle,
+        url,
+        model: modelName,
+        status: response.status,
+        body: String(response.text ?? "").slice(0, 2000),
+      });
+      throw new Error(`Anthropic Messages API error (${response.status}): ${apiErrMsg}`);
     }
 
     const json = typeof response.json === "object" && response.json !== null ? response.json : JSON.parse(response.text);
@@ -531,28 +759,28 @@ export class AIService {
           .trim();
       }
 
-      // Tier 3: Extract from "thinking" property if both of the above are empty (handles token cutoff/thinking-only cases)
-      if (!content) {
-        content = json.content
-          .filter((item: any) => item && typeof item.thinking === "string" && item.thinking.trim())
-          .map((item: any) => {
-            const thinkingText = item.thinking;
-            // If the thinking block contains code fences for markdown (e.g. ```markdown ... ```), extract it
-            const mdMatch = thinkingText.match(/```markdown\n([\s\S]*?)(?:```|$)/) || thinkingText.match(/```\n([\s\S]*?)(?:```|$)/);
-            if (mdMatch && mdMatch[1].trim()) {
-              return mdMatch[1].trim();
-            }
-            return thinkingText;
-          })
-          .join("")
-          .trim();
-      }
+      // Deliberately do not fall back to `thinking` blocks. MiniMax's
+      // Anthropic-compatible endpoint may return structured reasoning
+      // blocks before the final text; those are not user-facing content
+      // and must not be inserted into notes.
     } else if (typeof json.content === "string") {
       content = json.content.trim();
     }
 
     if (!content.trim()) {
+      debugLog(this.app, "ai.anthropic.empty-content", {
+        provider: this.settings.aiProvider,
+        apiStyle: this.settings.aiApiStyle,
+        url,
+        model: modelName,
+        stopReason: json.stop_reason,
+        usage: json.usage,
+        responsePreview: JSON.stringify(json).slice(0, 4000),
+      });
       throw new Error(`接口响应内容为空。完整响应体: ${JSON.stringify(json)}`);
+    }
+    if (json.usage) {
+      debugLog(this.app, "ai.anthropic.usage", { model: modelName, usage: json.usage });
     }
     return content;
   }

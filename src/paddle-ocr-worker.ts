@@ -42,6 +42,7 @@ type InitRequest = {
   modelDir: string;
   detConfig?: Record<string, unknown>;
   tier?: "mobile" | "server" | "hybrid";
+  cpuThreads?: number;
   jobId: string;
 };
 
@@ -93,6 +94,7 @@ async function runInit(req: InitRequest): Promise<void> {
     sharp,
     detConfig: req.detConfig as any,
     tier: req.tier,
+    cpuThreads: req.cpuThreads,
   });
   // The service's init() emits onStatus calls; pipe them to the
   // parent's stdout as progress events.
@@ -116,7 +118,7 @@ async function runExtract(req: ExtractRequest): Promise<void> {
 
 // Self-kill on unhandled errors so the parent's respawn path gets a
 // clean `exit` event instead of trying to talk to a corrupted worker.
-// Exit codes 71/72 match vision-worker / kreuzberg-worker convention.
+// Exit codes 71/72 match the OCR worker convention.
 process.on("unhandledRejection", (err) => {
   process.stderr.write(`[paddle-ocr-worker] unhandledRejection: ${err}\n`);
   process.exit(71);

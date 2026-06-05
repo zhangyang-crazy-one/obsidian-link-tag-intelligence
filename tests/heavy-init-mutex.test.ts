@@ -1,6 +1,6 @@
 /**
  * Unit test for HeavyInitMutex — confirms the FIFO serialization contract
- * that prevents audio / OCR / VLM heavy inits from racing each other.
+ * that prevents audio / OCR heavy inits from racing each other.
  */
 import { describe, it, expect } from "vitest";
 import { HeavyInitMutex, withHeavyInit } from "../src/heavy-init-mutex";
@@ -22,22 +22,22 @@ describe("HeavyInitMutex", () => {
         order.push("paddle:end");
         return "paddle-result";
       }),
-      mutex.run("vlm", async () => {
-        order.push("vlm:start");
+      mutex.run("speech-model-download", async () => {
+        order.push("speech-model-download:start");
         await new Promise((r) => setTimeout(r, 20));
-        order.push("vlm:end");
-        return "vlm-result";
+        order.push("speech-model-download:end");
+        return "speech-model-download-result";
       }),
     ];
     const results = await Promise.all(tasks);
     // Each task returns its own value, captured in promise order
     // (which mirrors the order they were queued).
-    expect(results).toEqual(["speech-result", "paddle-result", "vlm-result"]);
+    expect(results).toEqual(["speech-result", "paddle-result", "speech-model-download-result"]);
     // Serial execution: each :start must come after the previous :end.
     expect(order).toEqual([
       "speech:start", "speech:end",
       "paddle:start", "paddle:end",
-      "vlm:start", "vlm:end",
+      "speech-model-download:start", "speech-model-download:end",
     ]);
   });
 

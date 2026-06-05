@@ -204,17 +204,9 @@ export interface LinkTagIntelligenceSettings {
   speechModelChoice: "zipformer" | "sensevoice";
   speechAutoHotwords: boolean;
   speechConfusionMapText: string;
-  // Vision Settings
-  visionEnabled: boolean;
-  visionModelPath: string;
-  visionSmartRouting: boolean;
-  // Cap the input image's pixel area before the Qwen2-VL processor. The
-  // preprocessor's default is 12_845_056 (12.8 MP) which emits ~1792 vision
-  // tokens for a 1552×897 photo and OOM-kills the worker on 30 GB hosts
-  // (~10.7 GB peak RSS). 200_704 = 448×448 ≈ 0.2 MP → ≤ 256 vision tokens,
-  // peak ≈ 6.2 GB. Raise this if the user has more free RAM and wants
-  // more detail. See memory/vision-oom-image-pixel-cap.md.
-  visionMaxPixels: number;
+  // OCR Settings
+  ocrEnabled: boolean;
+  ocrSmartRouting: boolean;
   // PaddleOCR / Tesseract model paths (overridable; empty means use plugin defaults)
   paddleOcrModelPath: string;
   // Which PP-OCRv5 tier to use. Affects the default model dir layout
@@ -231,6 +223,9 @@ export interface LinkTagIntelligenceSettings {
   paddleDetLimitSideLen: number;
   paddleDetScoreMode: "fast" | "slow";
   paddleDetUseDilation: boolean;
+  paddleOcrCpuThreads: number;
+  paddleOcrPdfConcurrency: number;
+  paddleOcrPdfDpi: number;
   tesseractDataPath: string;
   // AI Settings
   aiProvider: "openai" | "anthropic" | "deepseek" | "minimax";
@@ -238,14 +233,13 @@ export interface LinkTagIntelligenceSettings {
   aiApiKey: string;
   aiBaseUrl: string;
   aiMaxTokens: number;
-  // Wire format style for the chosen provider. MiniMax exposes both
-  // OpenAI-compatible (/v1/chat/completions) and Anthropic-compatible
-  // (/anthropic/v1/messages) endpoints; the Anthropic style is required for
-  // multimodal (image) inputs. Other providers ignore this field.
-  // Note: MiniMax-M3 with long context is more reliable on the Anthropic
-  // wire format — its OpenAI endpoint occasionally returns
-  // net::ERR_EMPTY_RESPONSE on streaming responses for 100K+ token
-  // inputs. Switch to "anthropic" if M3 keeps failing mid-response.
+  // Sampling temperature [0,2]. Default 1.0 (DeepSeek/MiniMax official
+  // recommendation for data-cleaning / general tasks). Ignored by
+  // reasoning models, which clamp it server-side.
+  aiTemperature: number;
+  // Wire format style for the chosen endpoint. This is intentionally
+  // separate from aiProvider: DeepSeek, MiniMax, and custom gateways can expose
+  // OpenAI-compatible or Anthropic-compatible APIs on their own base URLs.
   aiApiStyle: "openai" | "anthropic";
   // Per-request retry count for transient network errors
   // (EMPTY_RESPONSE, aborts, 5xx, 429). Default 5. Obsidian's
@@ -312,22 +306,23 @@ export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSetting
     speechMaxUtteranceSec: 20,
     speechAutoHotwords: true,
     speechConfusionMapText: "在显价值:在险价值\n风险穗:风险矩阵\n富力业:傅里叶",
-    // Vision Defaults
-    visionEnabled: false,
-    visionModelPath: "",
-    visionSmartRouting: true,
-    visionMaxPixels: 200_704,
+    // OCR Defaults
+    ocrEnabled: true,
+    ocrSmartRouting: true,
     paddleOcrModelPath: "",
     paddleOcrTier: DEFAULT_PADDLE_TIER,
-    paddleDetDbThresh: 0.3,
-    paddleDetBoxThresh: 0.6,
-    paddleDetUnclipRatio: 1.5,
-    paddleDetMinSize: 3,
-    paddleDetNmsIouThresh: 0.3,
-    paddleDetMaxCandidates: 1000,
-    paddleDetLimitSideLen: 960,
+    paddleDetDbThresh: 0.2,
+    paddleDetBoxThresh: 0.3,
+    paddleDetUnclipRatio: 2.0,
+    paddleDetMinSize: 2,
+    paddleDetNmsIouThresh: 0.2,
+    paddleDetMaxCandidates: 4000,
+    paddleDetLimitSideLen: 2048,
     paddleDetScoreMode: "fast",
     paddleDetUseDilation: true,
+    paddleOcrCpuThreads: 0,
+    paddleOcrPdfConcurrency: 2,
+    paddleOcrPdfDpi: 240,
     tesseractDataPath: "",
     // AI Settings defaults
     aiProvider: "openai",
@@ -335,6 +330,7 @@ export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSetting
     aiApiKey: "",
     aiBaseUrl: "https://api.openai.com/v1",
     aiMaxTokens: 4096,
+    aiTemperature: 1.0,
     aiApiStyle: "openai",
     aiRequestRetries: 5,
     aiRequestRetryBaseMs: 2000,
@@ -463,6 +459,13 @@ export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagI
     ...defaults,
     ...raw
   };
+  const clampNumber = (value: unknown, min: number, max: number, fallback: number, integer = false): number => {
+    if (!Number.isFinite(value)) {
+      return fallback;
+    }
+    const numeric = integer ? Math.round(value as number) : value as number;
+    return Math.max(min, Math.min(max, numeric));
+  };
 
   if (Array.isArray(raw.relationKeys) && arraysEqual(raw.relationKeys.map(String), LEGACY_RELATION_KEYS)) {
     normalized.relationKeys = [...RESEARCH_RELATION_KEYS];
@@ -508,12 +511,34 @@ export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagI
   normalized.smartConnectionsResultsLimit = Number.isFinite(normalized.smartConnectionsResultsLimit) && normalized.smartConnectionsResultsLimit > 0
     ? normalized.smartConnectionsResultsLimit
     : defaults.smartConnectionsResultsLimit;
+  const legacyVisionSettings = raw as Partial<LinkTagIntelligenceSettings> & {
+    visionEnabled?: unknown;
+    visionSmartRouting?: unknown;
+  };
+  normalized.ocrEnabled = typeof raw.ocrEnabled === "boolean"
+    ? raw.ocrEnabled
+    : (typeof legacyVisionSettings.visionEnabled === "boolean" ? legacyVisionSettings.visionEnabled : defaults.ocrEnabled);
+  normalized.ocrSmartRouting = typeof raw.ocrSmartRouting === "boolean"
+    ? raw.ocrSmartRouting
+    : (typeof legacyVisionSettings.visionSmartRouting === "boolean" ? legacyVisionSettings.visionSmartRouting : defaults.ocrSmartRouting);
 
   // PaddleOCR tier: only mobile / server / hybrid are valid. A stale data.json
   // (e.g. from a future tier we don't yet know about) falls back to the default.
   normalized.paddleOcrTier = PADDLE_TIER_SPECS[normalized.paddleOcrTier as PaddleOcrModelTier]
     ? (normalized.paddleOcrTier as PaddleOcrModelTier)
     : defaults.paddleOcrTier;
+  normalized.paddleDetDbThresh = clampNumber(normalized.paddleDetDbThresh, 0.1, 0.9, defaults.paddleDetDbThresh);
+  normalized.paddleDetBoxThresh = clampNumber(normalized.paddleDetBoxThresh, 0.1, 0.9, defaults.paddleDetBoxThresh);
+  normalized.paddleDetUnclipRatio = clampNumber(normalized.paddleDetUnclipRatio, 1.0, 3.0, defaults.paddleDetUnclipRatio);
+  normalized.paddleDetMinSize = clampNumber(normalized.paddleDetMinSize, 1, 50, defaults.paddleDetMinSize, true);
+  normalized.paddleDetNmsIouThresh = clampNumber(normalized.paddleDetNmsIouThresh, 0.1, 0.9, defaults.paddleDetNmsIouThresh);
+  normalized.paddleDetMaxCandidates = clampNumber(normalized.paddleDetMaxCandidates, 100, 5000, defaults.paddleDetMaxCandidates, true);
+  normalized.paddleDetLimitSideLen = clampNumber(normalized.paddleDetLimitSideLen, 320, 2048, defaults.paddleDetLimitSideLen, true);
+  normalized.paddleDetScoreMode = normalized.paddleDetScoreMode === "slow" ? "slow" : "fast";
+  normalized.paddleDetUseDilation = typeof normalized.paddleDetUseDilation === "boolean" ? normalized.paddleDetUseDilation : defaults.paddleDetUseDilation;
+  normalized.paddleOcrCpuThreads = clampNumber(normalized.paddleOcrCpuThreads, 0, 32, defaults.paddleOcrCpuThreads, true);
+  normalized.paddleOcrPdfConcurrency = clampNumber(normalized.paddleOcrPdfConcurrency, 1, 8, defaults.paddleOcrPdfConcurrency, true);
+  normalized.paddleOcrPdfDpi = clampNumber(normalized.paddleOcrPdfDpi, 96, 300, defaults.paddleOcrPdfDpi, true);
 
   normalized.speechHotwordsFile = typeof normalized.speechHotwordsFile === "string" ? normalized.speechHotwordsFile.trim() : defaults.speechHotwordsFile;
   normalized.speechModelPath = typeof normalized.speechModelPath === "string" ? normalized.speechModelPath.trim() : defaults.speechModelPath;
@@ -543,6 +568,12 @@ export function normalizeLoadedSettings(data: unknown, configDir = ""): LinkTagI
     : defaults.aiMaxTokens || 4096;
   normalized.aiApiKey = typeof normalized.aiApiKey === "string" ? normalized.aiApiKey : "";
   normalized.aiBaseUrl = typeof normalized.aiBaseUrl === "string" && normalized.aiBaseUrl.trim() ? normalized.aiBaseUrl.trim() : defaults.aiBaseUrl;
+  // MiniMax output cap is model-specific: M3 → 524288, older M2.x → 204800.
+  if (/minimax/i.test(normalized.aiModel) || /minimax/i.test(normalized.aiBaseUrl)) {
+    const upper = /m3/i.test(normalized.aiModel) ? 524288 : 204800;
+    normalized.aiMaxTokens = Math.min(normalized.aiMaxTokens, upper);
+  }
+  normalized.aiTemperature = clampNumber(normalized.aiTemperature, 0, 2, defaults.aiTemperature);
   normalized.aiApiStyle = normalized.aiApiStyle === "anthropic" ? "anthropic" : "openai";
   normalized.aiRequestRetries =
     Number.isFinite(normalized.aiRequestRetries) && normalized.aiRequestRetries >= 1
@@ -583,8 +614,8 @@ type WorkbenchPage = "overview" | "workflow" | "plugins" | "taxonomy" | "speech"
 // Keys mirror the LinkTagIntelligenceSettings["aiProvider"] union.
 const AI_PROVIDER_HINTS: Record<"openai" | "anthropic" | "deepseek" | "minimax", { baseUrl: string; model: string }> = {
   openai:    { baseUrl: "https://api.openai.com/v1",        model: "gpt-4o-mini" },
-  anthropic: { baseUrl: "https://api.anthropic.com/v1",     model: "claude-3-5-sonnet-20241022" },
-  deepseek:  { baseUrl: "https://api.deepseek.com",         model: "deepseek-chat" },
+  anthropic: { baseUrl: "https://api.anthropic.com",        model: "claude-3-5-sonnet-20241022" },
+  deepseek:  { baseUrl: "https://api.deepseek.com",         model: "deepseek-v4-flash" },
   minimax:   { baseUrl: "https://api.minimaxi.com/v1",      model: "MiniMax-M3" }
 };
 
@@ -2067,122 +2098,37 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
       }
     );
 
-    // Call our new Local Vision & OCR settings section
-    this.renderVisionSection(containerEl);
+    this.renderOcrSection(containerEl);
   }
 
-  private renderVisionSection(containerEl: HTMLElement): void {
+  private renderOcrSection(containerEl: HTMLElement): void {
     const section = this.createSectionCard(
       containerEl,
-      "本地离线多模态视觉服务 (Local Vision & OCR)",
-      "配置本地轻量级双语视觉多模态模型与离线 OCR 引擎。支持图像智能描述、打标及自动任务分流。"
+      "本地离线 OCR",
+      "配置 PaddleOCR 与 Kreuzberg/Tesseract 本地文字提取。"
     );
 
-    // Vision Enabled Toggle
     this.createToggleField(
       section,
-      "开启本地多模态视觉服务" as any,
-      "激活此选项后将启用本地中英双语视觉模型（支持 InternVL2-1B 等量化版，小于800M）对图片进行打标与语义描述功能。" as any,
-      this.plugin.settings.visionEnabled,
+      "开启本地 OCR" as any,
+      "启用后可从侧栏对本地图片或 PDF 执行离线文字提取。" as any,
+      this.plugin.settings.ocrEnabled,
       async (value) => {
-        this.plugin.settings.visionEnabled = value;
+        this.plugin.settings.ocrEnabled = value;
         await this.plugin.saveSettings();
       }
     );
 
-    // Smart Routing Toggle
     this.createToggleField(
       section,
-      "启用智能分流路由 (Smart Hybrid Routing)" as any,
-      "在执行常规纯文本 OCR 提取时，自动智能流转至极速 WASM 引擎（200ms），仅在执行复杂图像分析、多模态打标与描述时加载子进程视觉大模型，极大节省系统开销。" as any,
-      this.plugin.settings.visionSmartRouting,
+      "启用 OCR 智能分流路由" as any,
+      "优先使用 Kreuzberg/Tesseract 处理密集中文扫描；当结果偏短或失败时调用 PaddleOCR 补充对比。" as any,
+      this.plugin.settings.ocrSmartRouting,
       async (value) => {
-        this.plugin.settings.visionSmartRouting = value;
+        this.plugin.settings.ocrSmartRouting = value;
         await this.plugin.saveSettings();
       }
     );
-
-    // Pixel cap (no UI control; just a description so users know there IS
-    // a cap and how to tune it). Edit data.json → visionMaxPixels to
-    // change. Default 200_704 keeps peak RSS under 7 GB on a 30 GB host
-    // (verified 2026-06-03). Raise on machines with more free RAM if the
-    // user wants finer visual detail in DETAILED_CAPTION output.
-    const capInfo = section.createDiv({ cls: "lti-workbench-field" });
-    capInfo.createDiv({
-      text: "推理输入图像像素上限 (visionMaxPixels)" as any,
-      cls: "lti-workbench-field-label",
-    });
-    capInfo.createDiv({
-      text:
-        "默认 200_704（约 448×448）。Qwen2-VL-2B 在推理时峰值内存约 6.2 GB；" +
-        "若系统可用 RAM 充足（≥ 16 GB）且需要更细的视觉描述，可手动编辑 " +
-        ".obsidian/plugins/link-tag-intelligence/data.json 中的 visionMaxPixels 字段，"+
-        "建议值：786_432（768×1024）≈ 8 GB 峰值；12_845_056（默认值）≈ 10.7 GB 峰值（可能 OOM-killed）。" +
-        "每次只处理一张图像。",
-      cls: "setting-item-description lti-workbench-field-description",
-    });
-
-    // Model path input
-    const modelRow = section.createDiv({ cls: "lti-voice-field-row" });
-    const modelField = this.createFieldShell(
-      modelRow,
-      "Qwen2-VL 多模态模型路径" as any,
-      "指定 Qwen2-VL / InternVL2 / Florence-2 物理文件夹绝对或相对路径。留空则默认指向插件 models/Qwen2-VL-2B-Instruct 目录（用于 <DETAILED_CAPTION>/<OD> 等图像语义任务）。" as any
-    );
-    const modelInputRow = modelField.createDiv({ cls: "lti-voice-input-row" });
-    const modelInput = modelInputRow.createEl("input", { cls: "lti-workbench-input lti-voice-path-input", type: "text" });
-    modelInput.value = this.plugin.settings.visionModelPath || "";
-    modelInput.placeholder = "models/Qwen2-VL-2B-Instruct";
-    modelInput.addEventListener("change", () => {
-      this.plugin.settings.visionModelPath = modelInput.value.trim();
-      void this.plugin.saveSettings();
-    });
-
-    const browseBtn = modelInputRow.createEl("button", {
-      cls: "lti-workbench-button lti-voice-browse-btn",
-      text: this.plugin.t("speechBrowse"),
-      type: "button"
-    });
-    browseBtn.addEventListener("click", () => {
-      try {
-        const desktopRequire = (globalThis as Record<string, unknown>).require as ((m: string) => Record<string, unknown>) | undefined;
-        const electron = desktopRequire?.("electron");
-        const dialog = electron?.remote?.dialog as { showOpenDialog?: (...args: unknown[]) => Promise<{ canceled: boolean; filePaths: string[] }> } | undefined;
-        if (dialog?.showOpenDialog) {
-          void dialog.showOpenDialog({ properties: ["openDirectory"] }).then((result) => {
-            if (!result.canceled && result.filePaths.length > 0) {
-              modelInput.value = result.filePaths[0] ?? "";
-              modelInput.dispatchEvent(new Event("change"));
-            }
-          });
-          return;
-        }
-      } catch {
-        // Fallback
-      }
-
-      const dirPicker = document.createElement("input");
-      dirPicker.type = "file";
-      dirPicker.setAttribute("webkitdirectory", "");
-      dirPicker.setAttribute("directory", "");
-      dirPicker.style.display = "none";
-      document.body.appendChild(dirPicker);
-      dirPicker.addEventListener("change", () => {
-        const files = dirPicker.files;
-        if (files && files.length > 0) {
-          const firstPath = files[0].webkitRelativePath || files[0].name;
-          const dirName = firstPath.split("/")[0] ?? "";
-          if (dirName) {
-            const adapter = this.plugin.app.vault.adapter;
-            const vaultRoot = (adapter as { getBasePath?: () => string }).getBasePath?.() ?? "";
-            modelInput.value = vaultRoot ? vaultRoot + "/" + dirName : dirName;
-            modelInput.dispatchEvent(new Event("change"));
-          }
-        }
-        document.body.removeChild(dirPicker);
-      });
-      dirPicker.click();
-    });
 
     // PaddleOCR model tier (mobile / server / hybrid). Selecting a tier
     // changes the default model dir layout and which HuggingFace repo is
@@ -2258,31 +2204,20 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
       void this.plugin.saveSettings();
     });
 
-    // Diagnostic button row
-    const diagRow = section.createDiv({ cls: "lti-voice-field-row" });
-    const diagBtn = diagRow.createEl("button", {
-      cls: "lti-workbench-button lti-voice-diagnostic-btn",
-      text: this.plugin.t("visionModelDiagnosticButton"),
-      type: "button"
-    });
-    diagBtn.addEventListener("click", () => {
-      void this.plugin.runVisionDiagnostics();
-    });
-
     // ── Advanced PaddleOCR detection parameters (collapsible) ─────────
-    // User-tunable thresholds; defaults are PaddleOCR official values.
+    // User-tunable thresholds. Defaults are tuned for dense textbook scans;
+    // the model-level constants still document PaddleOCR's official baseline.
     // All values are written to settings.paddleDet* and passed to
     // PaddleOcrService at construction time.
     this.renderPaddleDetAdvancedSection(section);
 
     // Helpful instructions link/card
     const hintCard = section.createDiv({ cls: "lti-workbench-hint-card" });
-    hintCard.createEl("h4", { text: "离线中英双语多模态权重部署指南 (国内高速镜像加速)" });
+    hintCard.createEl("h4", { text: "离线 OCR 权重部署指南" });
     const ul = hintCard.createEl("ul");
-    ul.createEl("li", { text: "1. 路径一 (Qwen2-VL 图像语义)：推荐 Qwen2-VL-2B-Instruct 量化版 (ONNX版 onnx-community/Qwen2-VL-2B-Instruct INT4 ~1.2GB)，用于图像打标/描述/目标检测。" });
-    ul.createEl("li", { text: "2. 路径二 (PaddleOCR 主 OCR)：PP-OCRv5 mobile ONNX (PaddlePaddle/PP-OCRv5_mobile_*) 4 个文件 ~30MB。仅用于 <OCR> 任务，不用于图像语义。" });
-    ul.createEl("li", { text: "3. 路径三 (Tesseract 兜底 OCR)：从 https://github.com/tesseract-ocr/tessdata 拉取 chi_sim.traineddata + eng.traineddata，存放到 models/tessdata/。仅在 PaddleOCR 不可用时使用。" });
-    ul.createEl("li", { text: "4. 下载模型权重后，将其存放在 models/ 目录下，并在上方设置好对应的相对或绝对路径即可。HuggingFace 镜像站可高速下载各 ONNX 权重：https://hf-mirror.com" });
+    ul.createEl("li", { text: "1. PaddleOCR：选择 mobile / server / hybrid 档位后，可点击上方按钮预下载 PP-OCRv5 ONNX 模型。" });
+    ul.createEl("li", { text: "2. Kreuzberg/Tesseract：作为 OCR 分流和兜底引擎使用；如需自定义语言包路径，可在上方填写 tessdata 目录。" });
+    ul.createEl("li", { text: "3. 本区域只管理 OCR 所需模型和参数。" });
   }
 
   /**
@@ -2306,7 +2241,7 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     // and immediately re-saves. Caller supplies a guard to keep the value
     // in a sane range (we don't want users typing 1000 for dbThresh).
     const addNumber = (
-      key: "paddleDetDbThresh" | "paddleDetBoxThresh" | "paddleDetUnclipRatio" | "paddleDetMinSize" | "paddleDetNmsIouThresh" | "paddleDetMaxCandidates" | "paddleDetLimitSideLen",
+      key: "paddleDetDbThresh" | "paddleDetBoxThresh" | "paddleDetUnclipRatio" | "paddleDetMinSize" | "paddleDetNmsIouThresh" | "paddleDetMaxCandidates" | "paddleDetLimitSideLen" | "paddleOcrCpuThreads" | "paddleOcrPdfConcurrency" | "paddleOcrPdfDpi",
       labelKey: string,
       descKey: string,
       min: number,
@@ -2342,6 +2277,9 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     addNumber("paddleDetNmsIouThresh", "paddleDetNmsIouThreshLabel", "paddleDetNmsIouThreshDesc", 0.1, 0.9, 0.05);
     addNumber("paddleDetMaxCandidates", "paddleDetMaxCandidatesLabel", "paddleDetMaxCandidatesDesc", 100, 5000, 100);
     addNumber("paddleDetLimitSideLen", "paddleDetLimitSideLenLabel", "paddleDetLimitSideLenDesc", 320, 2048, 32);
+    addNumber("paddleOcrCpuThreads", "paddleOcrCpuThreadsLabel", "paddleOcrCpuThreadsDesc", 0, 32, 1);
+    addNumber("paddleOcrPdfConcurrency", "paddleOcrPdfConcurrencyLabel", "paddleOcrPdfConcurrencyDesc", 1, 8, 1);
+    addNumber("paddleOcrPdfDpi", "paddleOcrPdfDpiLabel", "paddleOcrPdfDpiDesc", 96, 300, 12);
 
     // Score mode: dropdown (fast / slow)
     const scoreRow = detSection.createDiv({ cls: "lti-voice-field-row" });
@@ -2382,15 +2320,18 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     resetBtn.addEventListener("click", () => {
       const confirmMsg = this.plugin.t("paddleDetResetConfirm") as string;
       if (typeof window !== "undefined" && !window.confirm(confirmMsg)) return;
-      this.plugin.settings.paddleDetDbThresh = 0.3;
-      this.plugin.settings.paddleDetBoxThresh = 0.6;
-      this.plugin.settings.paddleDetUnclipRatio = 1.5;
-      this.plugin.settings.paddleDetMinSize = 3;
-      this.plugin.settings.paddleDetNmsIouThresh = 0.3;
-      this.plugin.settings.paddleDetMaxCandidates = 1000;
-      this.plugin.settings.paddleDetLimitSideLen = 960;
+      this.plugin.settings.paddleDetDbThresh = 0.2;
+      this.plugin.settings.paddleDetBoxThresh = 0.3;
+      this.plugin.settings.paddleDetUnclipRatio = 2.0;
+      this.plugin.settings.paddleDetMinSize = 2;
+      this.plugin.settings.paddleDetNmsIouThresh = 0.2;
+      this.plugin.settings.paddleDetMaxCandidates = 4000;
+      this.plugin.settings.paddleDetLimitSideLen = 2048;
       this.plugin.settings.paddleDetScoreMode = "fast";
       this.plugin.settings.paddleDetUseDilation = true;
+      this.plugin.settings.paddleOcrCpuThreads = 0;
+      this.plugin.settings.paddleOcrPdfConcurrency = 2;
+      this.plugin.settings.paddleOcrPdfDpi = 240;
       void this.plugin.saveSettings().then(() => {
         // Re-render the entire settings tab to refresh the input values
         this.display();
@@ -2465,7 +2406,28 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     tokensInput.min = "1";
     tokensInput.addEventListener("change", async () => {
       const val = parseInt(tokensInput.value, 10);
-      this.plugin.settings.aiMaxTokens = Number.isFinite(val) && val >= 1 ? val : 4096;
+      const isMiniMaxEndpoint = /minimax/i.test(this.plugin.settings.aiModel) || /minimax/i.test(this.plugin.settings.aiBaseUrl);
+      // MiniMax cap is model-specific (M3 → 524288, older M2.x → 204800).
+      const upper = isMiniMaxEndpoint
+        ? (/m3/i.test(this.plugin.settings.aiModel) ? 524288 : 204800)
+        : 1000000;
+      this.plugin.settings.aiMaxTokens = Number.isFinite(val) && val >= 1 ? Math.min(val, upper) : 4096;
+      tokensInput.value = String(this.plugin.settings.aiMaxTokens);
+      await this.plugin.saveSettings();
+    });
+
+    // AI Temperature Input
+    const tempField = this.createFieldShell(section, this.plugin.t("aiTemperature"), this.plugin.t("aiTemperatureDescription"));
+    const tempInput = tempField.createEl("input", { cls: "lti-workbench-input", type: "number" });
+    tempInput.value = String(this.plugin.settings.aiTemperature ?? 1.0);
+    tempInput.placeholder = "1.0";
+    tempInput.min = "0";
+    tempInput.max = "2";
+    tempInput.step = "0.1";
+    tempInput.addEventListener("change", async () => {
+      const val = parseFloat(tempInput.value);
+      this.plugin.settings.aiTemperature = Number.isFinite(val) ? Math.max(0, Math.min(2, val)) : 1.0;
+      tempInput.value = String(this.plugin.settings.aiTemperature);
       await this.plugin.saveSettings();
     });
 
@@ -2508,28 +2470,22 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
       await this.plugin.saveSettings();
     });
 
-    // API Wire Format (only meaningful for MiniMax provider, which exposes
-    // both OpenAI- and Anthropic-style endpoints. The Anthropic style is
-    // required for multimodal / image inputs.)
-    if (this.plugin.settings.aiProvider === "minimax") {
-      this.createSelectField(
-        section,
-        this.plugin.t("aiApiStyle"),
-        this.plugin.t("aiApiStyleDescription"),
-        [
-          { value: "openai", label: this.plugin.t("aiApiStyleOpenAI") },
-          { value: "anthropic", label: this.plugin.t("aiApiStyleAnthropic") }
-        ],
-        this.plugin.settings.aiApiStyle,
-        async (value) => {
-          this.plugin.settings.aiApiStyle = value as "openai" | "anthropic";
-          // Only flip the dispatch flag. Base URL stays exactly as the user
-          // entered it; if they need to switch between /v1 and /anthropic/v1
-          // they can edit the Base URL field directly.
-          await this.plugin.saveSettings();
-        }
-      );
-    }
+    // API Wire Format. This is not a provider selector: it only controls the
+    // request/response shape used against the configured Base URL.
+    this.createSelectField(
+      section,
+      this.plugin.t("aiApiStyle"),
+      this.plugin.t("aiApiStyleDescription"),
+      [
+        { value: "openai", label: this.plugin.t("aiApiStyleOpenAI") },
+        { value: "anthropic", label: this.plugin.t("aiApiStyleAnthropic") }
+      ],
+      this.plugin.settings.aiApiStyle,
+      async (value) => {
+        this.plugin.settings.aiApiStyle = value as "openai" | "anthropic";
+        await this.plugin.saveSettings();
+      }
+    );
 
     // ASR Source Select
     this.createSelectField(

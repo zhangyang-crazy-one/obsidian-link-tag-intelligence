@@ -10,7 +10,7 @@ const context = await esbuild.context({
   // so there is no separate paddle-ocr-worker entry point. This keeps memory
   // footprint minimal (single V8 heap, shared ONNX runtime cache) while still
   // isolating the heavy compute via idle-timer auto-dispose.
-  entryPoints: { "main": "src/main.ts", "asr-worker": "src/asr-worker.ts", "vision-worker": "src/vision-worker.ts", "kreuzberg-worker": "src/kreuzberg-worker.ts", "paddle-ocr-worker": "src/paddle-ocr-worker.ts" },
+  entryPoints: { "main": "src/main.ts", "asr-worker": "src/asr-worker.ts", "kreuzberg-worker": "src/kreuzberg-worker.ts", "paddle-ocr-worker": "src/paddle-ocr-worker.ts" },
   bundle: true,
   // `external` is the runtime-require allowlist. Any package that
   // reaches into the file system via require() relative to its own
@@ -26,9 +26,9 @@ const context = await esbuild.context({
     "@codemirror/state",
     "@codemirror/view",
     "sherpa-onnx",
-    "@huggingface/transformers",
     "onnxruntime-node",
     "@kreuzberg/node",
+    "sharp",
   ],
   format: "cjs",
   target: "es2021",
@@ -50,17 +50,16 @@ if (production) {
   fs.rmSync(distDir, { recursive: true, force: true });
   fs.mkdirSync(path.join(distDir, "node_modules"), { recursive: true });
 
-  // Copy plugin files (including asr-worker, vision-worker,
-  // kreuzberg-worker for child_process.spawn)
+  // Copy plugin files (including asr-worker and OCR workers for child_process.spawn)
   for (const f of ["main.js", "asr-worker.js", "manifest.json", "styles.css"]) {
     fs.copyFileSync(path.resolve(f), path.join(distDir, f));
   }
-  // Both vision-worker and kreuzberg-worker use CommonJS `require()` but
+  // OCR workers use CommonJS `require()` but
   // package.json has "type": "module", so the raw .js file would be
   // misinterpreted by Node 24 as ESM. Rename to .cjs to force CommonJS
   // resolution. Both the project root (where Obsidian loads from in dev)
   // and the dist/ directory (production) need the .cjs extension.
-  for (const workerName of ["vision-worker", "kreuzberg-worker", "paddle-ocr-worker"]) {
+  for (const workerName of ["kreuzberg-worker", "paddle-ocr-worker"]) {
     if (fs.existsSync(path.resolve(workerName + ".js"))) {
       fs.copyFileSync(
         path.resolve(workerName + ".js"),
@@ -75,15 +74,13 @@ if (production) {
     { recursive: true }
   );
 
-  // Copy local VLM + OCR runtime dependencies for vision-worker.js
-  // and the in-process PaddleOCR / Kreuzberg services in main.js.
+  // Copy local OCR runtime dependencies for PaddleOCR / Kreuzberg services.
   // `external` above already tells esbuild to leave these as runtime
   // require()s, so the actual files must exist in dist/node_modules/
   // for Obsidian's Electron renderer to find them at load time.
   // Native bindings (@kreuzberg/node-*-*) are picked up automatically
   // because @kreuzberg's npm package ships them as optionalDependencies.
-  const vlmDeps = [
-    "@huggingface",
+  const ocrDeps = [
     "@img",
     "@kreuzberg",
     "onnxruntime-node",
@@ -93,7 +90,7 @@ if (production) {
     "global-agent",
     "tar"
   ];
-  for (const dep of vlmDeps) {
+  for (const dep of ocrDeps) {
     const srcPath = path.resolve("node_modules", dep);
     if (fs.existsSync(srcPath)) {
       fs.cpSync(srcPath, path.join(distDir, "node_modules", dep), { recursive: true });

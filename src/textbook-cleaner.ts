@@ -88,6 +88,10 @@ export type TextbookManifest = {
   chapters: TextbookChapter[];
 };
 
+const DEFAULT_TEXTBOOK_WINDOW_CHARS = 4_000;
+const DEFAULT_TEXTBOOK_WINDOW_OVERLAP_CHARS = 300;
+const MIN_TEXTBOOK_WINDOW_CHARS = 2_000;
+
 const TEXTBOOK_PROMPT = `你是中文/英文教材排版修复专家。当前输入是 1 个章节（20-50 页）的 OCR 识别文本，输出应该是该章节清理后的完整 Markdown。
 
 ── 教材特有元素（重点处理）──
@@ -100,8 +104,10 @@ const TEXTBOOK_PROMPT = `你是中文/英文教材排版修复专家。当前输
 ── 通用清理 ──
 - 字符级修正：形近字（己/已/巳、未/末、士/土、辨/辩/瓣）、数字 0/O 1/l/I、中文标点统一全角
 - 排版：合并错误断行、章节标题用 #/##/###、删除页眉页脚水印
-- 模糊处用 [?] 不臆测
-- 不重写不润色不删减
+- 内容保全：不摘要、不删减、不改写论证顺序。定义、定理、公式、例题、习题、表格、图注、编号、脚注都要保留
+- OCR 猜测补全：如果能从上下文、章节主题、专业术语或相邻句唯一推断出缺字/错字，直接修正为最可能原文
+- 不确定处理：不要把大量字符替换成 ? 或 [?]。无法可靠判断时保留原 OCR 片段，并在后面追加少量标记 〔疑似：...〕
+- 只删除重复页眉页脚、孤立页码、水印和明显 OCR 噪声
 
 ── 上下文 ──
 教材名：{{book_title}}
@@ -121,6 +127,36 @@ const TEXTBOOK_PROMPT = `你是中文/英文教材排版修复专家。当前输
 末尾如有未完公式或图，标注 [待人工补充：...]。
 `;
 
+const TEXTBOOK_WINDOW_PROMPT = `你是中文/英文教材 OCR 排版修复专家。当前输入是教材 OCR 的一个连续窗口，而不是完整章节。
+
+── 任务 ──
+- 修复 OCR 错字、错误断行、页眉页脚、乱码和排版混乱
+- 保留原文信息，不扩写，不删减，不总结，不把教材整理成摘要
+- 定义、定理、公式、例题、习题、表格、图注、编号、脚注必须保留
+- 公式用 LaTeX，表格尽量还原为 Markdown 表格，复杂表格可用 HTML <table>
+- 图表只保留标题/说明，占位为 [图 X.Y 描述：...]
+- OCR 猜测补全：如果能从本窗口、上一窗口尾部、章节标题、学科术语或相邻句唯一推断出缺字/错字，直接修正为最可能原文
+- 不确定处理：不要把大量字符替换成 ? 或 [?]。无法可靠判断时保留原 OCR 片段，并在后面追加少量标记 〔疑似：...〕
+- 只删除重复页眉页脚、孤立页码、水印和明显 OCR 噪声
+
+── 上下文 ──
+教材名：{{book_title}}
+章节标题：{{chapter_title}}
+窗口：{{window_index}} / {{window_total}}
+上一章末尾两段（仅供衔接，不要重复输出）：{{prev_tail_2_paragraphs}}
+下一章开头两段（仅供术语参考，不要输出）：{{next_head_2_paragraphs}}
+上一窗口末尾片段（仅供衔接，不要重复输出）：{{prev_window_tail}}
+
+── 当前 OCR 窗口文本 ──
+{{window_ocr_text}}
+
+── 输出格式 ──
+只输出当前窗口清理后的 Markdown 正文。
+不要用 \`\`\`markdown 包裹。
+不要输出"以下是..."等解释。
+如果开头明显接续上一窗口，不要强行新建大标题。
+`;
+
 /**
  * Read and parse a textbook manifest JSON file from the vault.
  * Throws if the file is missing, unreadable, or has the wrong
@@ -135,9 +171,10 @@ export async function parseManifest(
 ): Promise<TextbookManifest> {
   const file = app.vault.getAbstractFileByPath(manifestPath);
   // Duck-typing instead of `instanceof TFile` so this is testable
-  // without booting Obsidian's full class hierarchy. We just need
-  // a `path` string and a `read()` method that returns the bytes.
-  if (!file || typeof (file as any).path !== "string" || typeof (file as any).read !== "function") {
+  // without booting Obsidian's full class hierarchy. Real Obsidian
+  // TFile instances are read through app.vault.read(file), not
+  // through a file.read() method.
+  if (!file || typeof (file as any).path !== "string") {
     throw new Error(`manifest 路径无效或文件不存在: ${manifestPath}`);
   }
   let raw: string;
@@ -246,6 +283,147 @@ function resolveVaultPath(
   return base ? `${base}/${vaultRelative}` : vaultRelative;
 }
 
+function splitTextbookWindows(
+  text: string,
+  maxChars = DEFAULT_TEXTBOOK_WINDOW_CHARS,
+  overlapChars = DEFAULT_TEXTBOOK_WINDOW_OVERLAP_CHARS,
+): Array<{ index: number; total: number; text: string; prevTail: string }> {
+  const normalized = text.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return [];
+  if (normalized.length <= maxChars) {
+    return [{ index: 0, total: 1, text: normalized, prevTail: "" }];
+  }
+
+  const windows: Array<{ text: string; prevTail: string }> = [];
+  let offset = 0;
+  while (offset < normalized.length) {
+    const hardEnd = Math.min(normalized.length, offset + maxChars);
+    let end = hardEnd;
+    if (hardEnd < normalized.length) {
+      const paragraphBreak = normalized.lastIndexOf("\n\n", hardEnd);
+      const lineBreak = normalized.lastIndexOf("\n", hardEnd);
+      const candidate = paragraphBreak > offset + Math.floor(maxChars * 0.55)
+        ? paragraphBreak
+        : lineBreak > offset + Math.floor(maxChars * 0.65)
+          ? lineBreak
+          : hardEnd;
+      end = Math.max(offset + 1, candidate);
+    }
+
+    const chunk = normalized.slice(offset, end).trim();
+    if (chunk) {
+      const prev = windows.at(-1)?.text ?? "";
+      windows.push({
+        text: chunk,
+        prevTail: prev ? prev.slice(Math.max(0, prev.length - overlapChars)).trim() : "",
+      });
+    }
+    if (end >= normalized.length) break;
+    offset = Math.max(end - overlapChars, offset + 1);
+  }
+
+  return windows.map((window, index) => ({
+    index,
+    total: windows.length,
+    text: window.text,
+    prevTail: window.prevTail,
+  }));
+}
+
+function isTransientAiWindowError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /EMPTY_RESPONSE|CONNECTION_CLOSED|CONNECTION_RESET|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ERR_|timeout|aborted|network/i.test(message);
+}
+
+function getTextbookCleanerSettings(settings: LinkTagIntelligenceSettings): LinkTagIntelligenceSettings {
+  const configured = Number(settings.aiMaxTokens);
+  const safeOutputBudget = Number.isFinite(configured)
+    ? Math.min(Math.max(configured, 8_192), 32_768)
+    : 16_384;
+  return {
+    ...settings,
+    aiMaxTokens: safeOutputBudget,
+  };
+}
+
+function isVaultTextFile(file: unknown): file is TFile {
+  return !!file && typeof (file as any).path === "string";
+}
+
+async function writeVaultText(app: App, path: string, content: string): Promise<void> {
+  const existing = app.vault.getAbstractFileByPath(path);
+  if (isVaultTextFile(existing)) {
+    await app.vault.modify(existing, content);
+    return;
+  }
+  await app.vault.create(path, content);
+}
+
+function renderProgressOutput(cleanedParts: string[], status: string): string {
+  const body = cleanedParts.map((part) => part.trim()).filter(Boolean).join("\n\n");
+  const marker = `> [!info] ${status}`;
+  return body ? `${body}\n\n${marker}` : marker;
+}
+
+async function cleanWindowWithFallback(
+  ai: AIService,
+  promptTemplate: string,
+  context: {
+    bookTitle: string;
+    chapterNumber: number;
+    chapterTitle: string;
+    pageRange: string;
+    prevTail: string;
+    nextHead: string;
+    windowIndex: number;
+    windowTotal: number;
+    prevWindowTail: string;
+  },
+  windowText: string,
+  // Overrides context.prevWindowTail. The split-and-retry path passes the
+  // cleaned tail of the left half so the right half gets real continuation
+  // context instead of falling back to the original window's prevWindowTail.
+  prevWindowTailOverride?: string,
+): Promise<string[]> {
+  const effectivePrevWindowTail = prevWindowTailOverride ?? context.prevWindowTail;
+  const buildPrompt = (text: string, prevWindowTail: string): string => promptTemplate
+    .replace(/\{\{book_title\}\}/g, context.bookTitle)
+    .replace(/\{\{chapter_number\}\}/g, String(context.chapterNumber))
+    .replace(/\{\{chapter_title\}\}/g, context.chapterTitle)
+    .replace(/\{\{page_range\}\}/g, context.pageRange)
+    .replace(/\{\{prev_tail_2_paragraphs\}\}/g, context.prevTail || "（无）")
+    .replace(/\{\{next_head_2_paragraphs\}\}/g, context.nextHead || "（无）")
+    .replace(/\{\{window_index\}\}/g, String(context.windowIndex + 1))
+    .replace(/\{\{window_total\}\}/g, String(context.windowTotal))
+    .replace(/\{\{prev_window_tail\}\}/g, prevWindowTail || "（无）")
+    .replace(/\{\{window_ocr_text\}\}/g, text)
+    .replace(/\{\{chapter_ocr_text\}\}/g, text);
+
+  try {
+    const cleaned = await ai.runRefinement(buildPrompt(windowText, effectivePrevWindowTail));
+    if (!cleaned.trim()) {
+      throw new Error("AI 返回内容为空");
+    }
+    return [cleaned.trim()];
+  } catch (error) {
+    if (!isTransientAiWindowError(error) || windowText.length <= MIN_TEXTBOOK_WINDOW_CHARS) {
+      throw error;
+    }
+    const [left, right] = splitTextbookWindows(
+      windowText,
+      Math.max(MIN_TEXTBOOK_WINDOW_CHARS, Math.ceil(windowText.length / 2)),
+      Math.min(DEFAULT_TEXTBOOK_WINDOW_OVERLAP_CHARS, 300),
+    );
+    if (!left || !right) {
+      throw error;
+    }
+    const leftParts = await cleanWindowWithFallback(ai, promptTemplate, context, left.text, effectivePrevWindowTail);
+    const leftTail = leftParts.at(-1)?.slice(-DEFAULT_TEXTBOOK_WINDOW_OVERLAP_CHARS) ?? effectivePrevWindowTail;
+    const rightParts = await cleanWindowWithFallback(ai, promptTemplate, context, right.text, leftTail);
+    return [...leftParts, ...rightParts];
+  }
+}
+
 /**
  * Run the textbook cleaner. Loops the manifest's chapters, calls
  * the AI per chapter, saves each output to disk. Reports progress
@@ -269,10 +447,13 @@ export async function cleanBook(
   manifest: TextbookManifest,
   options?: {
     onProgress?: (info: {
+      phase: "started" | "succeeded" | "failed";
       index: number;
       total: number;
       chapter: TextbookChapter;
-      result: { ok: true; outputPath: string; chars: number } | { ok: false; error: string };
+      windowIndex?: number;
+      windowTotal?: number;
+      result?: { ok: true; outputPath: string; chars: number } | { ok: false; error: string };
     }) => void;
   },
 ): Promise<{
@@ -281,7 +462,7 @@ export async function cleanBook(
   failed: number;
   failures: Array<{ chapter: TextbookChapter; error: string }>;
 }> {
-  const ai = new AIService(app, settings);
+  const ai = new AIService(app, getTextbookCleanerSettings(settings));
   // Build an index by chapter ID so prev/next cross-references are
   // a simple lookup. The user wires these in the manifest, but the
   // cleaner is robust to missing cross-refs — it just leaves the
@@ -315,7 +496,12 @@ export async function cleanBook(
 
   for (let i = 0; i < manifest.chapters.length; i++) {
     const chapter = manifest.chapters[i];
-    new Notice(`📖 清理 ${manifest.book_title} · 第 ${chapter.number} 章 ${chapter.title} (${i + 1}/${manifest.chapters.length})`);
+    options?.onProgress?.({
+      phase: "started",
+      index: i,
+      total: manifest.chapters.length,
+      chapter,
+    });
 
     try {
       // Read the source note. The user partitioned the OCR text
@@ -324,20 +510,10 @@ export async function cleanBook(
       // page boundaries — depends on the user's prep workflow).
       const sourceFile = app.vault.getAbstractFileByPath(chapter.source_note);
       // Duck-typing (see parseManifest for rationale).
-      if (!sourceFile || typeof (sourceFile as any).read !== "function") {
+      if (!sourceFile || typeof (sourceFile as any).path !== "string") {
         throw new Error(`源笔记不存在: ${chapter.source_note}`);
       }
-      const ocrText = await (sourceFile as any).read();
-
-      // Build the prompt. Use the manifest's prompt_override if
-      // provided, otherwise the built-in textbook prompt. The
-      // placeholders are filled in below in order.
-      const promptTemplate = manifest.prompt_override?.trim() || TEXTBOOK_PROMPT;
-      let prompt = promptTemplate
-        .replace(/\{\{book_title\}\}/g, manifest.book_title)
-        .replace(/\{\{chapter_number\}\}/g, String(chapter.number))
-        .replace(/\{\{chapter_title\}\}/g, chapter.title)
-        .replace(/\{\{page_range\}\}/g, chapter.page_range ? `${chapter.page_range[0]}–${chapter.page_range[1]}` : "（未指定）");
+      const ocrText = await (app.vault.read as any)(sourceFile);
 
       // Cross-chapter context: read the previous chapter's saved
       // output from disk if available (we wrote it earlier in this
@@ -372,18 +548,6 @@ export async function cleanBook(
         }
       }
 
-      prompt = prompt
-        .replace(/\{\{prev_tail_2_paragraphs\}\}/g, prevTail || "（无）")
-        .replace(/\{\{next_head_2_paragraphs\}\}/g, nextHead || "（无）")
-        .replace(/\{\{chapter_ocr_text\}\}/g, ocrText);
-
-      // Call the AI. The AIService progress callback updates the
-      // user-facing Notice; we don't need our own.
-      const cleaned = await ai.runRefinement(prompt);
-      if (!cleaned.trim()) {
-        throw new Error("AI 返回内容为空");
-      }
-
       // Sanitize title for filename. Pad number to 2 digits (handles
       // up to 99 chapters; for a 100+ chapter book the user can
       // bump the pad length in sanitizeForFilename).
@@ -391,15 +555,70 @@ export async function cleanBook(
       const numPad = String(chapter.number).padStart(2, "0");
       const fileName = `ch${numPad}-${safeTitle}.md`;
       const outputPath = `${outputDir}/${fileName}`;
+      const partDir = `${outputDir}/${fileName.replace(/\.md$/i, "")}-parts`;
+      await app.vault.createFolder(partDir).catch((e) => {
+        if (!String(e?.message ?? "").includes("already exists")) throw e;
+      });
 
-      // Write the cleaned output. Use modify() if the file already
-      // exists (re-run case), create() otherwise.
-      const existing = app.vault.getAbstractFileByPath(outputPath);
-      if (existing instanceof TFile) {
-        await app.vault.modify(existing, cleaned);
-      } else {
-        await app.vault.create(outputPath, cleaned);
+      const windows = splitTextbookWindows(ocrText);
+      if (windows.length === 0) {
+        throw new Error("源笔记内容为空，无法整理");
       }
+
+      const cleanedParts: string[] = [];
+      for (const windowInfo of windows) {
+        await writeVaultText(app, outputPath, renderProgressOutput(
+          cleanedParts,
+          `教材整理处理中：窗口 ${windowInfo.index + 1}/${windowInfo.total} 正在调用 AI。已完成 ${cleanedParts.length} 段。`,
+        ));
+        options?.onProgress?.({
+          phase: "started",
+          index: i,
+          total: manifest.chapters.length,
+          chapter,
+          windowIndex: windowInfo.index,
+          windowTotal: windowInfo.total,
+        });
+
+        const promptTemplate = manifest.prompt_override?.trim() || TEXTBOOK_WINDOW_PROMPT;
+        const windowParts = await cleanWindowWithFallback(ai, promptTemplate, {
+          bookTitle: manifest.book_title,
+          chapterNumber: chapter.number,
+          chapterTitle: chapter.title,
+          pageRange: chapter.page_range ? `${chapter.page_range[0]}–${chapter.page_range[1]}` : "（未指定）",
+          prevTail,
+          nextHead,
+          windowIndex: windowInfo.index,
+          windowTotal: windowInfo.total,
+          prevWindowTail: windowInfo.prevTail,
+        }, windowInfo.text);
+
+        for (const cleanedPart of windowParts) {
+          cleanedParts.push(cleanedPart.trim());
+          const partName = `part-${String(cleanedParts.length).padStart(3, "0")}.md`;
+          const partPath = `${partDir}/${partName}`;
+          await writeVaultText(app, partPath, cleanedPart.trim());
+          await writeVaultText(app, outputPath, renderProgressOutput(
+            cleanedParts,
+            `教材整理处理中：窗口 ${windowInfo.index + 1}/${windowInfo.total} 已写入。继续处理剩余窗口。`,
+          ));
+
+          options?.onProgress?.({
+            phase: "succeeded",
+            index: i,
+            total: manifest.chapters.length,
+            chapter,
+            windowIndex: windowInfo.index,
+            windowTotal: windowInfo.total,
+            result: { ok: true, outputPath: resolveVaultPath(app, partPath), chars: cleanedPart.length },
+          });
+        }
+      }
+
+      const cleaned = cleanedParts.join("\n\n");
+
+      // Write the final cleaned output without the live progress marker.
+      await writeVaultText(app, outputPath, cleaned);
 
       // Cache for cross-chapter lookups.
       outputById.set(chapter.id, outputPath);
@@ -407,6 +626,7 @@ export async function cleanBook(
 
       succeeded++;
       options?.onProgress?.({
+        phase: "succeeded",
         index: i,
         total: manifest.chapters.length,
         chapter,
@@ -417,6 +637,7 @@ export async function cleanBook(
       console.error(`[textbook-cleaner] chapter ${chapter.id} failed:`, e);
       failures.push({ chapter, error: msg });
       options?.onProgress?.({
+        phase: "failed",
         index: i,
         total: manifest.chapters.length,
         chapter,

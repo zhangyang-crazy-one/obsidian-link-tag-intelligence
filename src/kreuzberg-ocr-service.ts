@@ -15,7 +15,7 @@
 // __dirname. The renderer must be using a sandboxed module root that
 // excludes the plugin's own node_modules/ directory. The only reliable
 // pattern is to spawn a fresh Node.js child process (mirroring the
-// asr-worker.ts / vision-worker.ts architecture) and let IT require the
+// asr-worker.ts / OCR worker architecture) and let IT require the
 // native binding with a normal parent-tree-walking resolver. The
 // service below spawns src/kreuzberg-worker.ts as a child, sends it
 // {type:"extract", filePath, tessdataPath, jobId} messages on stdin,
@@ -90,7 +90,7 @@ export class KreuzbergOcrService {
     this.readyPromise = new Promise<void>((resolve) => {
       this.readyResolve = resolve;
     });
-    // Match vision-service.ts spawn flags: detached on POSIX for
+    // Match ocr-service.ts spawn flags: detached on POSIX for
     // process-group kill, pluginDir as cwd, shell on POSIX. These
     // mirror the asr-worker invocation in src/ai-service.ts:53-58.
     const isWindows = process.platform === "win32";
@@ -232,7 +232,7 @@ export class KreuzbergOcrService {
   /**
    * Destroy lifecycle for plugin unload. Terminates the child with
    * SIGTERM (and SIGKILL after a short grace period if it doesn't
-   * exit cleanly). Mirrors vision-service.terminateProcess escalation.
+   * exit cleanly). Mirrors the OCR child-process escalation pattern.
    */
   public destroy(): void {
     this.destroyed = true;

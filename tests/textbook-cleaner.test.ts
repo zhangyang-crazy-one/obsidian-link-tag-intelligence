@@ -15,6 +15,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // assert on the cross-chapter context wiring.
 const aiPrompts: string[] = [];
 const aiShouldFailFor = (title: string) => false;
+const aiFailures: Error[] = [];
 
 // Mock AIService BEFORE importing the textbook-cleaner so the
 // import picks up the mocked version. vi.mock is hoisted by vitest
@@ -25,6 +26,10 @@ vi.mock("../src/ai-service", () => ({
     constructor(_app: unknown, _settings: unknown) { /* noop */ }
     async runRefinement(prompt: string): Promise<string> {
       aiPrompts.push(prompt);
+      const queuedFailure = aiFailures.shift();
+      if (queuedFailure) {
+        throw queuedFailure;
+      }
       const m = prompt.match(/章节标题：(.+)/);
       const title = m?.[1]?.trim() ?? "?";
       if (aiShouldFailFor(title)) {
@@ -43,13 +48,16 @@ const makeMockVault = (files: Record<string, string>) => {
   const fileMap = new Map(Object.entries(files));
   return {
     vault: {
+      adapter: {
+        getBasePath: () => "/vault",
+      },
       getAbstractFileByPath: (p: string) => {
         if (fileMap.has(p)) {
-          return { path: p, read: async () => fileMap.get(p)!, instanceof: "TFile" };
+          return { path: p, instanceof: "TFile" };
         }
         return null;
       },
-      read: async (file: { read: () => Promise<string> }) => file.read(),
+      read: async (file: { path: string }) => fileMap.get(file.path) ?? "",
       create: async (path: string, content: string) => {
         fileMap.set(path, content);
         return { path, instanceof: "TFile" };
@@ -141,6 +149,7 @@ describe("sanitizeForFilename", () => {
 describe("cleanBook (end-to-end with mocked vault + AI)", () => {
   beforeEach(() => {
     aiPrompts.length = 0;
+    aiFailures.length = 0;
   });
 
   it("processes each chapter and saves outputs with padded numbering", async () => {
@@ -208,5 +217,63 @@ describe("cleanBook (end-to-end with mocked vault + AI)", () => {
     });
     expect(result.succeeded).toBe(1);
     expect(result.failed).toBe(0);
+  });
+
+  it("splits long chapter OCR into multiple AI windows", async () => {
+    const longText = Array.from({ length: 80 }, (_, i) =>
+      `第 ${i + 1} 段 ` + "工程经济学 OCR 文本 ".repeat(80)
+    ).join("\n\n");
+    const mockApp = makeMockVault({
+      "Books/foo/raw/long.md": longText,
+    });
+    const progress: Array<{ windowIndex?: number; windowTotal?: number; phase: string }> = [];
+
+    const result = await cleanBook(mockApp as any, {
+      aiProvider: "minimax" as const,
+      aiModel: "MiniMax-M3",
+      aiApiKey: "fake",
+      aiBaseUrl: "x",
+      aiMaxTokens: 8192,
+    } as any, {
+      book_title: "Long", ocr_source: "hybrid", output_dir: "Books/foo/chapters",
+      chapters: [
+        { id: "long", number: 1, title: "Long", source_note: "Books/foo/raw/long.md" },
+      ],
+    }, {
+      onProgress: (info) => progress.push({
+        phase: info.phase,
+        windowIndex: info.windowIndex,
+        windowTotal: info.windowTotal,
+      }),
+    });
+
+    expect(result.succeeded).toBe(1);
+    expect(aiPrompts.length).toBeGreaterThan(1);
+    expect(aiPrompts[0]).toContain("窗口：1 /");
+    expect(progress.some((item) => item.windowTotal && item.windowTotal > 1)).toBe(true);
+  });
+
+  it("bisects a transiently failing AI window instead of failing the chapter", async () => {
+    aiFailures.push(new Error("Failed to request Anthropic API: net::ERR_EMPTY_RESPONSE"));
+    const mockApp = makeMockVault({
+      "Books/foo/raw/retry.md": "窗口失败重试文本 ".repeat(900),
+    });
+
+    const result = await cleanBook(mockApp as any, {
+      aiProvider: "minimax" as const,
+      aiModel: "MiniMax-M3",
+      aiApiKey: "fake",
+      aiBaseUrl: "x",
+      aiMaxTokens: 8192,
+    } as any, {
+      book_title: "Retry", ocr_source: "hybrid", output_dir: "Books/foo/chapters",
+      chapters: [
+        { id: "retry", number: 1, title: "Retry", source_note: "Books/foo/raw/retry.md" },
+      ],
+    });
+
+    expect(result.succeeded).toBe(1);
+    expect(result.failed).toBe(0);
+    expect(aiPrompts.length).toBeGreaterThan(1);
   });
 });

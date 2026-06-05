@@ -141,12 +141,24 @@ describe("PaddleOcrEngine.checkModelFiles", () => {
     expect(result.missingOptional[0]).toContain(PADDLE_MODEL_SUBDIRS.cls);
   });
 
-  it("reports 3 missing files when the entire model dir is empty (cls excluded as optional)", () => {
+  it("reports 2 missing files for the default server tier when the model dir is empty", () => {
     const fs = makeFsMock({ existing: new Set(), dictText: "" });
     const svc = new PaddleOcrEngine(MODEL_DIR, { fs, path: realPath });
     const result = svc.checkModelFiles();
     expect(result.present).toBe(false);
+    expect(result.missing).toHaveLength(2);
+    expect(result.missing.some((item) => item.includes(PADDLE_MODEL_SUBDIRS.det))).toBe(true);
+    expect(result.missing.some((item) => item.includes(PADDLE_MODEL_SUBDIRS.rec))).toBe(true);
+    expect(result.missingOptional).toHaveLength(1);
+  });
+
+  it("reports 3 missing files for mobile tier when the model dir is empty", () => {
+    const fs = makeFsMock({ existing: new Set(), dictText: "" });
+    const svc = new PaddleOcrEngine(MODEL_DIR, { fs, path: realPath, tier: "mobile" });
+    const result = svc.checkModelFiles();
+    expect(result.present).toBe(false);
     expect(result.missing).toHaveLength(3);
+    expect(result.missing.some((item) => item.includes(PADDLE_MODEL_SUBDIRS.dict))).toBe(true);
     expect(result.missingOptional).toHaveLength(1);
   });
 });
@@ -178,10 +190,20 @@ describe("PaddleOcrEngine.init", () => {
   it("loads dictionary + 3 sessions when all model files are present", async () => {
     const fs = makeFsMock({ existing: allModelFiles(), dictText: DICT_LINES.join("\n") });
     const ort = makeOrtMock();
-    const svc = new PaddleOcrEngine(MODEL_DIR, { fs, path: realPath, ort: ort as never });
+    const svc = new PaddleOcrEngine(MODEL_DIR, { fs, path: realPath, ort: ort as never, cpuThreads: 6 });
     await svc.init();
     // 3 ONNX sessions created (det, cls, rec)
     expect(ort.InferenceSession.create).toHaveBeenCalledTimes(3);
+    expect(ort.InferenceSession.create).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        executionProviders: ["cpu"],
+        intraOpNumThreads: 6,
+        interOpNumThreads: 2,
+        executionMode: "parallel",
+        graphOptimizationLevel: "all",
+      })
+    );
     // Idempotent: second call should not recreate sessions
     await svc.init();
     expect(ort.InferenceSession.create).toHaveBeenCalledTimes(3);
@@ -402,9 +424,9 @@ describe("PaddleOcrEngine geometry helpers", () => {
 // ---------------------------------------------------------------------------
 
 describe("PaddleOcrEngine constructor with tier option", () => {
-  it("defaults to mobile tier when no tier is specified", () => {
+  it("defaults to server tier when no tier is specified", () => {
     const svc = new PaddleOcrEngine(MODEL_DIR, { fs: {} as never });
-    expect((svc as unknown as { tier: string }).tier).toBe("mobile");
+    expect((svc as unknown as { tier: string }).tier).toBe("server");
   });
 
   it("accepts server tier", () => {

@@ -20,12 +20,15 @@
 //
 // Process lifecycle: stay alive across multiple extract calls. Parent
 // SIGTERMs the child on plugin unload or after a long idle period
-// (matches the asr-worker / vision-worker pattern).
+// (matches the asr-worker / OCR worker pattern).
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
 const readline = require("readline");
 // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
 const kreuzberg = require("@kreuzberg/node");
+// eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+const fs = require("fs");
+import { createOcrInputImage } from "./ocr-image-preprocess";
 
 type ExtractRequest = {
   type: "extract";
@@ -43,6 +46,13 @@ type IncomingMessage = ExtractRequest;
 
 function emit(json: object): void {
   process.stdout.write(JSON.stringify(json) + "\n");
+}
+
+function normalizeCjkOcrText(text: string): string {
+  return text
+    .replace(/([\u3400-\u9fff])\s+(?=[\u3400-\u9fff])/g, "$1")
+    .replace(/([\u3400-\u9fff])\s+([，。；：、！？）】》])/g, "$1$2")
+    .replace(/([（【《])\s+([\u3400-\u9fff])/g, "$1$2");
 }
 
 const rl = readline.createInterface({ input: process.stdin });
@@ -70,19 +80,42 @@ async function runExtract(req: ExtractRequest): Promise<void> {
   if (tessdataPath) {
     process.env.TESSDATA_PREFIX = tessdataPath;
   }
+  let ocrFilePath = filePath;
+  let temporaryImagePath: string | null = null;
   try {
     emit({ type: "progress", jobId, stage: "loading", message: "正在加载 Tesseract 语言模型..." });
+    try {
+      temporaryImagePath = await createOcrInputImage(filePath, jobId);
+      if (temporaryImagePath) {
+        ocrFilePath = temporaryImagePath;
+        emit({ type: "progress", jobId, stage: "preprocessing", message: "正在预处理图片以提升小字识别率..." });
+      }
+    } catch (e: any) {
+      emit({ type: "progress", jobId, stage: "preprocessing", message: `OCR 预处理失败，使用原图继续：${String(e?.message ?? e)}` });
+    }
     emit({ type: "progress", jobId, stage: "extracting", message: "正在通过 Kreuzberg 提取文字..." });
-    const result = await kreuzberg.extractFile(filePath, null, {
+    const result = await kreuzberg.extractFile(ocrFilePath, null, {
       outputFormat: "plain",
       useCache: false,
+      ocr: {
+        backend: "tesseract",
+        language: "chi_sim",
+      },
       layout: undefined,
     });
-    emit({ type: "progress", jobId, stage: "done", message: `提取完成（${result.content.length} 字符）` });
-    emit({ type: "result", jobId, success: true, text: result.content });
+    const text = normalizeCjkOcrText(result.content);
+    emit({ type: "progress", jobId, stage: "done", message: `提取完成（${text.length} 字符）` });
+    emit({ type: "result", jobId, success: true, text });
   } catch (e: any) {
     emit({ type: "error", jobId, error: String(e?.message ?? e) });
   } finally {
+    if (temporaryImagePath) {
+      try {
+        fs.unlinkSync(temporaryImagePath);
+      } catch {
+        // Best-effort cleanup only.
+      }
+    }
     if (prevTessdataPrefix === undefined) {
       delete process.env.TESSDATA_PREFIX;
     } else {
