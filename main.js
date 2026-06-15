@@ -52,7 +52,7 @@ async function verifyChecksum(buffer, expectedSha256) {
   return actual === expectedSha256;
 }
 function getModelFileList(language) {
-  return language === "zh" ? [...ZH_MODEL_FILENAMES] : EN_MODEL_FILES.map((f) => f.filename);
+  return language === "zh" ? [...ZH_MODEL_FILES] : [...EN_MODEL_FILES];
 }
 function getModelRepo(language) {
   return language === "zh" ? ZH_MODEL_URL : EN_MODEL_REPO;
@@ -144,17 +144,17 @@ async function downloadModelFiles(language, writeFile, onProgress) {
   }
   return results;
 }
-var ZH_MODEL_ARCHIVE, ZH_MODEL_URL, ZH_MODEL_FILENAMES, EN_MODEL_REPO, EN_MODEL_FILES;
+var ZH_MODEL_ARCHIVE, ZH_MODEL_URL, ZH_MODEL_FILES, EN_MODEL_REPO, EN_MODEL_FILES;
 var init_speech_model = __esm({
   "src/speech-model.ts"() {
     "use strict";
     ZH_MODEL_ARCHIVE = "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2";
     ZH_MODEL_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/" + ZH_MODEL_ARCHIVE;
-    ZH_MODEL_FILENAMES = [
-      "encoder.int8.onnx",
-      "decoder.onnx",
-      "joiner.int8.onnx",
-      "tokens.txt"
+    ZH_MODEL_FILES = [
+      { filename: "encoder.int8.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+      { filename: "decoder.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+      { filename: "joiner.int8.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+      { filename: "tokens.txt", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" }
     ];
     EN_MODEL_REPO = "csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20";
     EN_MODEL_FILES = [
@@ -4853,6 +4853,7 @@ function buildDefaultSettings(configDir = "") {
     speechAutoPunctuate: true,
     speechDecodingMethod: "greedy_search",
     speechMaxUtteranceSec: 20,
+    speechModelChoice: "zipformer",
     speechAutoHotwords: true,
     speechConfusionMapText: "\u5728\u663E\u4EF7\u503C:\u5728\u9669\u4EF7\u503C\n\u98CE\u9669\u7A57:\u98CE\u9669\u77E9\u9635\n\u5BCC\u529B\u4E1A:\u5085\u91CC\u53F6",
     // OCR Defaults
@@ -6958,7 +6959,6 @@ var AIService = class {
       let stdoutBuf = "";
       let stderrLog = "";
       const sentences = [];
-      let isReady = false;
       child.on("error", (err) => {
         reject(new Error(`Failed to start local ASR process: ${err.message}`));
       });
@@ -6971,7 +6971,6 @@ var AIService = class {
             const msg = JSON.parse(line);
             if (msg.type === "ready") {
               if (msg.ok) {
-                isReady = true;
                 void feedAudio();
               } else {
                 child.kill();
@@ -8996,7 +8995,7 @@ var LinkTagIntelligenceView = class extends import_obsidian12.ItemView {
         void this.updateLivePromptPreview();
       }, 150);
     });
-    this.registerEvent(this.app.workspace.on("editor-change", (editor, info) => {
+    this.registerEvent(this.app.workspace.on("editor-change", (_editor, info) => {
       const activeFile = this.plugin.getContextNoteFile();
       if (!activeFile || info.file?.path !== activeFile.path) return;
       if (this.debounceSummaryTimeout) {
@@ -9175,6 +9174,7 @@ var LinkTagIntelligenceView = class extends import_obsidian12.ItemView {
           key: "speechRecord",
           label: this.plugin.t("speechRecord"),
           disabled: false,
+          title: void 0,
           state: snapshot.phase,
           audioLevel: snapshot.audioLevel,
           dbValue: snapshot.dbValue
@@ -9475,14 +9475,15 @@ var LinkTagIntelligenceView = class extends import_obsidian12.ItemView {
     });
     audioFiles.sort((a, b) => b.stat.mtime - a.stat.mtime);
     const fileRow = parent.createDiv({ cls: "lti-ai-file-row" });
-    const labelRow = fileRow.createDiv({ cls: "lti-ai-label-row", style: "display: flex; justify-content: space-between; align-items: center;" });
+    const labelRow = fileRow.createDiv({ cls: "lti-ai-label-row" });
+    labelRow.style.cssText = "display: flex; justify-content: space-between; align-items: center;";
     labelRow.createSpan({ text: this.plugin.t("aiSelectAudioFile") + "\uFF1A", cls: "lti-ai-label" });
     const importBtn = labelRow.createEl("button", {
       cls: "lti-workbench-button is-compact lti-ai-import-btn",
       text: "\u5BFC\u5165\u97F3\u9891...",
-      type: "button",
-      style: "margin: 0; padding: 2px 8px; font-size: 0.75rem;"
+      type: "button"
     });
+    importBtn.style.cssText = "margin: 0; padding: 2px 8px; font-size: 0.75rem;";
     importBtn.addEventListener("click", () => {
       const fileInput = document.createElement("input");
       fileInput.type = "file";
@@ -9500,10 +9501,10 @@ var LinkTagIntelligenceView = class extends import_obsidian12.ItemView {
           try {
             const newFile = await this.app.vault.createBinary(targetPath, arrayBuffer);
             this.aiTargetFile = newFile;
-            new Notice(`\u5DF2\u6210\u529F\u5BFC\u5165\u5E76\u9009\u4E2D\u97F3\u9891\uFF1A${file.name}`);
+            new import_obsidian12.Notice(`\u5DF2\u6210\u529F\u5BFC\u5165\u5E76\u9009\u4E2D\u97F3\u9891\uFF1A${file.name}`);
             void this.refresh();
           } catch (err) {
-            new Notice(`\u5BFC\u5165\u5931\u8D25: ${err.message || err}`);
+            new import_obsidian12.Notice(`\u5BFC\u5165\u5931\u8D25: ${err.message || err}`);
           }
         }
         document.body.removeChild(fileInput);
@@ -9745,9 +9746,9 @@ var LinkTagIntelligenceView = class extends import_obsidian12.ItemView {
             }
           }
           if (injected) {
-            new Notice("\u{1F389} [\u5DE6\u53F3\u5206\u5C4F\u8054\u52A8] \u5DF2\u76F4\u63A5\u8FFD\u52A0\u5E76\u81EA\u52A8\u6E32\u67D3\u81F3\u60A8\u53F3\u4FA7\u6253\u5F00\u7684 Canvas \u753B\u677F\u4E2D\uFF01");
+            new import_obsidian12.Notice("\u{1F389} [\u5DE6\u53F3\u5206\u5C4F\u8054\u52A8] \u5DF2\u76F4\u63A5\u8FFD\u52A0\u5E76\u81EA\u52A8\u6E32\u67D3\u81F3\u60A8\u53F3\u4FA7\u6253\u5F00\u7684 Canvas \u753B\u677F\u4E2D\uFF01");
           } else {
-            new Notice(
+            new import_obsidian12.Notice(
               "\u2728 Canvas \u5361\u7247\u6570\u636E\u5DF2\u81EA\u52A8\u590D\u5236\u5230\u526A\u8D34\u677F\uFF01\n\n\u{1F4A1} \u6781\u5BA2\u63D0\u793A\uFF1A\u5EFA\u8BAE\u5728\u53F3\u4FA7\u3010\u5DE6\u53F3\u5206\u5C4F\u3011\u6253\u5F00\u4EFB\u610F Canvas \u753B\u677F\uFF0CAI \u5C06\u4F1A\u76F4\u63A5\u5B9E\u65F6\u6E32\u67D3\u5361\u7247\u98DE\u5165\uFF0C\u65E0\u9700\u624B\u52A8\u7C98\u8D34\uFF01",
               8e3
             );
@@ -9774,7 +9775,7 @@ var LinkTagIntelligenceView = class extends import_obsidian12.ItemView {
       void this.refresh();
     }
   }
-  onClose() {
+  async onClose() {
     if (this.refreshFrame !== null) {
       window.cancelAnimationFrame(this.refreshFrame);
       this.refreshFrame = null;
@@ -10008,7 +10009,6 @@ var SpeechRecorder = class {
         const adapter = this.appRef?.vault.adapter;
         const basePath = adapter instanceof import_obsidian13.FileSystemAdapter ? adapter.getBasePath() : "";
         const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence";
-        const workerPath = pluginDir + "/asr-worker.js";
         try {
           const cp3 = require("child_process");
           const isWindows = process.platform === "win32";
@@ -10907,7 +10907,7 @@ var _PaddleOcrEngine = class _PaddleOcrEngine {
       this.pathLib.join(PADDLE_MODEL_SUBDIRS.cls, PADDLE_MODEL_FILES.cls)
     ];
     const missing = required.filter((rel) => !this.fs.existsSync(this.pathLib.join(this.modelDir, rel)));
-    const hasDictionary = this.fs.existsSync(this.pathLib.join(this.modelDir, ymlDictionary)) || this.fs.existsSync(this.pathLib.join(this.modelDir, legacyDictionary));
+    const hasDictionary = this.tier === "mobile" ? this.fs.existsSync(this.pathLib.join(this.modelDir, legacyDictionary)) || this.fs.existsSync(this.pathLib.join(this.modelDir, ymlDictionary)) : this.fs.existsSync(this.pathLib.join(this.modelDir, ymlDictionary)) || this.fs.existsSync(this.pathLib.join(this.modelDir, legacyDictionary));
     if (!hasDictionary) {
       missing.push(ymlDictionary);
     }
@@ -10929,7 +10929,7 @@ var _PaddleOcrEngine = class _PaddleOcrEngine {
         );
       }
       const ort = this.resolveOrt();
-      const sharp = this.resolveSharp();
+      this.resolveSharp();
       if (onStatus) onStatus("\u6B63\u5728\u52A0\u8F7D PaddleOCR \u6587\u672C\u68C0\u6D4B\u6A21\u578B...");
       this.detSession = await ort.InferenceSession.create(
         this.pathLib.join(this.modelDir, PADDLE_MODEL_SUBDIRS.det, PADDLE_MODEL_FILES.det),
@@ -11206,7 +11206,7 @@ var _PaddleOcrEngine = class _PaddleOcrEngine {
   //
   // Returns polygons (8 numbers: TL, TR, BR, BL).
   // ---------------------------------------------------------------------------
-  dbPostprocess(pred, dims, origW, origH, scale) {
+  dbPostprocess(pred, dims, _origW, _origH, scale) {
     if (dims.length < 4) return [];
     const h = dims[2] ?? 0;
     const w = dims[3] ?? 0;
@@ -12267,9 +12267,8 @@ function buildPdfOcrPageMarker(runId, page) {
   return `<!-- lti-pdf-ocr:${runId}:page:${page} -->`;
 }
 var SentenceManager = class {
-  constructor(plugin) {
+  constructor() {
     this.partialText = "";
-    this.plugin = plugin;
   }
   /** Called on every Worker result — accumulates partial text. */
   addPartialText(text) {
@@ -12810,7 +12809,6 @@ var LinkTagIntelligencePlugin = class extends import_obsidian14.Plugin {
   getContextNoteFile() {
     const activeFile = this.app.workspace.getActiveFile();
     const activeView = this.app.workspace.getActiveViewOfType(import_obsidian14.FileView);
-    const leafViewFile = activeView?.file ?? null;
     if (activeFile instanceof import_obsidian14.TFile) {
       if (isSupportedNoteFile(activeFile)) {
         this.captureSupportedFileContext(activeFile);
@@ -13425,7 +13423,7 @@ ${windowLabel}
     const modelDir = this.speechRecorder.getModelDirInternal();
     const lang = this.settings.speechLanguage;
     const isSenseVoice = lang === "zh" && this.settings.speechModelChoice === "sensevoice";
-    const fileList = isSenseVoice ? ["model.int8.onnx", "tokens.txt"] : getModelFileList(lang);
+    const fileList = isSenseVoice ? ["model.int8.onnx", "tokens.txt"] : getModelFileList(lang).map((file) => file.filename);
     if (!fs) {
       new import_obsidian14.Notice(this.t("speechModelNotFound"));
       return false;
@@ -13787,7 +13785,7 @@ ${windowLabel}
       return;
     }
     if (!this._sentenceManager) {
-      this._sentenceManager = new SentenceManager(this);
+      this._sentenceManager = new SentenceManager();
     }
     recorder.onAsrResult = (text, isEndpoint) => {
       if (!text) return;
@@ -14185,11 +14183,6 @@ ${failedPages.map((p) => `- Page ${p.page}: ${p.error}`).join("\n")}` : ""
     const vaultPath = adapter.getBasePath ? adapter.getBasePath() : "";
     const manifestDir = this.app.vault.configDir + "/plugins/link-tag-intelligence";
     return require("path").resolve(vaultPath, manifestDir);
-  }
-  /** Resolve the absolute path of the vault root for relative-path resolution. */
-  getVaultRoot() {
-    const adapter = this.app.vault.adapter;
-    return adapter.getBasePath ? adapter.getBasePath() : null;
   }
 };
 // Annotate the CommonJS export names for ESM import in node:

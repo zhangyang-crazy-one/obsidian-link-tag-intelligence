@@ -48,7 +48,7 @@
 // etc.) since computing by page range alone is brittle for
 // textbooks that have prefaces/appendices/indexes in between.
 
-import { App, TFile, Notice, normalizePath } from "obsidian";
+import { App, TFile, normalizePath } from "obsidian";
 import { AIService } from "./ai-service";
 import type { LinkTagIntelligenceSettings } from "./settings";
 
@@ -100,7 +100,7 @@ const MAX_TEXTBOOK_WINDOW_CHARS = 120_000;
 const MIN_TEXTBOOK_WINDOW_OVERLAP_CHARS = 300;
 const MAX_TEXTBOOK_WINDOW_OVERLAP_CHARS = 8_000;
 
-const TEXTBOOK_PROMPT = `你是中文/英文教材排版修复专家。当前输入是 1 个章节（20-50 页）的 OCR 识别文本，输出应该是该章节清理后的完整 Markdown。
+export const TEXTBOOK_PROMPT = `你是中文/英文教材排版修复专家。当前输入是 1 个章节（20-50 页）的 OCR 识别文本，输出应该是该章节清理后的完整 Markdown。
 
 ── 教材特有元素（重点处理）──
 1. 公式：行内公式用 $...$，块级用 $$...$$。OCR 常把 = 看成 -，把希腊字母（α β γ δ）看错。多行公式保留换行。

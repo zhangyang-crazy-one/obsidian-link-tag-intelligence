@@ -128,7 +128,6 @@ export class SpeechRecorder {
         const adapter = this.appRef?.vault.adapter;
         const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
         const pluginDir = basePath + "/.obsidian/plugins/link-tag-intelligence";
-        const workerPath = pluginDir + "/asr-worker.js";
         try {
           // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
           const cp = require("child_process") as {

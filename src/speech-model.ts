@@ -6,11 +6,11 @@
 // Hotwords limited to ~1740 chars in vocabulary; filter hotwords to match.
 const ZH_MODEL_ARCHIVE = "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30.tar.bz2";
 const ZH_MODEL_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/" + ZH_MODEL_ARCHIVE;
-const ZH_MODEL_FILENAMES = [
-  "encoder.int8.onnx",
-  "decoder.onnx",
-  "joiner.int8.onnx",
-  "tokens.txt",
+const ZH_MODEL_FILES: ModelFileEntry[] = [
+  { filename: "encoder.int8.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+  { filename: "decoder.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+  { filename: "joiner.int8.onnx", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+  { filename: "tokens.txt", sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
 ];
 
 // 2023-02-20 Bilingual zh-en Zipformer (streaming) — for English mode
@@ -72,9 +72,9 @@ export async function verifyChecksum(buffer: ArrayBuffer, expectedSha256: string
 // Model file list accessors
 // ---------------------------------------------------------------------------
 
-/** Return the list of model filenames for a given language. */
-export function getModelFileList(language: "zh" | "en"): string[] {
-  return language === "zh" ? [...ZH_MODEL_FILENAMES] : EN_MODEL_FILES.map((f) => f.filename);
+/** Return the list of model files for a given language. */
+export function getModelFileList(language: "zh" | "en"): ModelFileEntry[] {
+  return language === "zh" ? [...ZH_MODEL_FILES] : [...EN_MODEL_FILES];
 }
 
 /** Return the HuggingFace repo identifier (en only; zh uses GitHub Releases). */

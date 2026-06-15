@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { CliCommandError, formatReferenceRange, inspectReferenceRange, locateReferenceRanges } from "../cli/reference-lib.mjs";
+import { formatReferenceRange, inspectReferenceRange, locateReferenceRanges } from "../cli/reference-lib.mjs";
 
 const execFileAsync = promisify(execFile);
 const tempDirs: string[] = [];
@@ -229,7 +229,7 @@ describe("reference CLI library", () => {
       kind: "line",
       query: "mentions governance",
       scope: "paragraph"
-    })).rejects.toMatchObject<CliCommandError>({
+    })).rejects.toMatchObject({
       code: "ambiguous-match",
       details: {
         match_count: 2
@@ -246,7 +246,7 @@ describe("reference CLI library", () => {
       notePath: "Knowledge/Research/Literature/demo-note.md",
       kind: "line",
       startLine: "4"
-    })).rejects.toMatchObject<CliCommandError>({
+    })).rejects.toMatchObject({
       code: "line-out-of-bounds"
     });
   });

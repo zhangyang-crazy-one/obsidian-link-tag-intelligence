@@ -1,7 +1,8 @@
-import { ItemView, MarkdownView, TFile, WorkspaceLeaf } from "obsidian";
+import { ItemView, Notice, TFile, WorkspaceLeaf } from "obsidian";
 
 import type LinkTagIntelligencePlugin from "./main";
 import type { RecorderSnapshot } from "./speech-recorder";
+import type { AITemplate } from "./settings";
 import { AIService } from "./ai-service";
 import { isIngestionConfigured } from "./ingestion";
 import { LINK_TAG_INTELLIGENCE_ICON_ID } from "./icons";
@@ -59,7 +60,7 @@ interface ToolbarButtonSnapshot {
   key: ToolbarActionId;
   label: string;
   disabled: boolean;
-  title?: string;
+  title: string | undefined;
   state?: string;
   audioLevel?: number;
   dbValue?: number;
@@ -851,7 +852,7 @@ export class LinkTagIntelligenceView extends ItemView {
     });
 
     // Listen to workspace active editor changes (handles document updates)
-    this.registerEvent(this.app.workspace.on("editor-change", (editor, info) => {
+    this.registerEvent(this.app.workspace.on("editor-change", (_editor, info) => {
       const activeFile = this.plugin.getContextNoteFile();
       if (!activeFile || info.file?.path !== activeFile.path) return;
       
@@ -1070,6 +1071,7 @@ export class LinkTagIntelligenceView extends ItemView {
           key: "speechRecord" as ToolbarActionId,
           label: this.plugin.t("speechRecord"),
           disabled: false,
+          title: undefined,
           state: snapshot.phase,
           audioLevel: snapshot.audioLevel,
           dbValue: snapshot.dbValue
@@ -1419,15 +1421,16 @@ export class LinkTagIntelligenceView extends ItemView {
     // Target audio selection row
     const fileRow = parent.createDiv({ cls: "lti-ai-file-row" });
     
-    const labelRow = fileRow.createDiv({ cls: "lti-ai-label-row", style: "display: flex; justify-content: space-between; align-items: center;" });
+    const labelRow = fileRow.createDiv({ cls: "lti-ai-label-row" });
+    labelRow.style.cssText = "display: flex; justify-content: space-between; align-items: center;";
     labelRow.createSpan({ text: this.plugin.t("aiSelectAudioFile") + "：", cls: "lti-ai-label" });
     
     const importBtn = labelRow.createEl("button", {
       cls: "lti-workbench-button is-compact lti-ai-import-btn",
       text: "导入音频...",
       type: "button",
-      style: "margin: 0; padding: 2px 8px; font-size: 0.75rem;"
     });
+    importBtn.style.cssText = "margin: 0; padding: 2px 8px; font-size: 0.75rem;";
 
     importBtn.addEventListener("click", () => {
       const fileInput = document.createElement("input");
@@ -1792,7 +1795,7 @@ export class LinkTagIntelligenceView extends ItemView {
     }
   }
 
-  onClose(): void {
+  async onClose(): Promise<void> {
     if (this.refreshFrame !== null) {
       window.cancelAnimationFrame(this.refreshFrame);
       this.refreshFrame = null;

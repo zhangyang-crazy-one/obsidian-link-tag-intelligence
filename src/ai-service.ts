@@ -192,7 +192,6 @@ export class AIService {
       let stdoutBuf = "";
       let stderrLog = "";
       const sentences: string[] = [];
-      let isReady = false;
 
       child.on("error", (err: Error) => {
         reject(new Error(`Failed to start local ASR process: ${err.message}`));
@@ -207,7 +206,6 @@ export class AIService {
             const msg = JSON.parse(line);
             if (msg.type === "ready") {
               if (msg.ok) {
-                isReady = true;
                 // Once ready, feed the audio stream
                 void feedAudio();
               } else {

@@ -115,7 +115,7 @@ var _PaddleOcrEngine = class _PaddleOcrEngine {
       this.pathLib.join(PADDLE_MODEL_SUBDIRS.cls, PADDLE_MODEL_FILES.cls)
     ];
     const missing = required.filter((rel) => !this.fs.existsSync(this.pathLib.join(this.modelDir, rel)));
-    const hasDictionary = this.fs.existsSync(this.pathLib.join(this.modelDir, ymlDictionary)) || this.fs.existsSync(this.pathLib.join(this.modelDir, legacyDictionary));
+    const hasDictionary = this.tier === "mobile" ? this.fs.existsSync(this.pathLib.join(this.modelDir, legacyDictionary)) || this.fs.existsSync(this.pathLib.join(this.modelDir, ymlDictionary)) : this.fs.existsSync(this.pathLib.join(this.modelDir, ymlDictionary)) || this.fs.existsSync(this.pathLib.join(this.modelDir, legacyDictionary));
     if (!hasDictionary) {
       missing.push(ymlDictionary);
     }
@@ -137,7 +137,7 @@ var _PaddleOcrEngine = class _PaddleOcrEngine {
         );
       }
       const ort2 = this.resolveOrt();
-      const sharp2 = this.resolveSharp();
+      this.resolveSharp();
       if (onStatus) onStatus("\u6B63\u5728\u52A0\u8F7D PaddleOCR \u6587\u672C\u68C0\u6D4B\u6A21\u578B...");
       this.detSession = await ort2.InferenceSession.create(
         this.pathLib.join(this.modelDir, PADDLE_MODEL_SUBDIRS.det, PADDLE_MODEL_FILES.det),
@@ -414,7 +414,7 @@ var _PaddleOcrEngine = class _PaddleOcrEngine {
   //
   // Returns polygons (8 numbers: TL, TR, BR, BL).
   // ---------------------------------------------------------------------------
-  dbPostprocess(pred, dims, origW, origH, scale) {
+  dbPostprocess(pred, dims, _origW, _origH, scale) {
     if (dims.length < 4) return [];
     const h = dims[2] ?? 0;
     const w = dims[3] ?? 0;
