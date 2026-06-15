@@ -304,6 +304,7 @@ export function buildDefaultSettings(configDir = ""): LinkTagIntelligenceSetting
     speechAutoPunctuate: true,
     speechDecodingMethod: "greedy_search",
     speechMaxUtteranceSec: 20,
+    speechModelChoice: "zipformer",
     speechAutoHotwords: true,
     speechConfusionMapText: "在显价值:在险价值\n风险穗:风险矩阵\n富力业:傅里叶",
     // OCR Defaults
@@ -1952,9 +1953,15 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     browseBtn.addEventListener("click", () => {
       // Try Electron dialog.showOpenDialog for full path, fall back to showing vault path hint
       try {
-        const desktopRequire = (globalThis as Record<string, unknown>).require as ((m: string) => Record<string, unknown>) | undefined;
+        const desktopRequire = (globalThis as Record<string, unknown>).require as ((m: string) => {
+          remote?: {
+            dialog?: {
+              showOpenDialog?: (...args: unknown[]) => Promise<{ canceled: boolean; filePaths: string[] }>;
+            };
+          };
+        }) | undefined;
         const electron = desktopRequire?.("electron");
-        const dialog = electron?.remote?.dialog as { showOpenDialog?: (...args: unknown[]) => Promise<{ canceled: boolean; filePaths: string[] }> } | undefined;
+        const dialog = electron?.remote?.dialog;
         if (dialog?.showOpenDialog) {
           void dialog.showOpenDialog({ properties: ["openDirectory"] }).then((result) => {
             if (!result.canceled && result.filePaths.length > 0) {
@@ -2242,14 +2249,14 @@ export class LinkTagIntelligenceSettingTab extends PluginSettingTab {
     // in a sane range (we don't want users typing 1000 for dbThresh).
     const addNumber = (
       key: "paddleDetDbThresh" | "paddleDetBoxThresh" | "paddleDetUnclipRatio" | "paddleDetMinSize" | "paddleDetNmsIouThresh" | "paddleDetMaxCandidates" | "paddleDetLimitSideLen" | "paddleOcrCpuThreads" | "paddleOcrPdfConcurrency" | "paddleOcrPdfDpi",
-      labelKey: string,
-      descKey: string,
+      labelKey: Parameters<LinkTagIntelligencePlugin["t"]>[0],
+      descKey: Parameters<LinkTagIntelligencePlugin["t"]>[0],
       min: number,
       max: number,
       step: number
     ): void => {
       const row = detSection.createDiv({ cls: "lti-voice-field-row" });
-      const field = this.createFieldShell(row, this.plugin.t(labelKey) as string, this.plugin.t(descKey) as string);
+      const field = this.createFieldShell(row, this.plugin.t(labelKey), this.plugin.t(descKey));
       const inputRow = field.createDiv({ cls: "lti-voice-input-row" });
       const input = inputRow.createEl("input", {
         cls: "lti-workbench-input lti-voice-path-input",

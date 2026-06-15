@@ -1,0 +1,11 @@
+export function buildAttachmentPath(options: Record<string, unknown>): string;
+export function buildCitationKey(metadata: Record<string, unknown>): string;
+export function buildLiteratureNotePath(options: Record<string, unknown>): string;
+export function buildSourceKey(metadata: Record<string, unknown>): string;
+export function ingestResearchSource(request: Record<string, unknown>, options?: Record<string, unknown>, fetchImpl?: any): Promise<any>;
+export function inspectIngestedNote(options?: Record<string, unknown>): Promise<any>;
+export function normalizeArxivId(value: string): string;
+export function normalizeDoi(value: string): string;
+export function normalizeOpenAlexWork(work: Record<string, unknown>): any;
+export function parseCliArgs(argv: string[]): any;
+export function parseArxivEntry(xml: string): any;

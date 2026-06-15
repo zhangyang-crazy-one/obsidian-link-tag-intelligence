@@ -86,16 +86,6 @@ function allModelFiles(): Set<string> {
   return set;
 }
 
-// All 4 files (including optional cls) - useful for tests that want the "everything present" case
-function fullyEquippedRequired(): Set<string> {
-  const set = new Set<string>();
-  for (const sub of [PADDLE_MODEL_SUBDIRS.det, PADDLE_MODEL_SUBDIRS.rec]) {
-    set.add(realPath.join(MODEL_DIR, sub, PADDLE_MODEL_FILES.det));
-  }
-  set.add(realPath.join(MODEL_DIR, PADDLE_MODEL_SUBDIRS.dict, PADDLE_MODEL_FILES.dict));
-  return set;
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -522,7 +512,6 @@ describe("parsePaddleOcrDictFromYml", () => {
       "    - 乙",
       "    - 二",
     ].join("\n");
-    const r = parsePaddleOcrDictFromYml(yml);
     expect(parsePaddleOcrDictFromYml(yml)).toEqual(["　", "一", "乙", "二"]);
   });
 

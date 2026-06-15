@@ -53,6 +53,8 @@ paddle-ocr-worker.js
 *.tgz
 *.gz
 coverage/
+__pycache__/
+*.pyc
 *.tsbuildinfo
 tmp/
 temp/

@@ -3,16 +3,13 @@
 // Lazy-loads 3 ONNX models (det + rec + cls) plus a character dictionary on first use.
 // 100% offline; falls back gracefully to TesseractOcrService if init or inference fails.
 
-import * as path from "path";
 import {
-  PaddleOcrResult,
   PaddleOcrRegion,
   PADDLE_DET_CLS_PREPROCESS,
   PADDLE_REC_PREPROCESS,
   PADDLE_DET_DEFAULTS,
   PADDLE_MODEL_FILES,
   PADDLE_MODEL_SUBDIRS,
-  PADDLE_TIER_SPECS,
   DEFAULT_PADDLE_TIER,
   type PaddleDetConfig,
   type PaddleOcrModelTier,
@@ -81,9 +78,6 @@ export class PaddleOcrEngine {
   private static readonly CLS_IMG_WIDTH = 192;
   /** Aspect ratio (long side / short side) above which a box is rejected. */
   private static readonly DET_ASPECT_RATIO_THRESH = 100;
-
-  // Tier selector — affects file layout and (eventually) session shapes.
-  // Defaults to "mobile" for back-compat with the legacy single-tier code path.
   private readonly tier: PaddleOcrModelTier;
 
   constructor(
@@ -141,8 +135,11 @@ export class PaddleOcrEngine {
       this.pathLib.join(PADDLE_MODEL_SUBDIRS.cls, PADDLE_MODEL_FILES.cls),
     ];
     const missing = required.filter((rel) => !this.fs.existsSync(this.pathLib.join(this.modelDir, rel)));
-    const hasDictionary = this.fs.existsSync(this.pathLib.join(this.modelDir, ymlDictionary))
-      || this.fs.existsSync(this.pathLib.join(this.modelDir, legacyDictionary));
+    const hasDictionary = this.tier === "mobile"
+      ? this.fs.existsSync(this.pathLib.join(this.modelDir, legacyDictionary))
+        || this.fs.existsSync(this.pathLib.join(this.modelDir, ymlDictionary))
+      : this.fs.existsSync(this.pathLib.join(this.modelDir, ymlDictionary))
+        || this.fs.existsSync(this.pathLib.join(this.modelDir, legacyDictionary));
     if (!hasDictionary) {
       missing.push(ymlDictionary);
     }
@@ -168,7 +165,7 @@ export class PaddleOcrEngine {
       }
 
       const ort = this.resolveOrt();
-      const sharp = this.resolveSharp();
+      this.resolveSharp();
 
       if (onStatus) onStatus("正在加载 PaddleOCR 文本检测模型...");
       this.detSession = await ort.InferenceSession.create(
@@ -514,8 +511,8 @@ export class PaddleOcrEngine {
   private dbPostprocess(
     pred: Float32Array,
     dims: number[],
-    origW: number,
-    origH: number,
+    _origW: number,
+    _origH: number,
     scale: number
   ): Array<[number, number, number, number, number, number, number, number]> {
     if (dims.length < 4) return [];

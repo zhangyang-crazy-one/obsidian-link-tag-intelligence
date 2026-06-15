@@ -57,8 +57,6 @@ import { DEFAULT_PADDLE_TIER, getPaddleTierModelDir, type PaddleOcrModelTier } f
 import { LocalOfflineOcrService } from "./ocr-service";
 import { withHeavyInit } from "./heavy-init-mutex";
 
-const SENTENCE_END_PUNCTUATION = /[。！？\.!\?]$/;
-
 async function runWithConcurrency<T, R>(
   items: T[],
   concurrency: number,
@@ -90,11 +88,6 @@ function buildPdfOcrPageMarker(runId: string, page: number): string {
 
 export class SentenceManager {
   private partialText = "";
-  private plugin: LinkTagIntelligencePlugin;
-
-  constructor(plugin: LinkTagIntelligencePlugin) {
-    this.plugin = plugin;
-  }
 
   /** Called on every Worker result — accumulates partial text. */
   addPartialText(text: string): void {
@@ -132,7 +125,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   private readonly referencePreview = new ReferencePreviewPopover();
   private referencePreviewToken = 0;
   speechRecorder: SpeechRecorder = new SpeechRecorder();
-  ocrService: LocalOfflineOcrService;
+  ocrService!: LocalOfflineOcrService;
   private _sentenceManager: SentenceManager | null = null;
   private speechInsertBuffer = "";
   private speechInsertTimer: ReturnType<typeof setTimeout> | null = null;
@@ -724,8 +717,6 @@ export default class LinkTagIntelligencePlugin extends Plugin {
   getContextNoteFile(): TFile | null {
     const activeFile = this.app.workspace.getActiveFile();
     const activeView = this.app.workspace.getActiveViewOfType(FileView);
-    const leafViewFile = activeView?.file ?? null;
-
     if (activeFile instanceof TFile) {
       if (isSupportedNoteFile(activeFile)) {
         this.captureSupportedFileContext(activeFile);
@@ -1338,7 +1329,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
       const archiveName = "sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12.tar.bz2";
       const archivePath = puncDir + archiveName;
 
-      const cp = require("child_process") as { execSync: (c: string, o?: { maxBuffer?: number }) => Buffer };
+      const cp = require("child_process") as { execSync: (c: string, o?: { cwd?: string; maxBuffer?: number }) => Buffer };
       cp.execSync(
         `curl -L -o "${archivePath}" "${url}" --progress-bar 2>&1`,
         { maxBuffer: 1024 * 1024 }
@@ -1495,7 +1486,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     const isSenseVoice = lang === "zh" && this.settings.speechModelChoice === "sensevoice";
     const fileList = isSenseVoice
       ? ["model.int8.onnx", "tokens.txt"]
-      : getModelFileList(lang);
+      : getModelFileList(lang).map((file) => file.filename);
 
     if (!fs) {
       new Notice(this.t("speechModelNotFound"));
@@ -1935,7 +1926,7 @@ export default class LinkTagIntelligencePlugin extends Plugin {
 
     // Create SentenceManager on first use
     if (!this._sentenceManager) {
-      this._sentenceManager = new SentenceManager(this);
+      this._sentenceManager = new SentenceManager();
     }
 
     // Set ASR result handler — inserts text in real-time on endpoint
@@ -2413,9 +2404,4 @@ export default class LinkTagIntelligencePlugin extends Plugin {
     return require("path").resolve(vaultPath, manifestDir);
   }
 
-  /** Resolve the absolute path of the vault root for relative-path resolution. */
-  private getVaultRoot(): string | null {
-    const adapter = this.app.vault.adapter as { getBasePath?: () => string };
-    return adapter.getBasePath ? adapter.getBasePath() : null;
-  }
 }

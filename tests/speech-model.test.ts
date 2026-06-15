@@ -306,7 +306,7 @@ describe("downloadWithRetry", () => {
 
 describe("getModelFileList", () => {
   it("returns 4 files for zh model", () => {
-    const list = getModelFileList("zh");
+    const list = getModelFileList("zh").map((file) => file.filename);
     expect(list).toHaveLength(4);
     expect(list).toContain("encoder.int8.onnx");
     expect(list).toContain("decoder.onnx");
@@ -315,7 +315,7 @@ describe("getModelFileList", () => {
   });
 
   it("returns 4 files for en model", () => {
-    const list = getModelFileList("en");
+    const list = getModelFileList("en").map((file) => file.filename);
     expect(list).toHaveLength(4);
     expect(list).toContain("encoder-epoch-99-avg-1.int8.onnx");
     expect(list).toContain("decoder-epoch-99-avg-1.int8.onnx");

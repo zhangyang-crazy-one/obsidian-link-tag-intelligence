@@ -15,7 +15,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // runRefinement mock pushes the prompt it received so we can
 // assert on the cross-chapter context wiring.
 const aiPrompts: string[] = [];
-const aiShouldFailFor = (title: string) => false;
+const aiShouldFailFor = (_title: string) => false;
 const aiFailures: Error[] = [];
 
 // Mock AIService BEFORE importing the textbook-cleaner so the
