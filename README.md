@@ -495,6 +495,8 @@ Recommended semantic JSON shape:
 
 ## Changelog
 
+`0.2.10`: resolves PR conflicts against the current release branch, keeps the removed local vision stack out of the release surface, and clears TypeScript/LSP diagnostics for ASR/OCR/settings/sidebar code paths.
+
 `0.2.9`: removes local image-semantic features and model paths, keeps offline OCR, hardens Paddle/Kreuzberg worker lifecycles, raises textbook-cleaner context windows, preserves failed OCR windows, and refreshes sidebar/settings wording.
 
 ## Build

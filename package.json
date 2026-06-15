@@ -1,6 +1,6 @@
 {
   "name": "obsidian-link-tag-intelligence",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "type": "module",
   "scripts": {
     "dev": "node esbuild.config.mjs",

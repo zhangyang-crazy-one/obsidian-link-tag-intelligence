@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.2.10] - 2026-06-15
+
+### Fixed / 修复与优化
+- **PR Conflict Cleanup / PR 冲突清理**:
+  - Rebases the LSP cleanup work onto the current release branch without restoring the removed local vision stack or agent artifacts.
+  - 将 LSP 清理工作重新落到当前发布主线，避免重新引入已删除的本地视觉模型栈与本地 agent 工作流文件。
+- **TypeScript LSP Diagnostics / TypeScript LSP 诊断清零**:
+  - Fixes `tsc --noEmit` diagnostics across ASR, OCR, settings, sidebar view, and CLI test declarations.
+  - 修复 ASR、OCR、设置页、侧边栏视图以及 CLI 测试声明中的 TypeScript/LSP 报错。
+- **Generated Artifact Hygiene / 生成物与缓存清理**:
+  - Ignores Python bytecode caches and keeps release-facing generated bundles in sync after rebuild.
+  - 忽略 Python 字节码缓存，并在重新构建后同步发布面向的构建产物。
+
+---
+
 ## [0.2.8] - 2026-05-29
 
 ### Added / 新特性
